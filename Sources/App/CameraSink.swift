@@ -39,35 +39,86 @@ final class CameraBufferQueue {
 final class CameraFrameStager {
   private var pool: CVPixelBufferPool?
   private var dimensions: (Int, Int, OSType)?
+  private var prepared = false
   private lazy var gpuCopy = GPURawFrameCopy()
   private var cachedFormat: (source: CMVideoFormatDescription, stride: Int, staged: CMVideoFormatDescription)?
+#if CAPTURE_LIFECYCLE_TESTS
+  private(set) var lastRawCopyTiming: GPURawFrameCopy.Timing?
+#endif
 
-  func stage(_ sample: CMSampleBuffer) throws -> CMSampleBuffer? {
-    guard let input = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Camera sample has no image.") }
-    if CVPixelBufferGetIOSurface(input) != nil { return sample }
-    let width = CVPixelBufferGetWidth(input)
-    let height = CVPixelBufferGetHeight(input)
-    let type = CVPixelBufferGetPixelFormatType(input)
+  // Call on the same serial owner as stage, before capture begins or before
+  // delivering the first retained frame of a new layout. Holding three images
+  // together forces actual bounded pool allocation rather than recycling one
+  // image three times. Mapping initializes the layout without changing pixels.
+  func prepare(width: Int, height: Int, pixelFormat: OSType) throws {
+    let pool = try configurePool(width: width, height: height, type: pixelFormat)
+    guard !prepared else { return }
+    if pixelFormat == kCVPixelFormatType_422YpCbCr10 { _ = gpuCopy }
+    var warmImages: [CVPixelBuffer] = []
+    warmImages.reserveCapacity(VideoContract.warmBufferCount)
+    for _ in 0..<VideoContract.warmBufferCount {
+      var image: CVPixelBuffer?
+      let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
+        [kCVPixelBufferPoolAllocationThresholdKey: VideoContract.outputBufferLimit] as CFDictionary, &image)
+      // Existing active frames may already occupy a warmed pool. Preparing it
+      // must not turn ordinary transport backpressure into a fatal start error.
+      if status == kCVReturnWouldExceedAllocationThreshold { break }
+      guard status == kCVReturnSuccess, let image, CVPixelBufferGetIOSurface(image) != nil else {
+        throw VideoError.message("Cannot prepare shareable camera image (\(status)).")
+      }
+      let lockStatus = CVPixelBufferLockBaseAddress(image, [])
+      guard lockStatus == kCVReturnSuccess else {
+        throw VideoError.message("Cannot prepare shareable camera layout (\(lockStatus)).")
+      }
+      CVPixelBufferUnlockBaseAddress(image, [])
+      warmImages.append(image)
+    }
+    withExtendedLifetime(warmImages) { prepared = true }
+  }
+
+  private func configurePool(width: Int, height: Int, type: OSType) throws -> CVPixelBufferPool {
     if dimensions?.0 != width || dimensions?.1 != height || dimensions?.2 != type {
       var next: CVPixelBufferPool?
       let status = CVPixelBufferPoolCreate(kCFAllocatorDefault,
-        [kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary,
+        [kCVPixelBufferPoolMinimumBufferCountKey: VideoContract.warmBufferCount] as CFDictionary,
         [kCVPixelBufferWidthKey: width, kCVPixelBufferHeightKey: height,
           kCVPixelBufferPixelFormatTypeKey: type,
           kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &next)
       guard status == kCVReturnSuccess, let next else { throw VideoError.message("Cannot allocate shareable camera pool (\(status)).") }
       pool = next
       dimensions = (width, height, type)
+      prepared = false
     }
     guard let pool else { throw VideoError.message("Camera staging pool is unavailable.") }
+    return pool
+  }
+
+  func stage(_ sample: CMSampleBuffer) throws -> CMSampleBuffer? {
+#if CAPTURE_LIFECYCLE_TESTS
+    lastRawCopyTiming = nil
+#endif
+    guard let input = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Camera sample has no image.") }
+    if CVPixelBufferGetIOSurface(input) != nil { return sample }
+    let width = CVPixelBufferGetWidth(input)
+    let height = CVPixelBufferGetHeight(input)
+    let type = CVPixelBufferGetPixelFormatType(input)
+    let pool = try configurePool(width: width, height: height, type: type)
     var output: CVPixelBuffer?
     let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
-      [kCVPixelBufferPoolAllocationThresholdKey: 6] as CFDictionary, &output)
+      [kCVPixelBufferPoolAllocationThresholdKey: VideoContract.outputBufferLimit] as CFDictionary, &output)
     if status == kCVReturnWouldExceedAllocationThreshold { return nil }
     guard status == kCVReturnSuccess, let output, CVPixelBufferGetIOSurface(output) != nil else {
       throw VideoError.message("Cannot allocate shareable camera image (\(status)).")
     }
-    let copiedOnGPU = try gpuCopy?.copy(input, to: output) ?? false
+    // The raw Metal copier supports packed v210 only. Avoid initializing its
+    // device/queue for planar formats that must take the validated row copy.
+    let copiedOnGPU: Bool
+    if type == kCVPixelFormatType_422YpCbCr10 {
+      copiedOnGPU = try gpuCopy?.copy(input, to: output) ?? false
+#if CAPTURE_LIFECYCLE_TESTS
+      lastRawCopyTiming = gpuCopy?.lastTiming
+#endif
+    } else { copiedOnGPU = false }
     if !copiedOnGPU { try copyPixels(input, to: output, type: type, width: width) }
     return try makeStagedSample(sample, input: input, output: output, type: type, width: width, height: height)
   }

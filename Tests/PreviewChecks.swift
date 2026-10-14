@@ -10,6 +10,9 @@ private final class PreviewTestCounters: @unchecked Sendable {
   var frames = 0
   var dropped = 0
   var corrupt = 0
+  var emissionTimes: [Double] = []
+  let factory = VideoSampleFactory()
+  var originalSamples: [CMSampleBuffer] = []
 }
 
 @MainActor @objcMembers final class PreviewChecks: XCTestCase {
@@ -68,6 +71,9 @@ private final class PreviewTestCounters: @unchecked Sendable {
   }
 
   func testNativeRendererAcceptsEveryOutputFormatAtBothRates() throws {
+    let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
+      reason: "Qualifying live video preview cadence")
+    defer { ProcessInfo.processInfo.endActivity(activity) }
     for (width, height, format, shareable) in [
       (1920, 1080, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, true),
       (1920, 1080, kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange, true),
@@ -83,13 +89,33 @@ private final class PreviewTestCounters: @unchecked Sendable {
         defer { renderer.flush(); window.close() }
         let count = duration == VideoContract.fastDuration ? 30 : 15
         let original = try VideoContract.sample(image, at: CMClockGetTime(CMClockGetHostTimeClock()), duration: duration)
+        if !shareable {
+          let prepared = expectation(description: "bounded raw transport preparation")
+          let prepareStarted = ProcessInfo.processInfo.systemUptime
+          renderer.prepareForInput(width: width, height: height, pixelFormat: format) { result in
+            if case .failure(let error) = result { XCTFail("Prepare raw preview: \(error)") }
+            prepared.fulfill()
+          }
+          wait(for: [prepared], timeout: 2)
+          print("PREVIEW PREPARE \(VideoContract.fourCC(format)) elapsedMS=\((ProcessInfo.processInfo.systemUptime - prepareStarted) * 1000)")
+        }
         let framesSent = expectation(description: "paced preview frames")
-        let timerQueue = DispatchQueue(label: "preview-test.source")
-        let timer = DispatchSource.makeTimerSource(queue: timerQueue)
+        let timerQueue = DispatchQueue(label: "preview-test.source", qos: .userInteractive)
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: timerQueue)
         let sent = PreviewTestCounters()
         timer.schedule(deadline: .now(), repeating: duration.seconds, leeway: .milliseconds(1))
         timer.setEventHandler {
-          renderer.enqueue(original)
+          sent.emissionTimes.append(ProcessInfo.processInfo.systemUptime)
+          // A live camera emits a fresh sample with advancing media time even
+          // when the picture is static. Reusing one PTS for the entire burst
+          // exercises duplicate-time decoder behavior rather than video rate.
+          do {
+            let timestamp = CMTimeAdd(CMSampleBufferGetPresentationTimeStamp(original),
+              CMTimeMultiply(duration, multiplier: Int32(sent.received)))
+            let sample = try sent.factory.sample(image, at: timestamp, duration: duration)
+            sent.originalSamples.append(sample)
+            renderer.enqueue(sample)
+          } catch { XCTFail("Create paced preview sample: \(error)") }
           sent.received += 1
           if sent.received == count { timer.cancel(); framesSent.fulfill() }
         }
@@ -100,9 +126,12 @@ private final class PreviewTestCounters: @unchecked Sendable {
         XCTAssertEqual(diagnostics.received, UInt64(count))
         XCTAssertGreaterThanOrEqual(diagnostics.enqueued, UInt64(count - 3), "Native preview must not remain at 4 Hz")
         XCTAssertEqual(diagnostics.failed, 0, diagnostics.lastError ?? "Renderer must support selected format")
-        XCTAssertLessThanOrEqual(diagnostics.pending, 1)
-        XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(original, createIfNecessary: false),
-          "Preview DisplayImmediately attachment must not mutate the camera sample")
+        XCTAssertLessThanOrEqual(diagnostics.pending, 12, "Preview scheduling stalls must stay within its fixed FIFO budget")
+        XCTAssertEqual(sent.originalSamples.count, count)
+        for sample in sent.originalSamples {
+          XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false),
+            "Preview DisplayImmediately attachment must not mutate the camera sample")
+        }
         let metricsLoaded = expectation(description: "native renderer performance metrics")
         let metricsResult = PreviewTestCounters()
         renderer.loadPerformanceMetrics { metrics in
@@ -115,7 +144,11 @@ private final class PreviewTestCounters: @unchecked Sendable {
         }
         wait(for: [metricsLoaded], timeout: 2)
         metricsResult.lock.withLock {
-          print("PREVIEW \(width)x\(height) \(VideoContract.fourCC(format)) IOSurface=\(shareable) fps=\(1 / duration.seconds) received=\(diagnostics.received) enqueued=\(diagnostics.enqueued) replaced=\(diagnostics.replaced) waits=\(diagnostics.backPressure) rendererFrames=\(metricsResult.frames) dropped=\(metricsResult.dropped) corrupted=\(metricsResult.corrupt)")
+          let gaps = zip(sent.emissionTimes.dropFirst(), sent.emissionTimes).map { ($0 - $1) * 1000 }
+          if let raw = diagnostics.firstRawCopy {
+            print("PREVIEW RAW firstStageWallMS=\(diagnostics.firstStagingMS) firstStageCPUMS=\(diagnostics.firstStagingCPUMS) maxStageCPUMS=\(diagnostics.maxStagingCPUMS) copyMode=\(raw.mode) copyWallMS=\(raw.wallMS) copyCPUMS=\(raw.cpuMS) copyGPUMS=\(raw.gpuMS) rawInitWallMS=\(raw.initializationWallMS) rawInitCPUMS=\(raw.initializationCPUMS)")
+          }
+          print("PREVIEW \(width)x\(height) \(VideoContract.fourCC(format)) IOSurface=\(shareable) fps=\(1 / duration.seconds) received=\(diagnostics.received) enqueued=\(diagnostics.enqueued) replaced=\(diagnostics.replaced) waits=\(diagnostics.backPressure) rendererFrames=\(metricsResult.frames) dropped=\(metricsResult.dropped) corrupted=\(metricsResult.corrupt) sourceGapMinMS=\(gaps.min() ?? 0) sourceGapMaxMS=\(gaps.max() ?? 0) firstStageMS=\(diagnostics.firstStagingMS) maxStageMS=\(diagnostics.maxStagingMS) avgStageMS=\(diagnostics.stagingTotalMS / Double(max(1, diagnostics.stagingFrames))) queueWaitMaxMS=\(diagnostics.maxQueueWaitMS) readinessWaitMaxMS=\(diagnostics.maxReadinessWaitMS)")
           XCTAssertGreaterThanOrEqual(metricsResult.frames - metricsResult.dropped, count - 3, "Actual renderer must consume frames at video cadence")
           XCTAssertEqual(metricsResult.corrupt, 0)
         }
@@ -129,7 +162,7 @@ private final class PreviewTestCounters: @unchecked Sendable {
     defer { renderer.flush(); window.close() }
     let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
     let sample = try VideoContract.sample(image, at: .zero, duration: VideoContract.fastDuration)
-    for _ in 0..<2000 { renderer.enqueue(sample); XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, 1) }
+    for _ in 0..<2000 { renderer.enqueue(sample); XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, 12) }
     renderer.flush()
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
     XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0)
@@ -171,6 +204,42 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertFalse(renderer.isVisible)
     renderer.enqueue(sample)
     XCTAssertEqual(renderer.diagnosticsSnapshot().received, 2)
+  }
+
+  func testFIFOPreservesBurstOrderAndFlushDiscardsOldGeneration() throws {
+    let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
+    let window = attach(renderer)
+    defer { renderer.flush(); window.close() }
+    let image = try source(width: 640, height: 360,
+      format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    let factory = VideoSampleFactory()
+    let duration = VideoContract.fastDuration
+    let times = (0..<12).map { CMTimeMultiply(duration, multiplier: Int32($0 + 100)) }
+    for time in times { renderer.enqueue(try factory.sample(image, at: time, duration: duration)) }
+    let deadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().enqueued < 12 && Date() < deadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 12, "The finite burst must survive native readiness stalls")
+    XCTAssertEqual(renderer.diagnosticsSnapshot().replaced, 0)
+    XCTAssertEqual(renderer.enqueuedTimesForTesting(), times, "FIFO must retain source presentation order")
+
+    for index in 0..<2000 {
+      renderer.enqueue(try factory.sample(image, at: CMTimeMultiply(duration, multiplier: Int32(index + 1000)), duration: duration))
+      XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, 12)
+    }
+    XCTAssertGreaterThan(renderer.diagnosticsSnapshot().replaced, 0, "Overload must be counted rather than growing the queue")
+    renderer.flush()
+    let finalTime = CMTimeMultiply(duration, multiplier: 10_000)
+    renderer.enqueue(try factory.sample(image, at: finalTime, duration: duration))
+    let restartDeadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().enqueued < 1 && Date() < restartDeadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 1)
+    XCTAssertEqual(renderer.enqueuedTimesForTesting(), [finalTime], "Old queued samples must not cross flush generation")
+    renderer.setVisibilityForTesting(false)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0, "Hidden preview must release every FIFO slot")
   }
 
   func testMainAndMiniPreviewHaveIndependentVisibilityAndLayers() throws {
