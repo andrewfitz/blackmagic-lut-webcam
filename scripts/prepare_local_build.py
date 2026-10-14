@@ -33,14 +33,18 @@ def write_plist(path, value):
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("Usage: prepare_local_build.py INPUT.app STAGED.app")
-    source, destination = (Path(argument).absolute() for argument in sys.argv[1:])
+    source = Path(sys.argv[1]).resolve(strict=True)
+    requested_destination = Path(sys.argv[2]).absolute()
+    if requested_destination.is_symlink():
+        raise SystemExit("Refusing a symlink staging destination.")
+    # Resolve parent aliases and '..' before checking overlap or replacing any
+    # previous stage. Lexically different paths can name the same source app.
+    destination = requested_destination.parent.resolve() / requested_destination.name
     validate(source)
     if source == destination or destination.is_relative_to(source) or source.is_relative_to(destination):
         raise SystemExit("Source and staging destination must be separate bundles.")
     if read_plist(source / "Contents/Info.plist").get("CFBundleIdentifier") != APP_ID:
         raise SystemExit("Input is not an UltraStudio LUT build.")
-    if destination.is_symlink():
-        raise SystemExit("Refusing a symlink staging destination.")
     if destination.exists():
         previous = read_plist(destination / "Contents/Info.plist")
         if previous.get("CFBundleIdentifier") != APP_ID or previous.get(LOCAL_MARKER) is not True:
