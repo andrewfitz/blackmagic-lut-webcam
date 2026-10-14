@@ -284,6 +284,9 @@ private struct MetadataRow: View {
       Text(value).font(.system(size: 11.5).monospacedDigit())
         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(value)
   }
 }
 
