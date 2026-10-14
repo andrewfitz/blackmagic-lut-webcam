@@ -212,7 +212,7 @@ class CaptureCallback final : public IDeckLinkInputCallback {
   ULONG Release() override { ULONG remaining = --references; if (!remaining) delete this; return remaining; }
   void reportFatal(NSString *message) {
     accepting = false;
-    if (!fatalReported.exchange(true)) eventHandler(message);
+    if (!fatalReported.exchange(true)) eventHandler([@"Capture error: " stringByAppendingString:message]);
   }
   HRESULT VideoInputFormatChanged(BMDVideoInputFormatChangedEvents,
     IDeckLinkDisplayMode *mode, BMDDetectedVideoInputFormatFlags flags) override {
@@ -490,7 +490,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
         bmdFormat10BitYUV, bmdNoVideoInputConversion, bmdSupportedVideoModeDefault, nullptr, &supported);
       if (status == S_OK && supported) status = reconfigureInput(owner->_input, callback, *detected);
       if (status != S_OK || !supported) {
-        callback->eventHandler([NSString stringWithFormat:@"Cannot capture detected HDMI input: %@ (0x%08x).", detected->description, (unsigned)status]);
+        callback->eventHandler([NSString stringWithFormat:@"Capture error: Cannot capture detected HDMI input: %@ (0x%08x).", detected->description, (unsigned)status]);
       } else if (mailbox->enableCurrent(detected->sequence, callback->framesEnabled)) {
         callback->eventHandler([NSString stringWithFormat:@"Detected HDMI input: %@ — capturing 10-bit YUV 4:2:2.", detected->description]);
       }
@@ -590,6 +590,13 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   frame->noSignal = false;
   callback->VideoInputFrameArrived(frame, nullptr);
   if (frames != 3) return fail(error, @"Auto mode did not resume after signal returned.");
+
+  input.pauseResult = E_FAIL;
+  mode.mode = bmdMode4K2160p2997;
+  callback->VideoInputFormatChanged(bmdVideoInputDisplayModeChanged, &mode, flags);
+  [self onControlQueue:^{}];
+  if (callback->framesEnabled || ![lastEvent hasPrefix:@"Capture error: "])
+    return fail(error, @"Permanent auto reconfiguration failure was presented as recoverable signal loss.");
 
   auto cancelled = _autoMode;
   [self stop];

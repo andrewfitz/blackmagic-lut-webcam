@@ -118,11 +118,12 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
   @autoreleasepool {
     __block CVPixelBufferRef retained = nullptr;
     __block int frames = 0, events = 0;
+    __block NSString *lastMessage = nil;
     __block CMTime timestamp = kCMTimeInvalid;
     auto framesBlock = ^(CVPixelBufferRef buffer, CMTime pts, BOOL valid) {
       if (valid) { ++frames; timestamp = pts; retained = CVPixelBufferRetain(buffer); }
     };
-    auto eventsBlock = ^(NSString *) { ++events; };
+    auto eventsBlock = ^(NSString *message) { ++events; lastMessage = message; };
     auto callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock);
     bool destroyed = false;
     auto frame = new FakeFrame(&destroyed);
@@ -155,7 +156,8 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
       events = 0;
       callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock);
       callback->VideoInputFrameArrived(frame, nullptr); callback->VideoInputFrameArrived(frame, nullptr);
-      if (events != 1 || callback->accepting || frames != 1) return fail(error, @"Invalid native frame did not stop with one error.");
+      if (events != 1 || callback->accepting || frames != 1 || ![lastMessage hasPrefix:@"Capture error: "])
+        return fail(error, @"Invalid native frame did not stop with one permanent capture error.");
       frame->Release(); callback->Release();
       if (!destroyed) return fail(error, @"Rejected native frame leaked.");
     }
