@@ -98,7 +98,7 @@ static NSArray<UDLMode *> *supportedModes(IDeckLinkInput *input) {
     ComRef<IDeckLinkDisplayMode> mode; mode.value = raw;
     BMDTimeValue duration = 0; BMDTimeScale scale = 0;
     mode->GetFrameRate(&duration, &scale);
-    if (mode->GetWidth() != 3840 || mode->GetHeight() != 2160 || scale <= 0 ||
+    if (mode->GetWidth() != 3840 || mode->GetHeight() != 2160 || duration <= 0 || scale <= 0 || scale > INT32_MAX ||
         (CMTimeCompare(CMTimeMake(duration, (int32_t)scale), CMTimeMake(1001, 30000)) != 0 &&
          CMTimeCompare(CMTimeMake(duration, (int32_t)scale), CMTimeMake(1001, 60000)) != 0)) continue;
     bool supported = false;
@@ -138,9 +138,11 @@ static DetectedInput describeInput(IDeckLinkDisplayMode *mode, BMDDetectedVideoI
   NSString *depth = (flags & bmdDetectedVideoInput10BitDepth) ? @"10-bit" :
     ((flags & bmdDetectedVideoInput12BitDepth) ? @"12-bit" : ((flags & bmdDetectedVideoInput8BitDepth) ? @"8-bit" : @"unreported bit depth"));
   double fps = CMTIME_IS_NUMERIC(result.duration) ? 1.0 / CMTimeGetSeconds(result.duration) : 0;
-  result.description = [NSString stringWithFormat:@"%ld × %ld · %.2f fps · %@ · %@",
-    mode->GetWidth(), mode->GetHeight(), fps, color, depth];
+  NSString *cadence = fps > 0 ? [NSString stringWithFormat:@"%.2f fps", fps] : @"unknown frame rate";
+  result.description = [NSString stringWithFormat:@"%ld × %ld · %@ · %@ · %@",
+    mode->GetWidth(), mode->GetHeight(), cadence, color, depth];
   result.supported = mode->GetWidth() == 3840 && mode->GetHeight() == 2160 &&
+    CMTIME_IS_NUMERIC(result.duration) &&
     (result.mode == bmdMode4K2160p2997 || result.mode == bmdMode4K2160p5994) &&
     !(flags & (bmdDetectedVideoInputRGB444 | bmdDetectedVideoInput8BitDepth | bmdDetectedVideoInputDualStream3D));
   return result;
@@ -169,10 +171,17 @@ struct AutoModeMailbox {
     std::lock_guard<std::mutex> guard(mutex);
     return !cancelled && latest.sequence == sequence;
   }
-  bool enableCurrent(uint64_t sequence, std::atomic<bool> &framesEnabled) {
+  bool enableCurrent(uint64_t sequence, std::atomic<bool> &framesEnabled,
+    const std::atomic<bool> *accepting = nullptr) {
+    std::lock_guard<std::mutex> guard(mutex);
+    if (cancelled || latest.sequence != sequence || (accepting && !accepting->load())) return false;
+    framesEnabled = true;
+    return true;
+  }
+  bool cancelCurrent(uint64_t sequence, std::atomic<bool> &accepting) {
     std::lock_guard<std::mutex> guard(mutex);
     if (cancelled || latest.sequence != sequence) return false;
-    framesEnabled = true;
+    accepting = false; cancelled = true; scheduled = false;
     return true;
   }
   bool finish(uint64_t sequence) {
@@ -312,9 +321,13 @@ static HRESULT startInput(IDeckLinkInput *input, CaptureCallback *callback,
 // The caller must run this on the native control queue, never a driver callback.
 static HRESULT reconfigureInput(IDeckLinkInput *input, CaptureCallback *callback, const DetectedInput &mode) {
   callback->framesEnabled = false;
+  if (!callback->accepting) return E_FAIL;
   HRESULT status = input->PauseStreams();
+  if (!callback->accepting) return E_FAIL;
   if (status == S_OK) status = input->EnableVideoInput(mode.mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
+  if (!callback->accepting) return E_FAIL;
   if (status == S_OK) status = input->FlushStreams();
+  if (!callback->accepting) return E_FAIL;
   if (status == S_OK) {
     callback->requestedMode = mode.mode;
     status = input->StartStreams();
@@ -337,6 +350,9 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   CaptureCallback *_callback;
   std::unique_ptr<HDMILease> _connection;
   std::shared_ptr<AutoModeMailbox> _autoMode;
+#if defined(UDL_BACKEND_TESTING)
+  BOOL _scheduledOffControlQueue;
+#endif
 #endif
 }
 
@@ -465,38 +481,55 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   auto mailbox = _autoMode;
   callback->autoFrameHandler = [frameHandler copy];
   __weak UDLBackend *weakSelf = self;
+  dispatch_queue_t nativeQueue = _controlQueue;
   callback->modeHandler = ^(DetectedInput detected) {
     if (mailbox->push(detected, &callback->framesEnabled)) {
-      UDLBackend *owner = weakSelf;
-      if (owner) [owner scheduleDetection:mailbox];
-      else mailbox->cancel();
+      // Never promote the weak backend on the driver callback thread. Releasing
+      // its final reference there could run dealloc/StopStreams inside the
+      // very callback StopStreams is waiting to finish.
+      dispatch_async(nativeQueue, ^{
+        UDLBackend *owner = weakSelf;
+        if (owner) [owner performDetection:mailbox];
+        else mailbox->cancel();
+      });
     }
   };
 }
 
 - (void)scheduleDetection:(std::shared_ptr<AutoModeMailbox>)mailbox {
+#if defined(UDL_BACKEND_TESTING)
+  if (dispatch_get_specific(UDLControlQueueKey) != (__bridge void *)self) _scheduledOffControlQueue = YES;
+#endif
   __weak UDLBackend *weakSelf = self;
   dispatch_async(_controlQueue, ^{
     UDLBackend *owner = weakSelf;
-    if (!owner || owner->_autoMode != mailbox || !owner->_input || !owner->_callback) return;
-    auto detected = mailbox->snapshot();
-    if (!detected) return;
-    CaptureCallback *callback = owner->_callback;
-    if (!detected->supported) {
-      callback->eventHandler([NSString stringWithFormat:@"Unsupported HDMI input: %@. Requires 4K YUV 4:2:2 at 29.97 or 59.94 fps with at least 10-bit source precision.", detected->description]);
-    } else {
-      bool supported = false;
-      HRESULT status = owner->_input->DoesSupportVideoMode(bmdVideoConnectionHDMI, detected->mode,
-        bmdFormat10BitYUV, bmdNoVideoInputConversion, bmdSupportedVideoModeDefault, nullptr, &supported);
-      if (status == S_OK && supported) status = reconfigureInput(owner->_input, callback, *detected);
-      if (status != S_OK || !supported) {
-        callback->eventHandler([NSString stringWithFormat:@"Capture error: Cannot capture detected HDMI input: %@ (0x%08x).", detected->description, (unsigned)status]);
-      } else if (mailbox->enableCurrent(detected->sequence, callback->framesEnabled)) {
-        callback->eventHandler([NSString stringWithFormat:@"Detected HDMI input: %@ — capturing 10-bit YUV 4:2:2.", detected->description]);
-      }
-    }
-    if (mailbox->finish(detected->sequence)) [owner scheduleDetection:mailbox];
+    if (owner) [owner performDetection:mailbox];
+    else mailbox->cancel();
   });
+}
+
+- (void)performDetection:(std::shared_ptr<AutoModeMailbox>)mailbox {
+  if (_autoMode != mailbox || !_input || !_callback) return;
+  auto detected = mailbox->snapshot();
+  if (!detected) return;
+  CaptureCallback *callback = _callback;
+  if (!callback->accepting) { mailbox->cancel(); return; }
+  if (!detected->supported) {
+    if (mailbox->isCurrent(detected->sequence))
+      callback->eventHandler([NSString stringWithFormat:@"Unsupported HDMI input: %@. Requires 4K YUV 4:2:2 at 29.97 or 59.94 fps with at least 10-bit source precision.", detected->description]);
+  } else {
+    bool supported = false;
+    HRESULT status = _input->DoesSupportVideoMode(bmdVideoConnectionHDMI, detected->mode,
+      bmdFormat10BitYUV, bmdNoVideoInputConversion, bmdSupportedVideoModeDefault, nullptr, &supported);
+    if (status == S_OK && supported) status = reconfigureInput(_input, callback, *detected);
+    if (status != S_OK || !supported) {
+      if (mailbox->cancelCurrent(detected->sequence, callback->accepting))
+        callback->reportFatal([NSString stringWithFormat:@"Cannot capture detected HDMI input: %@ (0x%08x).", detected->description, (unsigned)status]);
+    } else if (mailbox->enableCurrent(detected->sequence, callback->framesEnabled, &callback->accepting)) {
+      callback->eventHandler([NSString stringWithFormat:@"Detected HDMI input: %@ — capturing 10-bit YUV 4:2:2.", detected->description]);
+    }
+  }
+  if (mailbox->finish(detected->sequence)) [self scheduleDetection:mailbox];
 }
 #endif
 
@@ -522,11 +555,11 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
     ~StopGuard() { [owner stop]; }
   } stopGuard{self};
   FakeInput *inputPointer = &input;
-  __block int events = 0, frames = 0;
+  __block int events = 0, frames = 0, fatalEvents = 0;
   __block NSString *lastEvent = nil;
   __block CMTime deliveredDuration = kCMTimeInvalid;
   auto callback = new CaptureCallback(bmdMode4K2160p5994, 60000, nil,
-    ^(NSString *message) { ++events; lastEvent = message; });
+    ^(NSString *message) { ++events; lastEvent = message; if ([message hasPrefix:@"Capture error: "]) ++fatalEvents; });
   callback->AddRef(); // Test retains the old callback beyond backend stop.
   ComRef<CaptureCallback> callbackReference; callbackReference.value = callback;
   [self onControlQueue:^{
@@ -542,7 +575,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   callback->VideoInputFormatChanged(bmdVideoInputDisplayModeChanged, &mode, flags);
   [self onControlQueue:^{}]; // Drain the actual native reconfiguration.
   const std::vector<std::string> expected = {"callback", "support", "pause", "enable", "flush", "start"};
-  if (input.calls != expected || input.reconfiguredOnMainThread || !callback->framesEnabled ||
+  if (_scheduledOffControlQueue || input.calls != expected || input.reconfiguredOnMainThread || !callback->framesEnabled ||
       input.enabledMode != bmdMode4K2160p2997 || events != 1 || ![lastEvent containsString:@"29.97"])
     return fail(error, @"Auto detection did not reconfigure 29.97 on the native control queue.");
   bool destroyed = false;
@@ -591,11 +624,28 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   callback->VideoInputFrameArrived(frame, nullptr);
   if (frames != 3) return fail(error, @"Auto mode did not resume after signal returned.");
 
+  // A newer format notification can arrive while the older mode is pausing.
+  // An error for that obsolete mode must not terminate the newer valid input.
+  FakeMode *modePointer = &mode;
+  input.pauseResult = E_FAIL;
+  input.onPause = ^{
+    inputPointer->onPause = nil;
+    inputPointer->pauseResult = S_OK;
+    modePointer->mode = bmdMode4K2160p5994;
+    callback->VideoInputFormatChanged(bmdVideoInputDisplayModeChanged, modePointer, flags);
+  };
+  mode.mode = bmdMode4K2160p2997;
+  callback->VideoInputFormatChanged(bmdVideoInputDisplayModeChanged, &mode, flags);
+  [self onControlQueue:^{}];
+  [self onControlQueue:^{}];
+  if (fatalEvents || !callback->accepting || !callback->framesEnabled || input.enabledMode != bmdMode4K2160p5994)
+    return fail(error, @"An obsolete format-change failure stopped a newer valid source.");
+
   input.pauseResult = E_FAIL;
   mode.mode = bmdMode4K2160p2997;
   callback->VideoInputFormatChanged(bmdVideoInputDisplayModeChanged, &mode, flags);
   [self onControlQueue:^{}];
-  if (callback->framesEnabled || ![lastEvent hasPrefix:@"Capture error: "])
+  if (callback->accepting || callback->framesEnabled || fatalEvents != 1 || ![lastEvent hasPrefix:@"Capture error: "])
     return fail(error, @"Permanent auto reconfiguration failure was presented as recoverable signal loss.");
 
   auto cancelled = _autoMode;
@@ -626,6 +676,12 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   if (mailbox.push(late, &gate) || mailbox.enableCurrent(latest->sequence, gate))
     return fail(error, @"Cancelled auto mailbox accepted new work.");
 
+  FakeMode invalidMode;
+  invalidMode.invalidRate = true;
+  auto invalidDetection = describeInput(&invalidMode, flags);
+  if (invalidDetection.supported || ![invalidDetection.description containsString:@"unknown frame rate"])
+    return fail(error, @"Failed native frame-rate query fabricated a supported cadence.");
+
   // Every partial driver reconfiguration failure keeps frames disabled.
   for (int scenario = 0; scenario != 4; ++scenario) {
     FakeInput failure;
@@ -638,6 +694,13 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
       return fail(error, @"Partial auto reconfiguration delivered stale-format frames.");
     callback->Release();
   }
+  FakeInput terminal;
+  callback = new CaptureCallback(bmdMode4K2160p5994, 60000, nil, ^(NSString *) {});
+  terminal.onPause = ^{ callback->reportFatal(@"Synthetic terminal frame error"); };
+  if (reconfigureInput(&terminal, callback, late) == S_OK ||
+      terminal.calls != std::vector<std::string>{"pause"} || callback->framesEnabled)
+    return fail(error, @"Driver restarted after a terminal callback error during reconfiguration.");
+  callback->Release();
   return YES;
 }
 #endif

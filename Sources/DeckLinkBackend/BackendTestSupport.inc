@@ -35,6 +35,7 @@ class FakeMode final : public IDeckLinkDisplayMode {
   ULONG references = 1;
   BMDDisplayMode mode = bmdMode4K2160p5994;
   long width = 3840, height = 2160;
+  bool invalidRate = false;
   HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
   ULONG AddRef() override { return ++references; }
   ULONG Release() override { return --references; }
@@ -42,7 +43,9 @@ class FakeMode final : public IDeckLinkDisplayMode {
   BMDDisplayMode GetDisplayMode() override { return mode; }
   long GetWidth() override { return width; }
   long GetHeight() override { return height; }
-  HRESULT GetFrameRate(BMDTimeValue *duration, BMDTimeScale *scale) override { *duration = 1001; *scale = mode == bmdMode4K2160p2997 ? 30000 : 60000; return S_OK; }
+  HRESULT GetFrameRate(BMDTimeValue *duration, BMDTimeScale *scale) override {
+    *duration = 1001; *scale = mode == bmdMode4K2160p2997 ? 30000 : 60000; return invalidRate ? E_FAIL : S_OK;
+  }
   BMDFieldDominance GetFieldDominance() override { return bmdProgressiveFrame; }
   BMDDisplayModeFlags GetFlags() override { return bmdDisplayModeColorspaceRec709; }
 };
@@ -56,6 +59,7 @@ class FakeInput final : public IDeckLinkInput {
   bool reconfiguredOnMainThread = false;
   BMDDisplayMode enabledMode = bmdModeUnknown;
   IDeckLinkInputCallback *callback = nullptr;
+  void (^onPause)(void) = nil;
   ~FakeInput() override { if (callback) callback->Release(); }
   HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
   ULONG AddRef() override { return ++references; }
@@ -79,7 +83,13 @@ class FakeInput final : public IDeckLinkInput {
   HRESULT GetAvailableAudioSampleFrameCount(uint32_t *) override { return E_NOTIMPL; }
   HRESULT StartStreams() override { calls.push_back("start"); return startResult; }
   HRESULT StopStreams() override { calls.push_back("stop"); return S_OK; }
-  HRESULT PauseStreams() override { calls.push_back("pause"); reconfiguredOnMainThread = [NSThread isMainThread]; return pauseResult; }
+  HRESULT PauseStreams() override {
+    calls.push_back("pause"); reconfiguredOnMainThread = [NSThread isMainThread];
+    HRESULT result = pauseResult;
+    void (^action)(void) = [onPause copy];
+    if (action) action();
+    return result;
+  }
   HRESULT FlushStreams() override { calls.push_back("flush"); return flushResult; }
   HRESULT SetCallback(IDeckLinkInputCallback *value) override {
     calls.push_back(value ? "callback" : "clear");
