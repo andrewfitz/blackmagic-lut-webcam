@@ -302,4 +302,77 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertEqual(mini.diagnosticsSnapshot().enqueued, 2)
     XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false))
   }
+
+  func testReplacedNativeViewCannotHideOrResizeCurrentHost() throws {
+    let renderer = VideoPreviewRenderer()
+    let first = renderer.makeView()
+    first.publishVisibilityForTesting(true)
+    XCTAssertTrue(renderer.isVisible)
+    let second = renderer.makeView()
+    XCTAssertFalse(renderer.isVisible, "A replacement must establish its own native visibility")
+    second.publishVisibilityForTesting(true)
+    first.publishVisibilityForTesting(false)
+    XCTAssertTrue(renderer.isVisible, "A disappearing old host must not disable its visible replacement")
+    second.frame = NSRect(x: 0, y: 0, width: 320, height: 180)
+    second.layout()
+    let videoLayer = try XCTUnwrap(second.layer?.sublayers?.first)
+    XCTAssertEqual(videoLayer.frame, second.bounds)
+    XCTAssertTrue(videoLayer.masksToBounds)
+    XCTAssertEqual(second.layer?.masksToBounds, true)
+    first.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+    first.layout()
+    XCTAssertEqual(videoLayer.frame, second.bounds, "Old layout callbacks must not resize the shared native layer")
+    second.publishVisibilityForTesting(false)
+    XCTAssertFalse(renderer.isVisible)
+  }
+
+  func testStaleInFlightFailureDoesNotPolluteRestartDiagnostics() throws {
+    let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
+    let window = attach(renderer)
+    defer { renderer.flush(); window.close() }
+    let image = try source(width: 640, height: 360,
+      format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    var formatDescription: CMVideoFormatDescription?
+    XCTAssertEqual(CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+      imageBuffer: image, formatDescriptionOut: &formatDescription), noErr)
+    let format = try XCTUnwrap(formatDescription)
+    var block: CMBlockBuffer?
+    XCTAssertEqual(CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault,
+      memoryBlock: nil, blockLength: 1, blockAllocator: kCFAllocatorDefault,
+      customBlockSource: nil, offsetToData: 0, dataLength: 1, flags: 0,
+      blockBufferOut: &block), noErr)
+    var timing = CMSampleTimingInfo(duration: VideoContract.fastDuration,
+      presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+    var size = 1
+    var malformed: CMSampleBuffer?
+    XCTAssertEqual(CMSampleBufferCreateReady(allocator: kCFAllocatorDefault,
+      dataBuffer: block, formatDescription: format, sampleCount: 1,
+      sampleTimingEntryCount: 1, sampleTimingArray: &timing,
+      sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &malformed), noErr)
+    let invalid = try XCTUnwrap(malformed)
+    XCTAssertNil(CMSampleBufferGetImageBuffer(invalid))
+    let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    renderer.blockNextStagingForTesting(entered: entered, release: release)
+    renderer.enqueue(invalid)
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    defer { release.signal() }
+    renderer.flush()
+    renderer.enqueue(try VideoContract.sample(image, at: CMTime(value: 1001, timescale: 60_000),
+      duration: VideoContract.fastDuration))
+    release.signal()
+    let deadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().enqueued < 1 && Date() < deadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 1)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().failed, 0)
+    XCTAssertNil(renderer.diagnosticsSnapshot().lastError)
+    renderer.enqueue(invalid)
+    let failureDeadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().failed < 1 && Date() < failureDeadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().failed, 1, "A current-generation failure must still be reported")
+    XCTAssertNotNil(renderer.diagnosticsSnapshot().lastError)
+  }
 }

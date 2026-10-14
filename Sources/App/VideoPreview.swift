@@ -38,6 +38,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   }
 
   @MainActor fileprivate let displayLayer: AVSampleBufferDisplayLayer
+  @MainActor private weak var hostingView: VideoPreviewView?
   private let videoRenderer: AVSampleBufferVideoRenderer
   private let queue = DispatchQueue(label: "org.ultrastudiolut.preview", qos: .userInteractive)
   private let lock = NSLock()
@@ -66,6 +67,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   private var enqueuedTimes: [CMTime] = []
   private var nativeFlushNumber: UInt64 = 0
   private var enqueuedFlushNumbers: [UInt64] = []
+  private var beforeStagingForTesting: (@Sendable () -> Void)?
 #endif
   // Owned only by the preview queue; at most one readiness callback is armed.
   private var requestingGeneration: UInt64?
@@ -93,6 +95,14 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     queue.async {
       entered.signal()
       _ = release.wait(timeout: .now() + 2)
+    }
+  }
+  func blockNextStagingForTesting(entered: DispatchSemaphore, release: DispatchSemaphore) {
+    lock.withLock {
+      beforeStagingForTesting = {
+        entered.signal()
+        _ = release.wait(timeout: .now() + 2)
+      }
     }
   }
 #endif
@@ -132,7 +142,10 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     }
   }
 
-  fileprivate func publishViewVisibility(_ value: Bool) {
+  @MainActor fileprivate func ownsView(_ view: VideoPreviewView) -> Bool { hostingView === view }
+
+  @MainActor fileprivate func publishViewVisibility(_ value: Bool, from view: VideoPreviewView) {
+    guard ownsView(view) else { return }
 #if CAPTURE_LIFECYCLE_TESTS
     guard !renderWhenUnattached else { return }
 #endif
@@ -195,7 +208,14 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   }
 
   @MainActor func makeView() -> VideoPreviewView {
-    VideoPreviewView(renderer: self, displayLayer: displayLayer)
+    let view = VideoPreviewView(renderer: self, displayLayer: displayLayer)
+    hostingView = view
+#if CAPTURE_LIFECYCLE_TESTS
+    if !renderWhenUnattached { setVisible(false) }
+#else
+    setVisible(false)
+#endif
+    return view
   }
 
   // Standalone borrowed-input users can pay bounded IOSurface/Metal startup
@@ -284,7 +304,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     guard lock.withLock({ visible && token == generation }) else { return true }
     if videoRenderer.status == .failed || videoRenderer.requiresFlushToResumeDecoding {
       let error = videoRenderer.error?.localizedDescription ?? "Preview renderer required a reset."
-      lock.withLock { diagnostics.failed &+= 1; diagnostics.lastError = error }
+      recordFailure(error, generation: token)
       videoRenderer.flush()
     }
     guard videoRenderer.isReadyForMoreMediaData else {
@@ -311,6 +331,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
           guard let self, self.requestingGeneration == token else { return }
 #if CAPTURE_LIFECYCLE_TESTS
           self.lock.withLock {
+            guard self.visible && token == self.generation else { return }
             self.diagnostics.maxReadinessWaitMS = max(self.diagnostics.maxReadinessWaitMS,
               (ProcessInfo.processInfo.systemUptime - self.readinessStartedAt) * 1000)
           }
@@ -326,17 +347,27 @@ final class VideoPreviewRenderer: @unchecked Sendable {
       // Only borrowed, non-IOSurface capture buffers require staging. This is
       // a bounded bit-exact copy, preserving the selected output pixel format.
 #if CAPTURE_LIFECYCLE_TESTS
+      let beforeStaging = lock.withLock { () -> (@Sendable () -> Void)? in
+        let result = beforeStagingForTesting
+        beforeStagingForTesting = nil
+        return result
+      }
+      beforeStaging?()
       let stagingStarted = ProcessInfo.processInfo.systemUptime
       let stagingCPUStarted = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
 #endif
       guard let staged = try stager.stage(sample) else {
-        lock.withLock { diagnostics.stagingDrops &+= 1 }
+        lock.withLock {
+          guard visible && token == generation else { return }
+          diagnostics.stagingDrops &+= 1
+        }
         return true
       }
 #if CAPTURE_LIFECYCLE_TESTS
       let stagingMS = (ProcessInfo.processInfo.systemUptime - stagingStarted) * 1000
       let stagingCPUMS = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - stagingCPUStarted) / 1_000_000
       lock.withLock {
+        guard visible && token == generation else { return }
         if diagnostics.stagingFrames == 0 {
           diagnostics.firstStagingMS = stagingMS
           diagnostics.firstStagingCPUMS = stagingCPUMS
@@ -379,9 +410,17 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 #endif
       }
     } catch {
-      lock.withLock { diagnostics.failed &+= 1; diagnostics.lastError = error.localizedDescription }
+      recordFailure(error.localizedDescription, generation: token)
     }
     return true
+  }
+
+  private func recordFailure(_ message: String, generation token: UInt64) {
+    lock.withLock {
+      guard visible && token == generation else { return }
+      diagnostics.failed &+= 1
+      diagnostics.lastError = message
+    }
   }
 }
 
@@ -405,6 +444,8 @@ struct VideoPreview: NSViewRepresentable {
     super.init(frame: .zero)
     wantsLayer = true
     layer?.backgroundColor = NSColor.black.cgColor
+    layer?.masksToBounds = true
+    displayLayer.masksToBounds = true
     layer?.addSublayer(displayLayer)
   }
 
@@ -414,7 +455,8 @@ struct VideoPreview: NSViewRepresentable {
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    NotificationCenter.default.removeObserver(self)
+    NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+    NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
     if let window {
       NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
         name: NSWindow.didChangeOcclusionStateNotification, object: window)
@@ -435,17 +477,22 @@ struct VideoPreview: NSViewRepresentable {
   }
 
   @objc private func windowVisibilityChanged(_ notification: Notification) {
-    if notification.name == NSWindow.willCloseNotification { renderer.publishViewVisibility(false) }
+    if notification.name == NSWindow.willCloseNotification { renderer.publishViewVisibility(false, from: self) }
     else { publishVisibility() }
   }
 
   private func publishVisibility() {
     renderer.publishViewVisibility(window?.isVisible == true && window?.occlusionState.contains(.visible) == true
-      && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty)
+      && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty, from: self)
   }
+
+#if CAPTURE_LIFECYCLE_TESTS
+  func publishVisibilityForTesting(_ value: Bool) { renderer.publishViewVisibility(value, from: self) }
+#endif
 
   override func layout() {
     super.layout()
+    guard renderer.ownsView(self), displayLayer.superlayer === layer else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     displayLayer.frame = bounds
