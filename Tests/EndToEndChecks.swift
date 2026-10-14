@@ -555,11 +555,16 @@ private final class PacedDriverMetrics: @unchecked Sendable {
 
   func testAutomaticSourceRateChangesUpdateActualMetadataAndCameraContract() throws {
     let harness = CaptureHarness()
-    let controller = CaptureController(services: harness.services(automatic: true))
+    var services = harness.services(automatic: true)
+    services.capturePixelFormat = kCVPixelFormatType_422YpCbCr10
+    let controller = CaptureController(services: services)
     defer { controller.onUpdate = nil; controller.stop() }
     var saved = config
     saved.inputFast = false
     ready(controller, harness: harness, configuration: saved)
+    XCTAssertEqual(harness.negotiated.count, 1, "Known native storage permits connection before callbacks begin")
+    XCTAssertEqual(harness.negotiated.first?.0.duration, VideoContract.slowDuration,
+      "The startup contract may use the remembered rate only until a real frame arrives")
     let statuses = CaptureStatusRecorder()
     controller.onUpdate = { statuses.record($0) }
     let source = try EndToEndChecks.source()
@@ -710,9 +715,13 @@ private final class PacedDriverMetrics: @unchecked Sendable {
 
   func testNoCameraOrPreviewConsumerSkipsProcessingButStillValidatesSource() throws {
     let harness = CaptureHarness(failConnecting: true)
-    let controller = CaptureController(services: harness.services(automatic: true, previewConsumer: false))
+    var services = harness.services(automatic: true, previewConsumer: false)
+    services.capturePixelFormat = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
+    let controller = CaptureController(services: services)
     defer { controller.onUpdate = nil; controller.stop() }
-    ready(controller, harness: harness, configuration: config)
+    var missingLUT = config
+    missingLUT.applyLUT = true
+    ready(controller, harness: harness, configuration: missingLUT)
     let statuses = CaptureStatusRecorder()
     controller.onUpdate = { statuses.record($0) }
     let source = try EndToEndChecks.source()
@@ -721,6 +730,8 @@ private final class PacedDriverMetrics: @unchecked Sendable {
       statuses.last?.sourceDuration == VideoContract.fastDuration
     }
     XCTAssertEqual(harness.processingTiming.count, 0, "No visible preview/hook or camera means no pixel processing")
+    XCTAssertEqual(harness.negotiated.count, 1,
+      "Initial camera absence must not create a retry loop for a matching known storage contract")
     XCTAssertEqual(harness.sent, 0)
     XCTAssertEqual(harness.previewed, 0)
     XCTAssertFalse(statuses.last?.previewDelivered ?? true)
@@ -734,6 +745,66 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     wait(for: [stopped], timeout: 3)
     XCTAssertEqual(harness.processingTiming.count, 0)
     XCTAssertFalse(harness.active)
+  }
+
+  func testKnownAutomaticStorageConnectsBeforeNativeCallbacksWithoutInventingInputMetadata() throws {
+    let entered = expectation(description: "Cold camera connection entered")
+    let started = expectation(description: "Native capture can start after cold connection")
+    let release = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(started: started)
+    var services = harness.services(automatic: true, previewConsumer: false)
+    let connect = services.connect
+    services.connect = { options, type in
+      try connect(options, type)
+      entered.fulfill()
+      guard release.wait(timeout: .now() + 3) == .success else {
+        throw VideoError.message("Cold connection fixture was not released")
+      }
+    }
+    services.capturePixelFormat = kCVPixelFormatType_422YpCbCr10
+    let controller = CaptureController(services: services)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    defer { release.signal(); controller.onUpdate = nil; controller.stop() }
+    // Bypass isolates the cold transport ordering without requiring a LUT.
+    controller.start(deviceID: "synthetic", configuration: config,
+      pipelineEnabled: false, previewEnabled: false)
+    wait(for: [entered], timeout: 5)
+    XCTAssertEqual(harness.starts, 0, "Driver callbacks must not race a cold camera connection")
+    XCTAssertEqual(harness.sent, 0, "Preparing transport cannot publish an invented source frame")
+    release.signal()
+    wait(for: [started], timeout: 5)
+    awaitCondition("Startup must still report undetected input") { statuses.last != nil }
+    XCTAssertEqual(statuses.last?.input, "Waiting for detected input")
+    XCTAssertNil(statuses.last?.sourceDuration)
+    XCTAssertNil(statuses.last?.inputFast)
+    XCTAssertEqual(statuses.last?.output, "")
+    XCTAssertEqual(harness.processingTiming.count, 0)
+  }
+
+  func testKnownAutomaticCameraWarmsProcessingBeforeNativeCaptureWithPreviewOff() throws {
+    let harness = CaptureHarness()
+    var services = harness.services(automatic: true, previewConsumer: false)
+    services.capturePixelFormat = kCVPixelFormatType_422YpCbCr10
+    let controller = CaptureController(services: services)
+    let stopped = expectation(description: "Cold processing detects missing enabled LUT before capture")
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { update in
+      statuses.record(update)
+      if update.stopped { stopped.fulfill() }
+    }
+    defer { controller.onUpdate = nil; controller.stop() }
+    var missingLUT = config
+    missingLUT.applyLUT = true
+    controller.start(deviceID: "synthetic", configuration: missingLUT, previewEnabled: false)
+    wait(for: [stopped], timeout: 5)
+    XCTAssertEqual(harness.negotiated.count, 1)
+    XCTAssertEqual(harness.starts, 0,
+      "A connected camera must warm processing before driver callbacks even with no visible preview")
+    XCTAssertEqual(harness.sent, 0, "The warm-up's synthetic black buffers cannot reach the camera")
+    XCTAssertEqual(harness.previewed, 0)
+    XCTAssertTrue(statuses.failures.first?.localizedCaseInsensitiveContains("LUT") == true)
+    XCTAssertNil(statuses.last?.sourceDuration)
   }
 
   func testTwelveFrameAdmissionLimitIsBoundedAndRecoversAfterBurst() throws {

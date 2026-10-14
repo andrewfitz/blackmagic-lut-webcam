@@ -150,18 +150,24 @@ final class CaptureController: @unchecked Sendable {
         self.sampleFactory.reset()
         self.cameraConnected = false
         self.cameraMessage = "Waiting for detected input"
-        // Warm pixel resources before enabling native capture. Input duration
-        // is still unknown; automatic capture negotiates output on its first frame.
+        // Connect and warm before enabling driver callbacks. Cold CMIO/GPU
+        // setup on the first frame can otherwise overflow the admission FIFO.
+        // The remembered rate is provisional: the first validated frame still
+        // establishes the exact contract, and only received data sets metadata.
         let warm = self.effectiveConfiguration(inputFast: configuration.inputFast)
-        if previewEnabled && (self.previewRenderers.contains { $0.isVisible } || self.services.preview != nil) {
+        if let type = self.services.capturePixelFormat {
+          try self.establish(warm, inputType: type)
+        } else if self.services.startAutomatic == nil {
+          try self.establish(warm, inputType: kCVPixelFormatType_422YpCbCr10)
+        }
+        guard self.isCurrent(token) else { self.stopResources(); return }
+        let hasPreview = previewEnabled &&
+          (self.previewRenderers.contains { $0.isVisible } || self.services.preview != nil)
+        if self.cameraConnected || hasPreview {
           try self.ensurePrepared(warm)
           if warm.untouched, let type = self.services.capturePixelFormat {
             try self.deliveryStager.prepare(width: 3840, height: 2160, pixelFormat: type)
           }
-        }
-        if self.services.startAutomatic == nil {
-          try self.establish(warm, inputType: kCVPixelFormatType_422YpCbCr10)
-          if self.cameraConnected { try self.ensurePrepared(warm) }
         }
         guard self.isCurrent(token) else { self.stopResources(); return }
         self.lock.withLock {
