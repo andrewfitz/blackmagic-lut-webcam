@@ -125,6 +125,38 @@ import XCTest
     }
   }
 
+  func testMalformedChromaCannotReachTransportOrExtensionSource() throws {
+    let width = 1920
+    let height = 1080
+    let storage = UnsafeMutableRawPointer.allocate(byteCount: width * height * 2, alignment: 64)
+    var addresses: [UnsafeMutableRawPointer?] = [storage, storage.advanced(by: width * height)]
+    var widths = [width, width / 2]
+    var heights = [height, height] // NV12 must have half-height chroma.
+    var strides = [width, width]
+    var image: CVPixelBuffer?
+    let status = CVPixelBufferCreateWithPlanarBytes(nil, width, height,
+      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, 0, 2,
+      &addresses, &widths, &heights, &strides, { context, _, _, _, _ in context?.deallocate() },
+      storage, nil, &image)
+    guard status == kCVReturnSuccess, let image else {
+      storage.deallocate()
+      throw VideoError.message("Cannot construct malformed chroma fixture (\(status)).")
+    }
+    let frame = try VideoContract.sample(image, at: CMTime(value: 1, timescale: 1), duration: VideoContract.fastDuration)
+    XCTAssertThrowsError(try CameraFrameStager().stage(frame))
+    let sink = CameraSink(bufferQueue: try bufferQueue())
+    XCTAssertThrowsError(try sink.send(frame))
+    var emitted = 0
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false, output: { _, _, _ in emitted += 1 })
+    try camera.queue.sync {
+      try camera.source.startStream()
+      XCTAssertFalse(camera.receive(frame, discontinuity: []))
+      XCTAssertNil(camera.latest)
+      XCTAssertEqual(emitted, 0)
+      try camera.source.stopStream()
+    }
+  }
+
   func testStandbyBlackAndFormatChangesAcrossAllModes() throws {
     var now = CMTime(value: 60_000, timescale: 60_000)
     var emitted: CMSampleBuffer?

@@ -72,6 +72,10 @@ final class CaptureController: @unchecked Sendable {
   private var processingMS: Double = 0
   private var lastPublished: Double = 0
   private var cameraConnected = false
+  private var reconnectAttempts = 0
+  private var cameraOutage = false
+  private var reconnectRequested = false
+  private var reconnectAfter: Double = 0
   private var cameraMessage = "Virtual camera not connected"
   private var message = "Stopped"
   private var frameRateGate = FrameRateGate()
@@ -86,6 +90,12 @@ final class CaptureController: @unchecked Sendable {
     additionalPreviewRenderers: [VideoPreviewRenderer] = []) {
     self.services = services
     previewRenderers = (previewRenderer.map { [$0] } ?? []) + additionalPreviewRenderers
+  }
+
+  deinit {
+    // Every executing controller operation retains self. Final release has
+    // exclusive resource access, even if its owner omitted an explicit Stop.
+    stopResources()
   }
 
   func load(_ cube: CubeLUT, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
@@ -218,9 +228,10 @@ final class CaptureController: @unchecked Sendable {
   func reconfigure(configuration: PipelineConfiguration, pipelineEnabled: Bool) {
     let token = lock.withLock { generation }
     queue.async {
-      guard self.isCurrent(token) else { return }
+      guard self.isAccepting(token) else { return }
       self.configuration = configuration
       self.pipelineEnabled = pipelineEnabled
+      if !self.cameraConnected { self.reconnectRequested = true }
       self.applied = nil
       self.outputLabel = ""
       self.sampleFactory.reset()
@@ -234,7 +245,7 @@ final class CaptureController: @unchecked Sendable {
   func setPreviewEnabled(_ enabled: Bool) {
     let token = lock.withLock { generation }
     queue.async {
-      guard self.isCurrent(token) else { return }
+      guard self.isAccepting(token) else { return }
       self.previewEnabled = enabled
       if !enabled { self.previewRenderers.forEach { $0.flush() } }
       self.publishCurrent(token: token)
@@ -271,6 +282,10 @@ final class CaptureController: @unchecked Sendable {
     services.stop()
     services.disconnect()
     cameraConnected = false
+    reconnectAttempts = 0
+    cameraOutage = false
+    reconnectRequested = false
+    reconnectAfter = 0
     cameraMessage = "Virtual camera not connected"
     activeConfiguration = nil
     activeInputType = nil
@@ -319,24 +334,43 @@ final class CaptureController: @unchecked Sendable {
 
   private func establish(_ next: PipelineConfiguration, inputType: OSType) throws {
     let prior = activeConfiguration
-    if let prior, prior.width == next.width, prior.height == next.height,
-      prior.pixelFormat == next.pixelFormat, prior.duration == next.duration,
-      prior.untouched == next.untouched, activeInputType == inputType {
+    let sameContract = prior.map {
+      $0.width == next.width && $0.height == next.height &&
+        $0.pixelFormat == next.pixelFormat && $0.duration == next.duration &&
+        $0.untouched == next.untouched && activeInputType == inputType
+    } ?? false
+    let now = ProcessInfo.processInfo.systemUptime
+    if sameContract {
       activeConfiguration = next
-      return
+      guard !cameraConnected, (reconnectRequested || reconnectAttempts > 0), now >= reconnectAfter else { return }
+      if reconnectAttempts > 0 { reconnectAttempts -= 1 }
     }
+    let wasConnected = cameraConnected
     services.disconnect()
     cameraConnected = false
-    if prior != nil { deliveryStager = CameraFrameStager() }
+    reconnectRequested = false
+    reconnectAfter = now + max(0, services.cameraRetryInterval)
+    // A retry of the same contract must preserve prepared transport resources
+    // and the existing source cadence used by the surviving local preview.
+    if prior != nil && !sameContract { deliveryStager = CameraFrameStager() }
     do {
       try services.connect(next, inputType)
       cameraConnected = true
       cameraMessage = "Virtual camera connected — choose UltraStudio LUT in Zoom"
-    } catch { cameraMessage = "Camera output unavailable — \(error.localizedDescription)" }
+    } catch {
+      cameraMessage = "Camera output unavailable — \(error.localizedDescription)"
+      if wasConnected { beginCameraRecovery() }
+    }
     activeConfiguration = next
     activeInputType = inputType
     if prior?.duration != next.duration { frameRateGate = FrameRateGate() }
-    sampleFactory.reset()
+    if !sameContract { sampleFactory.reset() }
+  }
+
+  private func beginCameraRecovery() {
+    guard !cameraOutage else { return }
+    cameraOutage = true
+    reconnectAttempts = 3
   }
 
   private func receive(_ image: CVPixelBuffer, at pts: CMTime, duration: CMTime?,
@@ -392,6 +426,7 @@ final class CaptureController: @unchecked Sendable {
       return
     }
     do {
+      try VideoBufferLayout.validate(input)
       let effective = effectiveConfiguration(inputFast: actual.duration == VideoContract.fastDuration)
       try establish(effective, inputType: actual.type)
       guard isAccepting(token) else { return }
@@ -421,15 +456,7 @@ final class CaptureController: @unchecked Sendable {
       guard isAccepting(token) else { return }
       // Temporal selection remains last; bypass retains the source duration.
       guard frameRateGate.shouldDeliver(frame.pts, duration: effective.duration) else { return }
-      if let last = lastDeliveredSourceTime, CMTimeCompare(frame.pts, last) < 0 { firstSourceTime = nil }
-      if firstSourceTime == nil || CMTimeCompare(frame.pts, firstSourceTime!) < 0 {
-        firstSourceTime = frame.pts
-        firstHostTime = CMClockGetTime(CMClockGetHostTimeClock())
-        if let last = lastDeliveredHostTime {
-          firstHostTime = CMTimeMaximum(firstHostTime, CMTimeAdd(last, effective.duration))
-        }
-      }
-      let time = CMTimeAdd(firstHostTime, CMTimeSubtract(frame.pts, firstSourceTime!))
+      let time = hostTime(for: frame.pts, duration: effective.duration)
       let original = try sampleFactory.sample(rendered, at: time, duration: effective.duration)
       let sample: CMSampleBuffer
       if effective.untouched && (cameraConnected || !visible.isEmpty) {
@@ -446,10 +473,21 @@ final class CaptureController: @unchecked Sendable {
         services.preview?(sample)
       }
       if cameraConnected {
-        do { if !(try services.send(sample)) { cameraDrops &+= 1 } }
+        do {
+          if try services.send(sample) {
+            // An opened queue is not proof of recovery. Only a successful
+            // frame send ends the outage and permits a fresh retry budget.
+            cameraOutage = false
+            reconnectAttempts = 0
+          } else { cameraDrops &+= 1 }
+        }
         catch {
+          cameraDrops &+= 1
           services.disconnect()
           cameraConnected = false
+          beginCameraRecovery()
+          reconnectRequested = false
+          reconnectAfter = ProcessInfo.processInfo.systemUptime + max(0, services.cameraRetryInterval)
           cameraMessage = "Camera output disconnected — \(error.localizedDescription)"
         }
       }
@@ -469,6 +507,28 @@ final class CaptureController: @unchecked Sendable {
       publishIfDue(token: token, force: frames == 1 || metadataChanged)
     } catch VideoError.outputBackPressure { poolDrops &+= 1 }
     catch { fail(error.localizedDescription, token: token) }
+  }
+
+  private func hostTime(for sourceTime: CMTime, duration: CMTime) -> CMTime {
+    let now = services.hostTime()
+    var reset = firstSourceTime == nil
+    if let last = lastDeliveredSourceTime, CMTimeCompare(sourceTime, last) < 0 { reset = true }
+    if let origin = firstSourceTime {
+      let mapped = CMTimeAdd(firstHostTime, CMTimeSubtract(sourceTime, origin))
+      // Preserve normal source cadence independently of GPU completion jitter.
+      // A discontinuous source clock must not schedule output seconds into the
+      // future. Late processing alone must preserve source cadence, including
+      // a costly hot change that temporarily puts its first frame behind now.
+      if CMTimeSubtract(mapped, now).seconds > 0.5 { reset = true }
+    }
+    if reset {
+      firstSourceTime = sourceTime
+      firstHostTime = now
+      if let last = lastDeliveredHostTime {
+        firstHostTime = CMTimeMaximum(firstHostTime, CMTimeAdd(last, duration))
+      }
+    }
+    return CMTimeAdd(firstHostTime, CMTimeSubtract(sourceTime, firstSourceTime!))
   }
 
   private func publishIfDue(token: UInt64, force: Bool = false) {
@@ -553,6 +613,8 @@ struct CaptureServices: @unchecked Sendable {
   // Known backend storage layout is used only to prepare transport memory;
   // displayed input metadata always comes from received buffers and duration.
   var capturePixelFormat: OSType?
+  var hostTime: () -> CMTime = { CMClockGetTime(CMClockGetHostTimeClock()) }
+  var cameraRetryInterval: TimeInterval = 2
 
   static func live() -> CaptureServices {
     let backend = UDLBackend()

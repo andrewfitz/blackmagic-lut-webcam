@@ -98,6 +98,7 @@ final class CameraFrameStager {
     lastRawCopyTiming = nil
 #endif
     guard let input = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Camera sample has no image.") }
+    try VideoBufferLayout.validate(input)
     if CVPixelBufferGetIOSurface(input) != nil { return sample }
     let width = CVPixelBufferGetWidth(input)
     let height = CVPixelBufferGetHeight(input)

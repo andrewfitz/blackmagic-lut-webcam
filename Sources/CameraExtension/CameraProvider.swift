@@ -137,6 +137,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   @discardableResult
   func receive(_ sample: CMSampleBuffer, discontinuity: CMIOExtensionStream.DiscontinuityFlags) -> Bool {
     guard CMSampleBufferDataIsReady(sample), let image = CMSampleBufferGetImageBuffer(sample) else { return false }
+    guard (try? VideoBufferLayout.validate(image)) != nil else { return false }
     let expected = formats[activeIndex].formatDescription
     let dimensions = CMVideoFormatDescriptionGetDimensions(expected)
     let time = CMSampleBufferGetPresentationTimeStamp(sample)

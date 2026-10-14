@@ -216,6 +216,8 @@ private final class CaptureHarness: @unchecked Sendable {
   private var sendTotal = 0
   private var attemptTotal = 0
   private var captureActive = false
+  private var connectionFailures = 0
+  private var sendFailures = 0
   private var samples = [CMSampleBuffer]()
   private var latest: CMSampleBuffer?
   private var latestPreview: CMSampleBuffer?
@@ -257,6 +259,8 @@ private final class CaptureHarness: @unchecked Sendable {
 
   func releaseOutputs() { lock.withLock { samples.removeAll(); latest = nil; latestPreview = nil } }
   func observeDelivery(_ observer: ((Int) -> Void)?) { lock.withLock { deliveryObserver = observer } }
+  func failNextConnections(_ count: Int) { lock.withLock { connectionFailures = count } }
+  func failNextSends(_ count: Int) { lock.withLock { sendFailures = count } }
 
   func emit(_ image: CVPixelBuffer, frame: Int, from generation: Int? = nil) {
     let handler = lock.withLock { handlers[generation ?? handlers.count - 1] }
@@ -287,7 +291,10 @@ private final class CaptureHarness: @unchecked Sendable {
       connect: { configuration, pixelFormat in
         try self.lock.withLock {
           self.connections.append((configuration, pixelFormat))
-          if self.failConnecting { throw VideoError.message("Synthetic virtual camera unavailable") }
+          if self.failConnecting || self.connectionFailures > 0 {
+            self.connectionFailures = max(0, self.connectionFailures - 1)
+            throw VideoError.message("Synthetic virtual camera unavailable")
+          }
         }
       },
       disconnect: {
@@ -296,7 +303,10 @@ private final class CaptureHarness: @unchecked Sendable {
       send: { sample in
         let delivery: (Int, ((Int) -> Void)?) = try self.lock.withLock {
           self.attemptTotal += 1
-          if self.failSending { throw VideoError.message("Synthetic consumer disconnected") }
+          if self.failSending || self.sendFailures > 0 {
+            self.sendFailures = max(0, self.sendFailures - 1)
+            throw VideoError.message("Synthetic consumer disconnected")
+          }
           self.sendTotal += 1
           self.cameraSampleIDs.append(ObjectIdentifier(sample))
           self.latest = sample
@@ -653,6 +663,35 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     try assertCameraContract(harness, sample: resetSample)
   }
 
+  func testForwardSourceClockJumpReanchorsWithoutSchedulingFutureVideo() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config, pipelineEnabled: false)
+    let source = try EndToEndChecks.source()
+    harness.emitAutomatic(source, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Initial clock anchor must deliver") { harness.sent == 1 }
+    let initial = try XCTUnwrap(harness.lastSample)
+    allowQueueWork(0.04)
+    let beforeJump = CMClockGetTime(CMClockGetHostTimeClock())
+    let discontinuity = CMTime(value: 3600, timescale: 1)
+    harness.emitAutomatic(source, at: discontinuity, duration: VideoContract.fastDuration)
+    awaitCondition("A forward clock discontinuity must keep output live") { harness.sent == 2 }
+    let afterJump = try XCTUnwrap(harness.lastSample)
+    let outputTime = CMSampleBufferGetPresentationTimeStamp(afterJump)
+    XCTAssertGreaterThanOrEqual(CMTimeCompare(outputTime, beforeJump), 0)
+    XCTAssertLessThanOrEqual(CMTimeCompare(outputTime, CMClockGetTime(CMClockGetHostTimeClock())), 0,
+      "Do not schedule camera/preview an hour into the future after a source clock jump")
+    XCTAssertGreaterThan(CMTimeCompare(outputTime, CMSampleBufferGetPresentationTimeStamp(initial)), 0)
+    harness.emitAutomatic(source, at: CMTimeAdd(discontinuity, VideoContract.fastDuration), duration: VideoContract.fastDuration)
+    awaitCondition("Cadence must resume at the new source origin") { harness.sent == 3 }
+    let resumed = try XCTUnwrap(harness.lastSample)
+    XCTAssertEqual(CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(resumed), outputTime).seconds,
+      VideoContract.fastDuration.seconds, accuracy: 0.000000002)
+    XCTAssertTrue(harness.lastPreview === resumed)
+    XCTAssertEqual(harness.starts, 1)
+  }
+
   func testNonzeroSourceTimestampEpochCannotReachCameraOrPreview() throws {
     let harness = CaptureHarness()
     let controller = CaptureController(services: harness.services(automatic: true))
@@ -777,6 +816,19 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     XCTAssertEqual(harness.previewed, 0)
   }
 
+  func testControllerFinalReleaseStopsOwnedCaptureWithoutExplicitStop() throws {
+    let harness = CaptureHarness()
+    var controller: CaptureController? = CaptureController(services: harness.services())
+    weak let releasedController = controller
+    ready(try XCTUnwrap(controller), harness: harness, configuration: config)
+    XCTAssertTrue(harness.active)
+    controller = nil
+    awaitCondition("Final controller release must close native capture") { !harness.active }
+    XCTAssertNil(releasedController)
+    XCTAssertEqual(harness.stops, 2, "Start cleanup plus final teardown must both settle native resources")
+    XCTAssertGreaterThanOrEqual(harness.disconnects, 2)
+  }
+
   func testRestartRejectsFramesFromPreviousDriverCallback() throws {
     let harness = CaptureHarness()
     let controller = CaptureController(services: harness.services())
@@ -854,6 +906,33 @@ private final class PacedDriverMetrics: @unchecked Sendable {
       "A fatal frame must invalidate accepted work queued behind it, not only new callbacks")
   }
 
+  func testFatalInputCannotHaveStoppedStatusOverwrittenByQueuedUIChanges() throws {
+    let started = expectation(description: "Native start held while work is queued")
+    let gate = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(startGate: gate, started: started)
+    let statuses = CaptureStatusRecorder()
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop(); gate.signal() }
+    controller.onUpdate = { statuses.record($0) }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [started], timeout: 5)
+    var malformed: CVPixelBuffer?
+    XCTAssertEqual(CVPixelBufferCreate(nil, 64, 64,
+      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &malformed), kCVReturnSuccess)
+    harness.emit(try XCTUnwrap(malformed), frame: 0)
+    controller.reconfigure(configuration: config, pipelineEnabled: false)
+    controller.setPreviewEnabled(false)
+    gate.signal()
+    awaitCondition("Fatal input must publish a stopped status") { !statuses.failures.isEmpty }
+    allowQueueWork()
+    XCTAssertEqual(statuses.last?.stopped, true,
+      "Queued UI changes after a fatal frame must not replace the stopped state")
+    XCTAssertTrue(statuses.last?.message.contains("Expected 4K 10-bit 4:2:2") == true)
+    XCTAssertFalse(harness.active)
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.negotiated.count, 1)
+  }
+
   func testStalledConsumerPoolPressureDropsThenRecoversWithoutRestart() throws {
     let harness = CaptureHarness(retainOutputs: true)
     let controller = CaptureController(services: harness.services())
@@ -923,6 +1002,133 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     XCTAssertEqual(harness.attempts, 1, "Do not keep writing to a disconnected virtual camera")
     XCTAssertEqual(harness.starts, 1)
     XCTAssertEqual(harness.stops, 1)
+  }
+
+  func testTransientCameraLossRetriesWithoutReopeningCaptureOrBreakingPreviewCadence() throws {
+    let harness = CaptureHarness()
+    harness.failNextSends(1)
+    var services = harness.services(automatic: true)
+    services.cameraRetryInterval = 0.03
+    let controller = CaptureController(services: services)
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    let source = try EndToEndChecks.source()
+    harness.emitAutomatic(source, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Failed camera send must leave the first preview running") { harness.previewed == 1 }
+    awaitCondition("The rejected camera frame must be counted") { statuses.last?.cameraDrops == 1 }
+    XCTAssertEqual(harness.sent, 0)
+    allowQueueWork(0.04)
+    harness.emitAutomatic(source, at: VideoContract.fastDuration, duration: VideoContract.fastDuration)
+    awaitCondition("Camera must recover after the bounded retry delay") { harness.sent == 1 }
+    XCTAssertEqual(harness.negotiated.count, 2)
+    XCTAssertEqual(harness.previewed, 2)
+    XCTAssertEqual(harness.starts, 1, "Virtual-camera recovery must not reopen physical capture")
+    XCTAssertTrue(harness.lastPreview === harness.lastSample)
+    let timing = harness.previewTiming
+    XCTAssertEqual(CMTimeSubtract(timing[1].0, timing[0].0).seconds,
+      VideoContract.fastDuration.seconds, accuracy: 0.000000002)
+  }
+
+  func testTransientCameraRetryBudgetIsFiniteAndInitialAbsenceStaysQuiet() throws {
+    let source = try EndToEndChecks.source()
+    let harness = CaptureHarness()
+    var services = harness.services(automatic: true)
+    XCTAssertEqual(services.cameraRetryInterval, 2)
+    services.cameraRetryInterval = 0
+    let controller = CaptureController(services: services)
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config)
+    harness.emitAutomatic(source, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Initial camera must deliver") { harness.sent == 1 }
+    harness.failNextConnections(10)
+    harness.failNextSends(1)
+    for frame in 1...6 {
+      harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)),
+        duration: VideoContract.fastDuration)
+      awaitCondition("Preview must survive every failed reconnect") { harness.previewed == frame + 1 }
+    }
+    XCTAssertEqual(harness.negotiated.count, 4, "Only three automatic reconnect attempts follow a connected camera loss")
+    XCTAssertEqual(harness.attempts, 2, "Disconnected frames cannot be written to a dead queue")
+    controller.reconfigure(configuration: config, pipelineEnabled: true)
+    allowQueueWork()
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 7),
+      duration: VideoContract.fastDuration)
+    awaitCondition("An explicit same-contract reconfiguration can request another connection") { harness.previewed == 8 }
+    XCTAssertEqual(harness.negotiated.count, 5)
+
+    let absent = CaptureHarness(failConnecting: true)
+    var absentServices = absent.services(automatic: true)
+    absentServices.cameraRetryInterval = 0
+    let absentController = CaptureController(services: absentServices)
+    defer { absentController.onUpdate = nil; absentController.stop() }
+    ready(absentController, harness: absent, configuration: config)
+    for frame in 0..<4 {
+      absent.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)),
+        duration: VideoContract.fastDuration)
+      awaitCondition("An unsigned/absent camera must still allow local preview") { absent.previewed == frame + 1 }
+    }
+    XCTAssertEqual(absent.negotiated.count, 1, "Initial extension absence must not create an automatic retry loop")
+    absentController.reconfigure(configuration: config, pipelineEnabled: true)
+    allowQueueWork()
+    absent.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 4),
+      duration: VideoContract.fastDuration)
+    awaitCondition("Explicit reconfiguration retries an initially absent camera once") { absent.previewed == 5 }
+    XCTAssertEqual(absent.negotiated.count, 2)
+    XCTAssertEqual(absent.starts, 1)
+  }
+
+  func testSuccessfulReconnectWithoutSuccessfulSendCannotRenewRetryBudget() throws {
+    let harness = CaptureHarness(failSending: true)
+    var services = harness.services(automatic: true)
+    services.cameraRetryInterval = 0
+    let controller = CaptureController(services: services)
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config)
+    let source = try EndToEndChecks.source()
+    for frame in 0..<7 {
+      harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)),
+        duration: VideoContract.fastDuration)
+      awaitCondition("Broken camera queues must leave preview live") { harness.previewed == frame + 1 }
+    }
+    XCTAssertEqual(harness.negotiated.count, 4,
+      "Opening a new queue without ever delivering must not renew the three-retry budget")
+    XCTAssertEqual(harness.attempts, 4)
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.starts, 1)
+  }
+
+  func testMalformedPlanarInputCannotReachCompleteBypassCameraOrPreview() throws {
+    let width = 3840
+    let height = 2160
+    let stride = width * 2
+    let storage = UnsafeMutableRawPointer.allocate(byteCount: stride * height * 2, alignment: 64)
+    var addresses: [UnsafeMutableRawPointer?] = [storage, storage.advanced(by: stride * height)]
+    var widths = [width, width / 4]
+    var heights = [height, height]
+    var strides = [stride, stride]
+    var image: CVPixelBuffer?
+    let status = CVPixelBufferCreateWithPlanarBytes(nil, width, height,
+      kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange, nil, 0, 2,
+      &addresses, &widths, &heights, &strides, { context, _, _, _, _ in context?.deallocate() },
+      storage, nil, &image)
+    guard status == kCVReturnSuccess, let image else {
+      storage.deallocate()
+      throw VideoError.message("Cannot create malformed plane fixture (\(status)).")
+    }
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config, pipelineEnabled: false)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    harness.emitAutomatic(image, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Malformed planar metadata must stop even complete bypass") { !statuses.failures.isEmpty }
+    XCTAssertEqual(harness.processingTiming.count, 0)
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.previewed, 0)
+    XCTAssertEqual(harness.negotiated.count, 0, "Reject malformed layouts before advertising an output contract")
   }
 
   func testPacedNativeTenBitFeedPreservesEverySelectedPreviewSample() throws {
