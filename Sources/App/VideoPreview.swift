@@ -379,17 +379,20 @@ final class VideoPreviewRenderer: @unchecked Sendable {
         diagnostics.stagingFrames += 1
       }
 #endif
-      guard let image = CMSampleBufferGetImageBuffer(staged),
-        let format = CMSampleBufferGetFormatDescription(staged), CMSampleBufferDataIsReady(staged) else {
+      guard CMSampleBufferGetImageBuffer(staged) != nil,
+        CMSampleBufferGetFormatDescription(staged) != nil, CMSampleBufferDataIsReady(staged) else {
         throw VideoError.message("Preview sample has no ready video image.")
       }
-      var timing = CMSampleTimingInfo()
-      var status = CMSampleBufferGetSampleTimingInfo(staged, at: 0, timingInfoOut: &timing)
-      guard status == noErr else { throw VideoError.message("Preview sample timing is unavailable (\(status)).") }
       var preview: CMSampleBuffer?
-      status = CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
-        imageBuffer: image, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &preview)
-      guard status == noErr, let preview else { throw VideoError.message("Cannot create preview sample (\(status)).") }
+      // Retain the existing image/format pairing rather than reconstructing it.
+      // Shared native image consumers can add color metadata after the source
+      // sample was created; revalidation then intermittently rejects that valid
+      // original sample with InvalidMediaFormat. Copying the sample preserves
+      // its original format and timing without copying pixels, while providing
+      // independent per-sample attachment dictionaries for preview scheduling.
+      let status = CMSampleBufferCreateCopy(allocator: kCFAllocatorDefault,
+        sampleBuffer: staged, sampleBufferOut: &preview)
+      guard status == noErr, let preview else { throw VideoError.message("Cannot copy preview sample (\(status)).") }
       // Independent sample attachments leave the camera's original sample and
       // media timing untouched. A live preview always shows the newest image.
       let attachments = CMSampleBufferGetSampleAttachmentsArray(preview, createIfNecessary: true)! as NSArray

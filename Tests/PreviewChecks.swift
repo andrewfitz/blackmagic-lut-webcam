@@ -184,6 +184,44 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertEqual(renderer.diagnosticsSnapshot().failed, 0)
   }
 
+  func testLateImageMetadataDoesNotRejectOrMutateOriginalSample() throws {
+    let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
+    let window = attach(renderer)
+    defer { renderer.flush(); window.close() }
+    let image = try source(width: 640, height: 360,
+      format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    let sample = try VideoContract.sample(image, at: CMClockGetTime(CMClockGetHostTimeClock()),
+      duration: VideoContract.fastDuration)
+    let format = try XCTUnwrap(CMSampleBufferGetFormatDescription(sample))
+    let attachments = try XCTUnwrap(CMSampleBufferGetSampleAttachmentsArray(sample,
+      createIfNecessary: true)) as NSArray
+    let original = unsafeBitCast(attachments[0] as AnyObject, to: CFMutableDictionary.self)
+    CFDictionarySetValue(original, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(),
+      Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+    // Native consumers share this image. Metadata added after sample creation
+    // must not force preview to reconstruct the camera's already-valid sample.
+    CVBufferSetAttachment(image, kCVImageBufferTransferFunctionKey,
+      kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
+    XCTAssertFalse(CMVideoFormatDescriptionMatchesImageBuffer(format, imageBuffer: image))
+    renderer.enqueue(sample)
+    let deadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().enqueued == 0
+      && renderer.diagnosticsSnapshot().failed == 0 && Date() < deadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 1)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().failed, 0,
+      renderer.diagnosticsSnapshot().lastError ?? "Late image metadata must not reject preview")
+    XCTAssertTrue(CMSampleBufferGetImageBuffer(sample) === image)
+    XCTAssertTrue(CMSampleBufferGetFormatDescription(sample) === format)
+    XCTAssertFalse(CFDictionaryContainsKey(original,
+      Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque()),
+      "A nonempty camera attachment dictionary must remain independent from preview")
+    XCTAssertTrue(CFDictionaryContainsKey(original,
+      Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque()))
+    XCTAssertEqual(CMSampleBufferGetDuration(sample), VideoContract.fastDuration)
+  }
+
   func testHiddenAndUnattachedPreviewDoesNoFrameWork() throws {
     let renderer = VideoPreviewRenderer()
     let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)

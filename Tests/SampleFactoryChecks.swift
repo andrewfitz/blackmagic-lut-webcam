@@ -141,4 +141,35 @@ private final class FactoryReleaseCounter: @unchecked Sendable {
     factory.reset()
     XCTAssertEqual(counter.releases, 1)
   }
+
+#if CAPTURE_LIFECYCLE_TESTS
+  func testNativeMetadataUpdateBetweenCacheValidationAndCreationRefreshesOnce() throws {
+    let factory = VideoSampleFactory()
+    let source = try image()
+    let first = try factory.sample(source, at: .zero, duration: VideoContract.fastDuration)
+    let initialFormat = try description(first)
+    XCTAssertTrue(CMVideoFormatDescriptionMatchesImageBuffer(initialFormat, imageBuffer: source))
+    // Make the precise cache-validation race deterministic, rather than hoping
+    // an asynchronous native renderer happens to update this shared image.
+    factory.beforeSampleCreationForTesting = {
+      CVBufferSetAttachment(source, kCVImageBufferTransferFunctionKey,
+        kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+    }
+    let time = CMTime(value: 4321, timescale: 60_000)
+    let updated = try factory.sample(source, at: time, duration: VideoContract.slowDuration)
+    let updatedFormat = try description(updated)
+    XCTAssertFalse(initialFormat === updatedFormat)
+    XCTAssertTrue(CMVideoFormatDescriptionMatchesImageBuffer(updatedFormat, imageBuffer: source))
+    XCTAssertTrue(CFEqual(try XCTUnwrap(CMFormatDescriptionGetExtension(updatedFormat,
+      extensionKey: kCMFormatDescriptionExtension_TransferFunction)), kCVImageBufferTransferFunction_ITU_R_709_2))
+    XCTAssertTrue(CMSampleBufferGetImageBuffer(updated) === source)
+    XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(updated), time)
+    XCTAssertEqual(CMSampleBufferGetDuration(updated), VideoContract.slowDuration)
+    XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(first, createIfNecessary: false))
+    XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(updated, createIfNecessary: false))
+    let next = try factory.sample(source, at: time, duration: VideoContract.fastDuration)
+    XCTAssertTrue(try description(next) === updatedFormat,
+      "A recovered format must stay cached for ordinary frames")
+  }
+#endif
 }

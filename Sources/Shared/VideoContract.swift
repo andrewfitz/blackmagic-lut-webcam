@@ -51,30 +51,50 @@ enum VideoContract {
 // extensions before reusing a description; dimensions alone are insufficient.
 final class VideoSampleFactory {
   private var format: CMVideoFormatDescription?
+#if CAPTURE_LIFECYCLE_TESTS
+  var beforeSampleCreationForTesting: (() -> Void)?
+#endif
 
   func reset() { format = nil }
 
   func sample(_ buffer: CVPixelBuffer, at time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
+    let description: CMVideoFormatDescription
     if let format, CMVideoFormatDescriptionMatchesImageBuffer(format, imageBuffer: buffer) {
-      return try makeSample(buffer, format: format, at: time, duration: duration)
+      description = format
+    } else {
+      description = try refreshFormat(buffer)
     }
+#if CAPTURE_LIFECYCLE_TESTS
+    let beforeCreation = beforeSampleCreationForTesting
+    beforeSampleCreationForTesting = nil
+    beforeCreation?()
+#endif
+    var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: time, decodeTimeStamp: .invalid)
+    var sample: CMSampleBuffer?
+    var status = CMSampleBufferCreateReadyWithImageBuffer(
+      allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescription: description,
+      sampleTiming: &timing, sampleBufferOut: &sample)
+    // Native consumers can add image attachments between the cache validation
+    // above and sample creation. Refresh only for this exact mismatch, once;
+    // ordinary frames keep their cached description and every other error is
+    // reported immediately. Never spin if metadata keeps changing.
+    if status == kCMSampleBufferError_InvalidMediaFormat {
+      let refreshed = try refreshFormat(buffer)
+      status = CMSampleBufferCreateReadyWithImageBuffer(
+        allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescription: refreshed,
+        sampleTiming: &timing, sampleBufferOut: &sample)
+    }
+    guard status == noErr, let sample else { throw VideoError.message("Could not create sample (\(status)).") }
+    return sample
+  }
+
+  private func refreshFormat(_ buffer: CVPixelBuffer) throws -> CMVideoFormatDescription {
     var format: CMVideoFormatDescription?
     let status = CMVideoFormatDescriptionCreateForImageBuffer(
       allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &format)
     guard status == noErr, let format else { throw VideoError.message("Invalid pixel buffer (\(status)).") }
     self.format = format
-    return try makeSample(buffer, format: format, at: time, duration: duration)
-  }
-
-  private func makeSample(_ buffer: CVPixelBuffer, format: CMVideoFormatDescription,
-    at time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
-    var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: time, decodeTimeStamp: .invalid)
-    var sample: CMSampleBuffer?
-    let status = CMSampleBufferCreateReadyWithImageBuffer(
-      allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescription: format,
-      sampleTiming: &timing, sampleBufferOut: &sample)
-    guard status == noErr, let sample else { throw VideoError.message("Could not create sample (\(status)).") }
-    return sample
+    return format
   }
 }
 
