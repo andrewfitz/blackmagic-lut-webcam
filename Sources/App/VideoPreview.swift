@@ -17,6 +17,9 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     var failed: UInt64 = 0
     var pending = 0
     var lastError: String?
+    // Apple's performance counters belong to the renderer's lifetime, including
+    // frames displayed before flush. Keep that scope explicit and never combine
+    // these with per-run queue counters as though flush reset the native API.
     var rendererFrames: UInt64 = 0
     var rendererDropped: UInt64 = 0
     var rendererCorrupted: UInt64 = 0
@@ -26,10 +29,18 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   private let videoRenderer: AVSampleBufferVideoRenderer
   private let queue = DispatchQueue(label: "org.ultrastudiolut.preview", qos: .userInteractive)
   private let lock = NSLock()
-  private let stager = CameraFrameStager()
+  private var stager = CameraFrameStager()
   private var generation: UInt64 = 0
   private var pending: (CMSampleBuffer, UInt64)?
   private var scheduled = false
+  private var visible = false
+  private var metricsPending = false
+  private var metricsRequestedAt = -Double.infinity
+#if CAPTURE_LIFECYCLE_TESTS
+  // Bare command-line XCTest hosts may be classified as occluded by AppKit.
+  // This exists only in test builds; production always follows native visibility.
+  private var renderWhenUnattached = false
+#endif
   // Owned only by the preview queue; at most one readiness callback is armed.
   private var requesting = false
   private var diagnostics = Diagnostics()
@@ -42,16 +53,31 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     videoRenderer = layer.sampleBufferRenderer
   }
 
+#if CAPTURE_LIFECYCLE_TESTS
+  @MainActor convenience init(renderWhenUnattached: Bool) {
+    self.init()
+    self.renderWhenUnattached = renderWhenUnattached
+    visible = renderWhenUnattached
+  }
+
+  func setVisibilityForTesting(_ value: Bool) { setVisible(value) }
+#endif
+
   deinit {
     // Every executing queue/callback method holds self strongly. Deinit can
     // therefore stop the remaining weak callback without concurrent rendering.
     videoRenderer.stopRequestingMediaData()
   }
 
+  // Capture can check demand without visiting AppKit or dispatching to the main
+  // thread for every frame. The owning view publishes visibility on UI events.
+  var isVisible: Bool { lock.withLock { visible } }
+
   // One pending sample and one scheduled work item are retained, even if the
   // main thread or native display becomes busy. New frames replace stale ones.
   func enqueue(_ sample: CMSampleBuffer) {
     lock.withLock {
+      guard visible else { return }
       diagnostics.received &+= 1
       if pending != nil { diagnostics.replaced &+= 1 }
       pending = (sample, generation)
@@ -63,24 +89,50 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 
   func flush() {
     lock.withLock {
-      generation &+= 1
-      pending = nil
+      flushLocked(resetDiagnostics: true)
+    }
+  }
+
+  fileprivate func publishViewVisibility(_ value: Bool) {
+#if CAPTURE_LIFECYCLE_TESTS
+    guard !renderWhenUnattached else { return }
+#endif
+    setVisible(value)
+  }
+
+  private func setVisible(_ value: Bool) {
+    lock.withLock {
+      guard visible != value else { return }
+      visible = value
+      if !value { flushLocked(resetDiagnostics: false) }
+    }
+  }
+
+  // Caller holds lock so invalidation/flush is ordered before a reappearing
+  // view's first enqueue. Hidden views release pending/native images promptly.
+  private func flushLocked(resetDiagnostics: Bool) {
+    generation &+= 1
+    pending = nil
+    if resetDiagnostics {
+      let lifetime = (diagnostics.rendererFrames, diagnostics.rendererDropped, diagnostics.rendererCorrupted)
       diagnostics = Diagnostics()
-      // Queue insertion under the same lock orders the flush before any new
-      // generation's enqueue. Stale work cannot redisplay a stopped frame.
-      queue.async { [weak self] in
-        guard let self else { return }
-        let wasRequesting = self.requesting
-        if self.requesting {
-          self.videoRenderer.stopRequestingMediaData()
-          self.requesting = false
-        }
-        self.videoRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-        if wasRequesting {
-          self.lock.withLock {
-            if self.pending == nil { self.scheduled = false }
-            else { self.queue.async { [weak self] in self?.drainOne() } }
-          }
+      (diagnostics.rendererFrames, diagnostics.rendererDropped, diagnostics.rendererCorrupted) = lifetime
+    }
+    // Queue insertion under the same lock orders the flush before any new
+    // generation's enqueue. Stale work cannot redisplay a stopped frame.
+    queue.async { [weak self] in
+      guard let self else { return }
+      let wasRequesting = self.requesting
+      if self.requesting {
+        self.videoRenderer.stopRequestingMediaData()
+        self.requesting = false
+      }
+      self.videoRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
+      self.stager = CameraFrameStager()
+      if wasRequesting {
+        self.lock.withLock {
+          if self.pending == nil { self.scheduled = false }
+          else { self.queue.async { [weak self] in self?.drainOne() } }
         }
       }
     }
@@ -95,7 +147,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   }
 
   @MainActor func makeView() -> VideoPreviewView {
-    VideoPreviewView(displayLayer: displayLayer)
+    VideoPreviewView(renderer: self, displayLayer: displayLayer)
   }
 
   func loadPerformanceMetrics(_ completion: @escaping @Sendable (AVVideoPerformanceMetrics?) -> Void) {
@@ -103,11 +155,19 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   }
 
   func refreshPerformanceMetrics() {
-    let token = lock.withLock { generation }
+    let now = ProcessInfo.processInfo.systemUptime
+    let token = lock.withLock { () -> UInt64? in
+      guard visible, !metricsPending, now - metricsRequestedAt >= 1 else { return nil }
+      metricsPending = true
+      metricsRequestedAt = now
+      return generation
+    }
+    guard let token else { return }
     videoRenderer.loadVideoPerformanceMetrics { [weak self] metrics in
-      guard let self, let metrics else { return }
+      guard let self else { return }
       self.lock.withLock {
-        guard token == self.generation else { return }
+        self.metricsPending = false
+        guard token == self.generation, let metrics else { return }
         self.diagnostics.rendererFrames = UInt64(max(0, metrics.totalNumberOfFrames))
         self.diagnostics.rendererDropped = UInt64(max(0, metrics.numberOfDroppedFrames))
         self.diagnostics.rendererCorrupted = UInt64(max(0, metrics.numberOfCorruptedFrames))
@@ -130,7 +190,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 
   // false means a readiness callback owns resumption; never spin on readiness.
   private func render(_ sample: CMSampleBuffer, token: UInt64) -> Bool {
-    guard lock.withLock({ token == generation }) else { return true }
+    guard lock.withLock({ visible && token == generation }) else { return true }
     if videoRenderer.status == .failed || videoRenderer.requiresFlushToResumeDecoding {
       let error = videoRenderer.error?.localizedDescription ?? "Preview renderer required a reset."
       lock.withLock { diagnostics.failed &+= 1; diagnostics.lastError = error }
@@ -180,7 +240,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
       CFDictionarySetValue(attachment, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
         Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
       lock.withLock {
-        guard token == generation else { return }
+        guard visible && token == generation else { return }
         videoRenderer.enqueue(preview)
         diagnostics.enqueued &+= 1
       }
@@ -202,9 +262,11 @@ struct VideoPreview: NSViewRepresentable {
 }
 
 @MainActor final class VideoPreviewView: NSView {
+  private let renderer: VideoPreviewRenderer
   private let displayLayer: AVSampleBufferDisplayLayer
 
-  init(displayLayer: AVSampleBufferDisplayLayer) {
+  init(renderer: VideoPreviewRenderer, displayLayer: AVSampleBufferDisplayLayer) {
+    self.renderer = renderer
     self.displayLayer = displayLayer
     super.init(frame: .zero)
     wantsLayer = true
@@ -214,11 +276,46 @@ struct VideoPreview: NSViewRepresentable {
 
   required init?(coder: NSCoder) { nil }
 
+  deinit { NotificationCenter.default.removeObserver(self) }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    NotificationCenter.default.removeObserver(self)
+    if let window {
+      NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
+        name: NSWindow.didChangeOcclusionStateNotification, object: window)
+      NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
+        name: NSWindow.willCloseNotification, object: window)
+    }
+    publishVisibility()
+  }
+
+  override func viewDidHide() {
+    super.viewDidHide()
+    publishVisibility()
+  }
+
+  override func viewDidUnhide() {
+    super.viewDidUnhide()
+    publishVisibility()
+  }
+
+  @objc private func windowVisibilityChanged(_ notification: Notification) {
+    if notification.name == NSWindow.willCloseNotification { renderer.publishViewVisibility(false) }
+    else { publishVisibility() }
+  }
+
+  private func publishVisibility() {
+    renderer.publishViewVisibility(window?.isVisible == true && window?.occlusionState.contains(.visible) == true
+      && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty)
+  }
+
   override func layout() {
     super.layout()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     displayLayer.frame = bounds
     CATransaction.commit()
+    publishVisibility()
   }
 }

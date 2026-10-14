@@ -53,15 +53,17 @@ private final class PreviewTestCounters: @unchecked Sendable {
     return image
   }
 
-  private func attach(_ renderer: VideoPreviewRenderer) -> NSWindow {
+  private func attach(_ renderer: VideoPreviewRenderer, x: CGFloat = 80) -> NSWindow {
     _ = NSApplication.shared
-    let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 480, height: 270),
+    let window = NSWindow(contentRect: NSRect(x: x, y: 80, width: 480, height: 270),
       styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "Synthetic video preview check"
     window.isReleasedWhenClosed = false
     window.contentView = renderer.makeView()
     window.orderFrontRegardless()
     window.contentView?.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    print("PREVIEW HOST windowVisible=\(window.isVisible) occlusion=\(window.occlusionState.rawValue) viewBounds=\(window.contentView?.bounds ?? .zero) viewVisibleRect=\(window.contentView?.visibleRect ?? .zero) appActive=\(NSApplication.shared.isActive)")
     return window
   }
 
@@ -76,7 +78,7 @@ private final class PreviewTestCounters: @unchecked Sendable {
     ] {
       let image = try source(width: width, height: height, format: format, shareable: shareable)
       for duration in [VideoContract.fastDuration, VideoContract.slowDuration] {
-        let renderer = VideoPreviewRenderer()
+        let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
         let window = attach(renderer)
         defer { renderer.flush(); window.close() }
         let count = duration == VideoContract.fastDuration ? 30 : 15
@@ -122,7 +124,7 @@ private final class PreviewTestCounters: @unchecked Sendable {
   }
 
   func testFastProducerIsBoundedAndFlushRestartsWithoutStaleFrames() throws {
-    let renderer = VideoPreviewRenderer()
+    let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
     let window = attach(renderer)
     defer { renderer.flush(); window.close() }
     let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
@@ -136,5 +138,62 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertEqual(renderer.diagnosticsSnapshot().received, 1)
     XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 1)
     XCTAssertEqual(renderer.diagnosticsSnapshot().failed, 0)
+  }
+
+  func testHiddenAndUnattachedPreviewDoesNoFrameWork() throws {
+    let renderer = VideoPreviewRenderer()
+    let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    let sample = try VideoContract.sample(image, at: .zero, duration: VideoContract.fastDuration)
+    XCTAssertFalse(renderer.isVisible)
+    for _ in 0..<100 { renderer.enqueue(sample) }
+    XCTAssertEqual(renderer.diagnosticsSnapshot().received, 0)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0)
+    // Drive the lock-protected visibility contract without relying on a bare
+    // command-line host's desktop/space classification. Actual AppKit window
+    // notifications are verified in the built application separately.
+    renderer.setVisibilityForTesting(true)
+    renderer.enqueue(sample)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 1)
+    renderer.setVisibilityForTesting(false)
+    XCTAssertFalse(renderer.isVisible)
+    for _ in 0..<100 { renderer.enqueue(sample) }
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertEqual(renderer.diagnosticsSnapshot().received, 1)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0)
+    renderer.setVisibilityForTesting(true)
+    XCTAssertTrue(renderer.isVisible)
+    renderer.enqueue(sample)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 2)
+    renderer.setVisibilityForTesting(false)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertFalse(renderer.isVisible)
+    renderer.enqueue(sample)
+    XCTAssertEqual(renderer.diagnosticsSnapshot().received, 2)
+  }
+
+  func testMainAndMiniPreviewHaveIndependentVisibilityAndLayers() throws {
+    let main = VideoPreviewRenderer(), mini = VideoPreviewRenderer()
+    let mainView = main.makeView(), miniView = mini.makeView()
+    let mainLayer = try XCTUnwrap(mainView.layer?.sublayers?.first)
+    let miniLayer = try XCTUnwrap(miniView.layer?.sublayers?.first)
+    XCTAssertFalse(mainLayer === miniLayer, "A layer cannot serve two simultaneous preview surfaces")
+    let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    let sample = try VideoContract.sample(image, at: .zero, duration: VideoContract.fastDuration)
+    main.setVisibilityForTesting(true); mini.setVisibilityForTesting(true)
+    main.enqueue(sample); mini.enqueue(sample)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertEqual(main.diagnosticsSnapshot().enqueued, 1)
+    XCTAssertEqual(mini.diagnosticsSnapshot().enqueued, 1)
+    main.setVisibilityForTesting(false)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertFalse(main.isVisible)
+    XCTAssertTrue(mini.isVisible)
+    main.enqueue(sample); mini.enqueue(sample)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    XCTAssertEqual(main.diagnosticsSnapshot().enqueued, 1)
+    XCTAssertEqual(mini.diagnosticsSnapshot().enqueued, 2)
+    XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false))
   }
 }
