@@ -7,12 +7,31 @@ struct ExtensionInstallPreflight: Sendable {
   static let entitlement = "com.apple.developer.system-extension.install"
   let developerSigned: Bool
   let hasInstallEntitlement: Bool
+  let validLocalSignature: Bool
+  let localDevelopmentBuild: Bool
+
+  init(developerSigned: Bool, hasInstallEntitlement: Bool,
+    validLocalSignature: Bool = false, localDevelopmentBuild: Bool = false) {
+    self.developerSigned = developerSigned
+    self.hasInstallEntitlement = hasInstallEntitlement
+    self.validLocalSignature = validLocalSignature
+    self.localDevelopmentBuild = localDevelopmentBuild
+  }
 
   var unavailableReason: String? {
-    guard developerSigned, hasInstallEntitlement else {
-      return "Camera installation requires a developer-signed app with the system-extension install entitlement. Capture and preview still work."
+    guard hasInstallEntitlement,
+      developerSigned || (localDevelopmentBuild && validLocalSignature) else {
+      return localDevelopmentBuild ?
+        "This local development build needs a valid code signature and the system-extension install entitlement. Capture and preview still work." :
+        "Camera installation requires a developer-signed app with the system-extension install entitlement. Capture and preview still work."
     }
     return nil
+  }
+
+  var readyStatus: String {
+    unavailableReason ?? (localDevelopmentBuild ?
+      "Local camera-extension development build. macOS still controls installation and approval. Capture and preview still work." :
+      "Camera extension has not been requested.")
   }
 
   static func current() -> Self {
@@ -26,11 +45,13 @@ struct ExtensionInstallPreflight: Sendable {
     let valid = SecCodeCopySelf(flags, &code) == errSecSuccess && code != nil &&
       SecCodeCheckValidity(code!, flags, nil) == errSecSuccess
     var developerSigned = false
+    var validLocalSignature = false
     if valid, let code, SecCodeCopyStaticCode(code, flags, &staticCode) == errSecSuccess, let staticCode,
       SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
       let details = information as? [String: Any],
       let signatureFlags = details[kSecCodeInfoFlags as String] as? NSNumber {
-      developerSigned = details[kSecCodeInfoIdentifier as String] is String &&
+      validLocalSignature = details[kSecCodeInfoIdentifier as String] is String
+      developerSigned = validLocalSignature &&
         (details[kSecCodeInfoTeamIdentifier as String] as? String)?.isEmpty == false &&
         signatureFlags.uint32Value & SecCodeSignatureFlags.adhoc.rawValue == 0 &&
         (details[kSecCodeInfoCertificates as String] as? [SecCertificate])?.isEmpty == false
@@ -41,7 +62,13 @@ struct ExtensionInstallPreflight: Sendable {
       CFGetTypeID(value) == CFBooleanGetTypeID() {
       entitled = (value as? Bool) == true
     }
-    return Self(developerSigned: developerSigned, hasInstallEntitlement: entitled)
+#if UDL_LOCAL_DEVELOPMENT
+    let localDevelopmentBuild = true
+#else
+    let localDevelopmentBuild = false
+#endif
+    return Self(developerSigned: developerSigned, hasInstallEntitlement: entitled,
+      validLocalSignature: validLocalSignature, localDevelopmentBuild: localDevelopmentBuild)
   }
 }
 
@@ -92,9 +119,9 @@ final class ExtensionInstaller: NSObject, OSSystemExtensionRequestDelegate {
 
   init(services: Services) {
     self.services = services
-    let reason = services.preflight().unavailableReason
-    unavailableReason = reason
-    status = reason ?? "Camera extension has not been requested."
+    let preflight = services.preflight()
+    unavailableReason = preflight.unavailableReason
+    status = preflight.readyStatus
     super.init()
   }
 
@@ -103,14 +130,16 @@ final class ExtensionInstaller: NSObject, OSSystemExtensionRequestDelegate {
 
   private func requestChange(_ change: Change) {
     guard !pending else { return }
-    unavailableReason = services.preflight().unavailableReason
+    let preflight = services.preflight()
+    unavailableReason = preflight.unavailableReason
     guard canRequestChanges else { status = unavailableReason!; return }
     let request = services.makeRequest(change)
     activeRequest = request
     activeChange = change
     requestIdentity.set(ObjectIdentifier(request))
     pending = true
-    status = change == .install ? "Requesting camera extension activation…" : "Requesting camera extension removal…"
+    let scope = preflight.localDevelopmentBuild ? "local development camera extension" : "camera extension"
+    status = change == .install ? "Requesting \(scope) activation…" : "Requesting \(scope) removal…"
     request.delegate = self
     services.submit(request)
   }

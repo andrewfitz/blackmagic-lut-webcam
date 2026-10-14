@@ -45,6 +45,57 @@ import XCTest
     }
   }
 
+  func testValidLocalDevelopmentSignatureAndEntitlementPermitOneRequest() throws {
+    let harness = InstallerHarness()
+    harness.signing = ExtensionInstallPreflight(developerSigned: false, hasInstallEntitlement: true,
+      validLocalSignature: true, localDevelopmentBuild: true)
+    let installer = ExtensionInstaller(services: harness.services())
+    XCTAssertTrue(installer.canRequestChanges)
+    XCTAssertNil(installer.unavailableReason)
+    XCTAssertTrue(installer.status.contains("Local camera-extension development build"))
+    XCTAssertTrue(installer.status.contains("macOS still controls"))
+    XCTAssertFalse(installer.status.contains("developer-signed"))
+    installer.install()
+    installer.install()
+    installer.uninstall()
+    XCTAssertTrue(installer.pending)
+    XCTAssertEqual(harness.submitted.count, 1)
+    XCTAssertTrue(installer.status.contains("local development"))
+    installer.request(try XCTUnwrap(harness.submitted.first), didFinishWithResult: .completed)
+    callbacks()
+    XCTAssertFalse(installer.pending)
+  }
+
+  func testLocalSignatureCannotBypassBuildPolicyOrMissingRights() {
+    for (valid, entitled, localBuild) in [(false, true, true), (true, false, true),
+      (true, true, false), (false, false, true)] {
+      let harness = InstallerHarness()
+      harness.signing = ExtensionInstallPreflight(developerSigned: false, hasInstallEntitlement: entitled,
+        validLocalSignature: valid, localDevelopmentBuild: localBuild)
+      let installer = ExtensionInstaller(services: harness.services())
+      XCTAssertFalse(installer.canRequestChanges)
+      XCTAssertTrue(installer.status.contains("Capture and preview still work"))
+      installer.install()
+      installer.uninstall()
+      XCTAssertFalse(installer.pending)
+      XCTAssertEqual(harness.changes.count, 0)
+      XCTAssertEqual(harness.submitted.count, 0)
+    }
+  }
+
+  func testCurrentBuildPolicyComesFromCompilation() {
+    let current = ExtensionInstallPreflight.current()
+#if UDL_LOCAL_DEVELOPMENT
+    XCTAssertTrue(current.localDevelopmentBuild)
+#else
+    XCTAssertFalse(current.localDevelopmentBuild)
+#endif
+    let defaults = ExtensionInstallPreflight(developerSigned: false, hasInstallEntitlement: true)
+    XCTAssertFalse(defaults.validLocalSignature)
+    XCTAssertFalse(defaults.localDevelopmentBuild)
+    XCTAssertNotNil(defaults.unavailableReason)
+  }
+
   func testSigningIsRecheckedBeforeConstructingARequest() {
     let harness = InstallerHarness()
     let installer = ExtensionInstaller(services: harness.services())
