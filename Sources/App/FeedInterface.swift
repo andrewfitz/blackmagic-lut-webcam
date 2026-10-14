@@ -229,7 +229,7 @@ struct StartStopButton: View {
     .buttonStyle(.borderedProminent)
     .tint(model.running ? .secondary : .accentColor)
     .controlSize(.regular)
-    .disabled(!model.running && (model.selectedDevice.isEmpty || model.loading))
+    .disabled(!model.running && !model.canStartFeed)
     .help(model.running ? "Stop capture and camera output. ⌘↩" : model.loading ? "Waiting for the saved LUT to finish loading." : "Start capture using your selected settings. ⌘↩")
   }
 }

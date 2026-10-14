@@ -183,8 +183,12 @@ final class AppModel {
     capture.reconfigure(configuration: effectiveConfiguration, pipelineEnabled: pipelineEnabled)
   }
 
+  var canStartFeed: Bool {
+    !running && !loading && devices.contains { $0.id == selectedDevice }
+  }
+
   func start() {
-    guard !selectedDevice.isEmpty, !running else { return }
+    guard canStartFeed else { return }
     running = true
     previewReady = false
     update = CaptureUpdate(message: "Opening UltraStudio…")

@@ -19,7 +19,7 @@ struct UltraStudioLUTApp: App {
           if model.running { model.stop() } else { model.start() }
         }
         .keyboardShortcut(.return, modifiers: .command)
-        .disabled(!model.running && (model.selectedDevice.isEmpty || model.loading))
+        .disabled(!model.running && !model.canStartFeed)
         Divider()
         Toggle("Processing enabled", isOn: $model.pipelineEnabled)
           .keyboardShortcut("b", modifiers: [.command, .shift])
