@@ -10,13 +10,13 @@ enum VideoContract {
   static let slowDuration = CMTime(value: 1001, timescale: 30_000)
   static let fastDuration = CMTime(value: 1001, timescale: 60_000)
   static let captureAdmissionLimit = 12
-  static let previewPendingLimit = 12
+  static let previewPendingLimit = 24
   static let warmBufferCount = 3
   // Budget two FIFOs/current images plus a four-image native allowance each,
   // the three-slot CMIO queue, latest camera image and producer current image:
-  // 39 plus one safety slot. Native retention itself has no public bound; this
-  // caps our pool at 40, with allocations growing only on actual demand.
-  static let outputBufferLimit = 40
+  // 63 plus one safety slot. Native retention itself has no public bound; this
+  // caps our pool at 64, with allocations growing only on actual demand.
+  static let outputBufferLimit = 64
   static let tenBit422: [OSType] = [
     kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
     kCVPixelFormatType_422YpCbCr10BiPlanarFullRange,

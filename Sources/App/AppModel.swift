@@ -75,7 +75,8 @@ final class AppModel {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.update = update
-        self.previewReady = self.previewEnabled && update.previewDelivered
+        let previewReady = self.previewEnabled && update.previewDelivered
+        if self.previewReady != previewReady { self.previewReady = previewReady }
         if let inputFast = update.inputFast, self.configuration.inputFast != inputFast {
           self.restoringSettings = true
           self.configuration.inputFast = inputFast

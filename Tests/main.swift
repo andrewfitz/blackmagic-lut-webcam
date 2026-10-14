@@ -202,6 +202,7 @@ suite.addTest(XCTestSuite(forTestCaseClass: EndToEndChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: CameraContractChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: DeckLinkChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: PreviewChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: SettingsChecks.self))
 #if CAPTURE_LIFECYCLE_TESTS
 suite.addTest(XCTestSuite(forTestCaseClass: CaptureLifecycleChecks.self))
 #endif
