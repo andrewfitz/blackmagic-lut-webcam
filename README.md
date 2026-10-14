@@ -31,11 +31,24 @@ used only when camera transport or native display requires shareable memory. Fra
 can still be enabled independently. A processed 10-bit output is high-precision
 video, but the LUT intentionally changes its pixel values.
 
-Controls are locked while streaming. Stop the feed before changing its format.
-The camera publishes supported 4K/1080p, 10-bit 4:2:2/8-bit 4:2:0 modes. Consumers
-must accept the selected format; the extension refuses silent format changes
-while the producer is running. Apps restricted to another format need compatible
-checkbox settings.
+**Processing enabled** controls the whole pipeline independently of preview.
+Turn it off for complete bypass: original resolution, color format, pixel values
+and frame rate. The four saved effect selections remain available when it is
+enabled again. **Video preview** controls rendering only; camera output continues
+with the selected effects or bypass. Hidden or occluded previews submit no video
+rendering work. With no connected camera output and no visible preview, capture
+keeps detecting the source without processing unused frames.
+
+Effects can change while capture runs. The producer stops and drains its camera
+transport before negotiating a changed output format, then resumes delivery.
+The camera publishes supported 4K/1080p, 10-bit 4:2:2/8-bit 4:2:0 modes; consumers
+must accept the selected format. Installed-service format changes still need
+qualification with a signed extension.
+
+Settings and read-only scoped LUT bookmarks persist between launches. Capture
+starts manually. A missing or invalid saved LUT leaves capture usable and keeps
+the saved choice for recovery. The menu bar popover shares the window's controls
+and includes its own native mini preview; closing the window does not stop capture.
 
 ## Build and synthetic checks
 
@@ -83,7 +96,7 @@ camera**. Approve the camera extension in System Settings when macOS asks.
 
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
 and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the
-correct source frame rate, select the processing checkboxes, and start the
+processing checkboxes and start the
 feed. In Zoom, choose **UltraStudio LUT**. Zoom determines transmitted quality
 and frame rate from its own supported features, settings, and meeting conditions.
 
@@ -91,7 +104,9 @@ and frame rate from its own supported features, settings, and meeting conditions
 
 See [VALIDATION.md](VALIDATION.md) for executed checks and outstanding live tests.
 Capture uses the native DeckLink SDK directly and validates every received frame
-as 3840 × 2160 10-bit 4:2:2. It stops on incompatible format changes. The build
+as 3840 × 2160 10-bit 4:2:2. It detects 29.97/59.94 input automatically and reports
+the actual captured dimensions, format and rate. Unsupported HDMI modes are
+reported while the detector waits for a supported signal. The build
 fetches checksum-pinned, permissively licensed Blackmagic headers and dispatch
 source from official OBS upstream; Blackmagic Desktop Video supplies the runtime.
 
@@ -111,17 +126,20 @@ blit when eligible, and preview/camera share the same staged IOSurface. No color
 or precision change is introduced by these optimizations. Frame descriptions
 are cached only while Core Media confirms their metadata and layout still match.
 
-GPU resources and output buffers are warmed before capture starts. Capture
-retains at most six source frames to absorb callback bursts, GPU output pools
-are limited to eight buffers, and preview keeps one latest pending sample.
-Camera transport is also bounded. The UI shows
+GPU resources and three output buffers are warmed before capture when needed.
+Capture retains at most twelve source frames to absorb callback bursts. Each
+preview has a bounded 24-sample FIFO; it drains immediately when native display
+is ready and discards the oldest pending sample on overflow. Output pools grow
+only on demand, up to 64 images shared across their consumers. Idle/bypass
+releases unused processing textures and pools. Camera transport is also bounded.
+The UI shows
 source timestamp gaps, capture admission drops, pool pressure, transport drops
 and native preview delivery separately. Intentional frame-rate reduction does
 not count as a dropped frame.
 No footage is recorded or written to disk. There is no audio virtual device or
 SMPTE/DF timecode transport in this version. Select your existing microphone or
 Blackmagic audio input separately in Zoom and qualify A/V synchronization.
-Signal loss stops capture; the extension clears its latest image and emits black
+Signal loss leaves automatic HDMI detection armed; the extension clears its latest image and emits black
 after 0.5 seconds without a producer frame. Queue depth and pixel-buffer
 allocation are bounded; late frames are discarded instead of building latency.
 

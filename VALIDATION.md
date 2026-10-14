@@ -56,7 +56,7 @@ counted separately. Intentional temporal reduction is not a drop.
 
 ## CPU/GPU optimization qualification
 
-The updated Release build passes **55 tests, zero failures**, in 18.609 seconds
+The earlier optimized Release build passed **55 tests, zero failures**, in 18.609 seconds
 (`logs/tests-20261014T184250Z.log`). Added checks validate no-copy GPU memory
 ownership through command completion, exactly-once release, alignment and
 split-VM fallback, invalid packed strides, cached format identity and metadata
@@ -92,6 +92,119 @@ without the sampler recorded zero source, capture, pool and preview loss counter
 camera transport was inactive. The user's LUT and four processing selections
 are restored.
 
+## Saved controls, menu bar and performance pass
+
+The final integrated suite passed **77 tests, zero failures**, in 23.11 seconds
+(`logs/tests-20261014T205650Z.log`). All twelve native preview variants consumed
+every paced sample with zero replacements, drops or corruption. Controlled
+capture delivered 180/180 fast and 90/90 reduced camera/preview samples, with
+exact timestamps and zero reported drops. Exact 64-buffer pressure and recovery
+checks pass. The retained-consumer fixture observes actual send completion
+rather than polling through a coalescible timer; its three-second deadline is
+unchanged and the final run completed in 0.305 seconds.
+
+An intermediate integrated suite passed **74 tests, zero failures**, in 25.65 seconds
+(`logs/tests-20261014T200225Z.log`). Nine added controller tests cover complete
+bypass without a LUT, hot effect restoration and cadence, preview-independent
+camera delivery, automatic source timing, clock resets, invalid epochs,
+no-consumer processing, bounded burst recovery and stopped-generation safety.
+
+Capture admission is now bounded at twelve retained frames. The earlier
+six-frame limit overflowed once under a measured 86-ms source gap plus 62-ms
+queue delay. A deterministic held-queue test accepts exactly twelve, rejects
+the thirteenth, and verifies slot recovery without restarting. For nominal
+4K v210 rows, twelve retained source images represent about 264 MB of native
+memory, without an additional app pixel copy.
+
+Preview buffering is finite: 24 pending sample references per renderer plus its
+current frame, with overflow replacing the oldest pending sample. The 400-ms
+capacity at 59.94 accommodates a measured compound stall: about 197 ms elapsed
+in raw staging followed by about 91 ms waiting for native display readiness.
+The raw blit itself took about 0.08 ms of GPU execution. The earlier twelve-slot
+preview overflowed under that load; its failure receipt is retained at
+`logs/tests-20261014T203250Z.log`. Buffering adds no deliberate delay when the
+renderer is ready and cannot guarantee lossless delivery through longer stalls.
+
+Processor and raw-staging pools allocate three warm buffers and grow only on
+actual retention, with a hard limit of 64 each. The budget allows two preview
+FIFOs/current frames, native retention allowances, the three-slot camera queue
+and producer/current images. Native retention has no public bound; pool limits
+bound app allocation rather than promising universal losslessness. A fully
+retained pool is approximately 2.12 GB for 4K x422, or 199 MB for 1080p NV12;
+ordinary three-buffer warm allocation is unchanged. Effect, visibility and stop
+flushes release pending references. Drain work belongs to a generation so an old
+task cannot consume new frames ahead of its queued native flush.
+
+The paced source fixture now uses a bounded Mach time-constraint policy only
+on its dedicated producer thread, matching an independently timed hardware
+source. Setup/readback/restoration and a 0.5-ms callback CPU budget are asserted.
+The actual source spans were 2.986333/2.986325 seconds, with 16.67–16.70-ms
+callback intervals. Production capture, processing and rendering queues retain
+ordinary scheduling. All 180 fast or 90 reduced camera/preview samples delivered
+with exact output timestamps and zero capture loss. Earlier ordinary-QoS
+failures remain in `logs/tests-20261014T194315Z.log` and
+`logs/tests-rerun-20261014T194525Z.log`; they include one real admission drop and
+native preview replacement under concurrent VM/compiler load. This controlled
+source result does not establish a universal zero-drop guarantee under load.
+
+The updated unsigned Release app builds with strict concurrency and warnings
+treated as errors. Settings tests cover preference round trips, malformed data,
+bookmark restoration, missing files and failed-selection recovery. Capture now
+detects actual frame duration and reports captured dimensions/format/rate;
+native mocks cover mode changes, coalescing, signal recovery, cancellation and
+driver failure cleanup. Permanent errors stop the controller; missing or
+unsupported HDMI signals leave the detector armed.
+
+The compact window and native menu bar popover share processing, complete
+bypass and preview controls. Layout harnesses with synthetic 4K metadata and
+long errors measured 850 × 583 / 1080 × 622 pt main content and 360 × 562 pt
+tray content. Overflow scrolls; tray Open/Quit controls remain fixed. No camera
+imagery was used in those checks.
+
+Actual app accessibility checks verified the new controls and an exit/relaunch
+cycle restored the owner's 33-cube LUT, all four effect selections, selected
+device, gamut, complete-bypass selection and preview-off selection. Capture
+remained stopped after launch. The saved file was restored through the actual
+scoped-bookmark loader without choosing it again. The stopped main window was
+visually inspected; no live-camera screenshot was taken.
+
+The final unsigned Release build (`logs/build-20261014T205441Z.log`) was launched
+after exiting the prior app. It restored the LUT and all four selections,
+processing and preview. Start opened automatic UltraStudio detection and reported
+no HDMI signal while remaining armed. Stop worked; the app was left stopped with
+processing and preview enabled. Sustained hardware/display testing remains pending
+at the owner's request. The automation surface did not expose the actual menu
+bar item, so clicking the tray popover still needs a manual check.
+
+The final focused preview suite passes six tests, including actual native
+renderer frame/drop/corruption metrics across 12 format/rate combinations.
+All combinations delivered every 30/15 paced frame with zero replacements,
+native renderer drops or corruption. The blocked-queue regression also proves a
+new generation enqueues after native flush. Production capture stages borrowed
+raw input once before fan-out, supplying shareable buffers to both previews.
+The bare test executable required a test-only occlusion override for native
+format acceptance; this override is absent from production. Visibility state
+and independent renderers have separate tests. Receipt:
+`logs/preview-generation-fifo24-20261014.log`.
+
+Thirteen focused GPU checks pass with Metal API/GPU validation, including 64
+retained 10-bit outputs, exact precision after idle release, rejection at the
+65th allocation and recovery. Receipt: `gpu-review/shared-budget64-tests.log`.
+Combining four compute encoders into one showed less than 0.5% CPU difference and no useful
+GPU improvement, so it was discarded. Rejecting a full output pool before
+mapping input reduced CPU over 1,000 rejected frames from 21.298 to 2.082 ms
+(about 90% less rejection overhead; not a steady-stream speedup).
+
+Measured float working textures use 233,963,520 bytes with scaling and
+133,693,440 without scaling. Complete bypass/idle releases all working textures,
+copied input staging and the processor output pool while retaining the LUT and
+pipeline states. Tests retain published frames through release and verify
+recovery. Capture releases these resources on Stop and when no camera output
+or visible preview needs frames. Receipts:
+`gpu-review/final-hotspot-tests.log`,
+`gpu-review/encoder-profile/comparison.log`, and
+`gpu-review/backpressure-profile/comparison.log`.
+
 ## Remaining qualification
 
 - Broaden sustained hardware/display qualification to other output modes,
@@ -113,4 +226,4 @@ logs remain under
 `/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/`.
 
 Original passing test receipt: `logs/tests-20261014T064354Z.log`.
-Current passing test receipt: `logs/tests-20261014T184250Z.log`.
+Current passing test receipt: `logs/tests-20261014T205650Z.log`.
