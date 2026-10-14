@@ -54,10 +54,11 @@ scheme are checked in; `scripts/generate_project.py` regenerates them without
 third-party tools. Metal shader source is bundled and compiled through Metal at
 runtime, so the separate downloadable Xcode Metal toolchain is not required.
 
-The app is built unsigned by default at:
+The app is built unsigned with Release optimization by default. Use
+`bash scripts/build.sh --debug` for a debugger build. The default app is at:
 
 ```text
-/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut/Build/Products/Debug/UltraStudio LUT.app
+/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut/Build/Products/Release/UltraStudio LUT.app
 ```
 
 ## Install the camera
@@ -102,6 +103,14 @@ and the native display color conversion; every selected processing checkbox
 affects both preview and camera output. Capture can run in preview mode before
 the camera extension is signed and installed.
 
+On Apple silicon, eligible packed capture memory is read directly by Metal.
+The allocation is retained and locked through GPU completion; page alignment,
+VM-region bounds and layout are checked before using it. Incompatible buffers
+use a bounded CPU upload fallback. Raw transport staging uses a bit-exact GPU
+blit when eligible, and preview/camera share the same staged IOSurface. No color
+or precision change is introduced by these optimizations. Frame descriptions
+are cached only while Core Media confirms their metadata and layout still match.
+
 GPU resources and output buffers are warmed before capture starts. Capture
 retains at most six source frames to absorb callback bursts, GPU output pools
 are limited to eight buffers, and preview keeps one latest pending sample.
@@ -122,3 +131,5 @@ allocation are bounded; late frames are discarded instead of building latency.
 - [Apple camera extension architecture](https://developer.apple.com/documentation/coremediaio/creating-a-camera-extension-with-core-media-i-o)
 - [Sony FX3 help guide](https://helpguide.sony.net/ilc/2210/v1/en/print.pdf)
 - [Zoom camera/system requirements](https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0060748)
+
+GPU buffer contract: [Apple Metal no-copy memory API](https://developer.apple.com/documentation/metal/mtldevice/makebuffer%28bytesnocopy%3Alength%3Aoptions%3Adeallocator%3A%29).

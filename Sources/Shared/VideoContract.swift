@@ -35,13 +35,34 @@ enum VideoContract {
   }
 
   static func sample(_ buffer: CVPixelBuffer, at time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
+    try VideoSampleFactory().sample(buffer, at: time, duration: duration)
+  }
+}
+
+// Queue-confined. Core Media validates geometry, packed stride and color
+// extensions before reusing a description; dimensions alone are insufficient.
+final class VideoSampleFactory {
+  private var format: CMVideoFormatDescription?
+
+  func reset() { format = nil }
+
+  func sample(_ buffer: CVPixelBuffer, at time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
+    if let format, CMVideoFormatDescriptionMatchesImageBuffer(format, imageBuffer: buffer) {
+      return try makeSample(buffer, format: format, at: time, duration: duration)
+    }
     var format: CMVideoFormatDescription?
-    var status = CMVideoFormatDescriptionCreateForImageBuffer(
+    let status = CMVideoFormatDescriptionCreateForImageBuffer(
       allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &format)
     guard status == noErr, let format else { throw VideoError.message("Invalid pixel buffer (\(status)).") }
+    self.format = format
+    return try makeSample(buffer, format: format, at: time, duration: duration)
+  }
+
+  private func makeSample(_ buffer: CVPixelBuffer, format: CMVideoFormatDescription,
+    at time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
     var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: time, decodeTimeStamp: .invalid)
     var sample: CMSampleBuffer?
-    status = CMSampleBufferCreateReadyWithImageBuffer(
+    let status = CMSampleBufferCreateReadyWithImageBuffer(
       allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescription: format,
       sampleTiming: &timing, sampleBufferOut: &sample)
     guard status == noErr, let sample else { throw VideoError.message("Could not create sample (\(status)).") }

@@ -41,6 +41,8 @@ final class CaptureController: @unchecked Sendable {
   private var lastReceived: Double = 0
   private let services: CaptureServices
   private let previewRenderer: VideoPreviewRenderer?
+  private let sampleFactory = VideoSampleFactory()
+  private let deliveryStager = CameraFrameStager()
   private var processor: LUTProcessor?
   private var configuration = PipelineConfiguration()
   private var frames: UInt64 = 0
@@ -99,6 +101,7 @@ final class CaptureController: @unchecked Sendable {
         self.lastPublished = 0
         self.lastLogged = 0
         self.frameRateGate = FrameRateGate()
+        self.sampleFactory.reset()
         self.cameraConnected = false
         do {
           try self.services.connect(configuration, kCVPixelFormatType_422YpCbCr10)
@@ -235,7 +238,14 @@ final class CaptureController: @unchecked Sendable {
         firstHostTime = CMClockGetTime(CMClockGetHostTimeClock())
       }
       let outputTime = CMTimeAdd(firstHostTime, CMTimeSubtract(frame.pts, firstSourceTime!))
-      let sample = try VideoContract.sample(rendered, at: outputTime, duration: configuration.duration)
+      let original = try sampleFactory.sample(rendered, at: outputTime, duration: configuration.duration)
+      // Share raw staging once between preview and CMIO. Processed Metal
+      // buffers are already IOSurfaces and pass through without another copy.
+      let sample: CMSampleBuffer
+      if configuration.untouched && (previewRenderer != nil || cameraConnected) {
+        guard let staged = try deliveryStager.stage(original) else { poolDrops &+= 1; return }
+        sample = staged
+      } else { sample = original }
       previewRenderer?.enqueue(sample)
       services.preview(sample)
       if cameraConnected {
@@ -260,6 +270,8 @@ final class CaptureController: @unchecked Sendable {
         rateFrames = frames
         if now - lastLogged >= 5 {
           lastLogged = now
+          let packed = processor.packedInputDiagnostics
+          logger.notice("Packed input noCopy=\(packed.noCopyFrames) copiedFallback=\(packed.copiedFrames)")
           logger.notice("Live fps=\(fps) processed=\(self.frames) displayed=\(preview?.rendererFrames ?? 0) sourceDrops=\(sourceDrops) captureDrops=\(captureDrops) poolDrops=\(self.poolDrops) previewDrops=\(previewDrops)")
         }
         publish(CaptureUpdate(message: configuration.applyLUT ? "LUT applied to live feed" : "Live feed — LUT off",

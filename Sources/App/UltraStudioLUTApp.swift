@@ -78,7 +78,7 @@ struct ContentView: View {
       ZStack {
         RoundedRectangle(cornerRadius: 12).fill(.black)
         VideoPreview(renderer: model.previewRenderer).padding(2)
-        if !model.update.previewDelivered {
+        if !model.previewReady {
           VStack(spacing: 12) {
             Image(systemName: "video.badge.waveform").font(.system(size: 40))
             Text("Processed feed preview")
@@ -87,6 +87,30 @@ struct ContentView: View {
         }
       }.aspectRatio(16 / 9, contentMode: .fit).frame(maxWidth: .infinity, maxHeight: .infinity)
 
+      CaptureStatusView(model: model)
+      Divider()
+      HStack {
+        Button("Install camera", action: model.installer.install).disabled(model.installer.pending || model.running)
+        Button("Remove camera", action: model.installer.uninstall).disabled(model.installer.pending || model.running)
+        Text(model.installer.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+      }
+    }.padding(24)
+  }
+
+  private func pipelineToggle(_ title: String, detail: String, value: Binding<Bool>) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle(title, isOn: value).toggleStyle(.checkbox).font(.headline)
+      Text(detail).font(.caption).foregroundStyle(.secondary)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+// Frequent counters update this subtree without rebuilding all capture controls.
+private struct CaptureStatusView: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
       HStack {
         VStack(alignment: .leading, spacing: 4) {
           Text(model.configuration.outputLabel).font(.headline)
@@ -105,19 +129,6 @@ struct ContentView: View {
       Text(model.update.message).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
       Label(model.update.cameraMessage, systemImage: model.update.cameraOutputActive ? "video.fill" : "video.slash")
         .font(.caption).foregroundStyle(model.update.cameraOutputActive ? .green : .secondary)
-      Divider()
-      HStack {
-        Button("Install camera", action: model.installer.install).disabled(model.installer.pending || model.running)
-        Button("Remove camera", action: model.installer.uninstall).disabled(model.installer.pending || model.running)
-        Text(model.installer.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-      }
-    }.padding(24)
-  }
-
-  private func pipelineToggle(_ title: String, detail: String, value: Binding<Bool>) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Toggle(title, isOn: value).toggleStyle(.checkbox).font(.headline)
-      Text(detail).font(.caption).foregroundStyle(.secondary)
-    }.frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 }

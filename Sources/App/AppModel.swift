@@ -17,6 +17,7 @@ final class AppModel {
   var lutTitle = "No LUT loaded"
   var lutLoaded = false
   var running = false
+  var previewReady = false
   var loading = false
   var update = CaptureUpdate(message: "Select the UltraStudio input and start the feed. LUT loading is optional.")
   let installer = ExtensionInstaller()
@@ -30,6 +31,7 @@ final class AppModel {
     capture.onUpdate = { [weak self] update in
       MainActor.assumeIsolated {
         self?.update = update
+        if self?.previewReady != update.previewDelivered { self?.previewReady = update.previewDelivered }
         if update.stopped { self?.running = false }
       }
     }

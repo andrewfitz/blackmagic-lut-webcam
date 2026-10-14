@@ -10,8 +10,17 @@ export TMPDIR="$external_root/tmp"
 mkdir -p "$TMPDIR" "$external_root/agent-work/ultrastudio-lut/logs"
 bash "$task_root/scripts/fetch-decklink-sdk.sh"
 python3 "$task_root/scripts/generate_project.py"
-args=(-project "$task_root/UltraStudioLUT.xcodeproj" -scheme 'UltraStudio LUT' -configuration Debug -derivedDataPath "$external_root/agent-work/build/ultrastudio-lut" -jobs 4)
-if [[ "${1:-}" == --signed ]]; then
+configuration=Release
+signed=false
+for option in "$@"; do
+  case "$option" in
+    --debug) configuration=Debug ;;
+    --signed) signed=true ;;
+    *) echo "Unknown build option: $option" >&2; exit 1 ;;
+  esac
+done
+args=(-project "$task_root/UltraStudioLUT.xcodeproj" -scheme 'UltraStudio LUT' -configuration "$configuration" -derivedDataPath "$external_root/agent-work/build/ultrastudio-lut" -jobs 4)
+if [[ "$signed" == true ]]; then
   : "${DEVELOPMENT_TEAM:?Set DEVELOPMENT_TEAM to your Apple Developer team ID.}"
   args+=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM")
 else
@@ -23,4 +32,4 @@ xcodebuild "${args[@]}" build > "$build_log" 2>&1 || {
   /usr/bin/grep -E 'error:|warning:|BUILD FAILED' "$build_log" || true
   exit 1
 }
-echo "Built: $external_root/agent-work/build/ultrastudio-lut/Build/Products/Debug/UltraStudio LUT.app"
+echo "Built: $external_root/agent-work/build/ultrastudio-lut/Build/Products/$configuration/UltraStudio LUT.app"

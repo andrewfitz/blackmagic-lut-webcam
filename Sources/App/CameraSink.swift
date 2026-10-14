@@ -39,6 +39,8 @@ final class CameraBufferQueue {
 final class CameraFrameStager {
   private var pool: CVPixelBufferPool?
   private var dimensions: (Int, Int, OSType)?
+  private lazy var gpuCopy = GPURawFrameCopy()
+  private var cachedFormat: (source: CMVideoFormatDescription, stride: Int, staged: CMVideoFormatDescription)?
 
   func stage(_ sample: CMSampleBuffer) throws -> CMSampleBuffer? {
     guard let input = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Camera sample has no image.") }
@@ -65,6 +67,14 @@ final class CameraFrameStager {
     guard status == kCVReturnSuccess, let output, CVPixelBufferGetIOSurface(output) != nil else {
       throw VideoError.message("Cannot allocate shareable camera image (\(status)).")
     }
+    let copiedOnGPU = try gpuCopy?.copy(input, to: output) ?? false
+    if !copiedOnGPU { try copyPixels(input, to: output, type: type, width: width) }
+    return try makeStagedSample(sample, input: input, output: output, type: type, width: width, height: height)
+  }
+
+  private func copyPixels(_ input: CVPixelBuffer, to output: CVPixelBuffer,
+    type: OSType, width: Int) throws {
+    let height = CVPixelBufferGetHeight(input)
     guard CVPixelBufferLockBaseAddress(input, .readOnly) == kCVReturnSuccess else {
       throw VideoError.message("Cannot read captured camera image.")
     }
@@ -101,6 +111,10 @@ final class CameraFrameStager {
         destination: destination, destinationStride: CVPixelBufferGetBytesPerRow(output),
         rowBytes: rowBytes, rows: height)
     }
+  }
+
+  private func makeStagedSample(_ sample: CMSampleBuffer, input: CVPixelBuffer,
+    output: CVPixelBuffer, type: OSType, width: Int, height: Int) throws -> CMSampleBuffer {
     CVBufferRemoveAllAttachments(output)
     for mode in [CVAttachmentMode.shouldPropagate, .shouldNotPropagate] {
       if let attachments = CVBufferCopyAttachments(input, mode) { CVBufferSetAttachments(output, attachments, mode) }
@@ -113,15 +127,21 @@ final class CameraFrameStager {
     }
     // Packed format descriptions include BytesPerRow. Preserve source format
     // extensions while updating that layout field for the destination stride.
-    var extensions = CMFormatDescriptionGetExtensions(format) as? [String: Any] ?? [:]
-    if !CVPixelBufferIsPlanar(output) {
-      extensions[kCMFormatDescriptionExtension_BytesPerRow as String] = CVPixelBufferGetBytesPerRow(output)
+    let stride = CVPixelBufferGetBytesPerRow(output)
+    let stagedFormat: CMVideoFormatDescription
+    if let cachedFormat, cachedFormat.stride == stride, CFEqual(cachedFormat.source, format) {
+      stagedFormat = cachedFormat.staged
+    } else {
+      var extensions = CMFormatDescriptionGetExtensions(format) as? [String: Any] ?? [:]
+      if !CVPixelBufferIsPlanar(output) { extensions[kCMFormatDescriptionExtension_BytesPerRow as String] = stride }
+      var next: CMVideoFormatDescription?
+      resultStatus = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: type,
+        width: Int32(width), height: Int32(height), extensions: extensions as CFDictionary,
+        formatDescriptionOut: &next)
+      guard resultStatus == noErr, let next else { throw VideoError.message("Cannot describe staged camera image (\(resultStatus)).") }
+      cachedFormat = (format, stride, next)
+      stagedFormat = next
     }
-    var stagedFormat: CMVideoFormatDescription?
-    resultStatus = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: type,
-      width: Int32(width), height: Int32(height), extensions: extensions as CFDictionary,
-      formatDescriptionOut: &stagedFormat)
-    guard resultStatus == noErr, let stagedFormat else { throw VideoError.message("Cannot describe staged camera image (\(resultStatus)).") }
     resultStatus = CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
       imageBuffer: output, formatDescription: stagedFormat, sampleTiming: &timing, sampleBufferOut: &result)
     guard resultStatus == noErr, let result else { throw VideoError.message("Cannot stage camera sample (\(resultStatus)).") }

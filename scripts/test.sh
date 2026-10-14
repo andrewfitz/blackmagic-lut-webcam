@@ -37,7 +37,8 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   -I "$libraries" -L "$libraries" -lXCTestSwiftSupport -Xlinker -rpath -Xlinker "$libraries" \
   "$task_root"/Sources/Shared/*.swift "$task_root/Sources/App/LUTProcessor.swift" \
   "$task_root/Sources/App/CameraSink.swift" "$task_root/Sources/App/CaptureController.swift" \
-  "$task_root/Sources/App/VideoPreview.swift" \
+  "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
+  "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/CameraExtension/CameraProvider.swift" \
   "$task_root"/Tests/*.swift "$test_root/UDLBackend.o" "$test_root/DeckLinkAPIDispatch.o" -lc++ \
   -o "$test_root/lut-tests" >> "$compile_log" 2>&1 || {

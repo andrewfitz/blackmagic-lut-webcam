@@ -12,7 +12,7 @@ Blackmagic Desktop Video 16.4. Executed October 14, 2026.
 - Live 4K 59.94 input was received after the camera was powered on. The earlier
   preview refreshed only at 4 Hz; that implementation has been replaced and
   does not establish smoothness of the new native preview.
-- The final integrated synthetic suite passes all **45 tests, zero failures**
+- The original integrated synthetic suite passed all **45 tests, zero failures**
   in 18.382 seconds (`bash scripts/test.sh`). Its paced controller test delivers
   all 180 packed-v210 source frames, yielding exactly 180 camera/preview samples
   at 59.94 or 90 with temporal reduction, with zero reported drops and identical
@@ -54,12 +54,48 @@ work. No unrelated processes were stopped. Source timestamp gaps, capture
 admission, output-pool pressure, camera transport and native renderer loss are
 counted separately. Intentional temporal reduction is not a drop.
 
+## CPU/GPU optimization qualification
+
+The updated Release build passes **55 tests, zero failures**, in 18.609 seconds
+(`logs/tests-20261014T184250Z.log`). Added checks validate no-copy GPU memory
+ownership through command completion, exactly-once release, alignment and
+split-VM fallback, invalid packed strides, cached format identity and metadata
+invalidation, and actual bit-exact GPU raw transport across every 4K word.
+Synthetic camera/preview delivery remains exactly 180/180 or 90/90 with zero
+drops. Metal API/GPU validation also passed the focused ten-test GPU suite.
+
+Matched Release processor benchmarks alternate 360 frames per path. Thread
+CPU median decreased from 0.512 to 0.190 ms/frame; aggregate CPU from 202.602 to
+70.901 ms (approximately 65% less processor CPU). Wall median decreased from
+2.324 to 2.000 ms. This compares copied versus eligible no-copy inputs and does
+not measure driver, UI or native display CPU. Receipt:
+`gpu-review/no-copy-profile/comparison.log`.
+
+The owner subsequently ran the camera with a real 33-cube LUT, source 4K v210
+59.94, Lanczos to 1080p NV12, and reduction to 29.97. On the same settings,
+20-second whole-process CPU windows measured 30.448% of one core for the old
+Debug app and 18.370% for the optimized Release app (approximately 40% lower).
+These are observed live before/after windows, not a controlled host-load or
+isolated attribution study. The changes combine no-copy input, GPU raw staging,
+format caching, a smaller SwiftUI update subtree and Release optimization.
+Private receipts: `cpu-preview/before-cpu.json` and `cpu-preview/after-cpu.json`.
+
+Live diagnostics confirmed every packed input used the no-copy path and none
+used the CPU fallback. Before/after stack samples confirm the hot packed-frame
+memcpy disappeared; remaining work includes driver/framework and GPU submission
+bookkeeping. No footage was recorded. Native renderer counters showed zero
+preview losses during the observed run. Ten capture admission losses first
+appeared at 13:48:34, inside the intrusive 1-ms stack sampling interval starting
+13:48:32; the count did not increase after sampling. Earlier receipts retain
+that result rather than silently removing it. A fresh ordinary run follows
+without the sampler; the user's LUT and four processing selections are restored.
+
 ## Remaining qualification
 
-- Verify sustained hardware capture/display with the new native preview. The
-  owner requested leaving this pending while the camera is off or its output
-  changed. Synthetic delivery and renderer counters do not establish physical
-  smoothness of the complete hardware path.
+- Broaden sustained hardware/display qualification to other output modes,
+  actual 29.97 source input, and controlled host workloads. The observed live
+  59.94-source/29.97-output run and counters do not establish all hardware modes
+  or a universal zero-drop guarantee.
 - Sign/approve the camera extension and verify service IPC and actual Zoom
   consumption. No valid signing identity is installed and the owner has not
   enrolled in the Apple Developer Program. In-process camera tests do not
@@ -74,4 +110,5 @@ text without screenshots of camera imagery. Private raw build/test/profiling
 logs remain under
 `/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/`.
 
-Final passing test receipt: `logs/tests-20261014T064354Z.log`.
+Original passing test receipt: `logs/tests-20261014T064354Z.log`.
+Current passing test receipt: `logs/tests-20261014T184250Z.log`.
