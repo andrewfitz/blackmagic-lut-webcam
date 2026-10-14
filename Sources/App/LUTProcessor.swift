@@ -4,6 +4,13 @@ import Metal
 // Capture-queue ownership. Production processing uses explicit 32-bit float
 // Metal textures and LUT samples. Native preview consumes the output directly.
 final class LUTProcessor {
+  struct PackedInputDiagnostics: Sendable {
+    var noCopyFrames: UInt64 = 0
+    var copiedFrames: UInt64 = 0
+    var lastPath = "No packed processing"
+  }
+
+  private(set) var packedInputDiagnostics = PackedInputDiagnostics()
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
   private let states: [String: MTLComputePipelineState]
@@ -157,6 +164,16 @@ final class LUTProcessor {
       throw VideoError.message("Expected 3840 × 2160 input; received \(width) × \(height).")
     }
     guard VideoContract.tenBit422.contains(type) else { throw VideoError.message("Expected 10-bit 4:2:2 input.") }
+    var packedLength = 0
+    if type == kCVPixelFormatType_422YpCbCr10 {
+      let stride = CVPixelBufferGetBytesPerRow(input)
+      let (length, overflow) = stride.multipliedReportingOverflow(by: height)
+      guard stride >= 10240, stride.isMultiple(of: 4), !overflow, length > 0,
+        length <= device.maxBufferLength else {
+        throw VideoError.message("Invalid packed 10-bit capture row stride.")
+      }
+      packedLength = length
+    }
     if configuration.untouched { return input }
     guard !configuration.applyLUT || cube != nil else { throw VideoError.message("Load a LUT or turn off Apply LUT.") }
     let chromaLocation = CVBufferCopyAttachment(input, kCVImageBufferChromaLocationTopFieldKey, nil) as? String
@@ -185,16 +202,26 @@ final class LUTProcessor {
     let full = try texture(width: width, height: height, existing: &fullTexture)
     var wrappers: [CVMetalTexture] = []
     if type == kCVPixelFormatType_422YpCbCr10 {
-      guard CVPixelBufferLockBaseAddress(input, .readOnly) == kCVReturnSuccess else {
-        throw VideoError.message("Cannot lock packed capture frame.")
+      let source: MTLBuffer
+      if let shared = SharedMetalBuffer.make(pixelBuffer: input, device: device, readOnly: true) {
+        source = shared
+        packedInputDiagnostics.noCopyFrames &+= 1
+        packedInputDiagnostics.lastPath = "No copy"
+      } else {
+        guard CVPixelBufferLockBaseAddress(input, .readOnly) == kCVReturnSuccess else {
+          throw VideoError.message("Cannot lock packed capture frame.")
+        }
+        defer { CVPixelBufferUnlockBaseAddress(input, .readOnly) }
+        let length = packedLength
+        if packedBuffer == nil || packedBuffer!.length < length { packedBuffer = device.makeBuffer(length: length, options: .storageModeShared) }
+        guard let packedBuffer, let base = CVPixelBufferGetBaseAddress(input) else { throw VideoError.message("Cannot read packed capture frame.") }
+        memcpy(packedBuffer.contents(), base, length)
+        source = packedBuffer
+        packedInputDiagnostics.copiedFrames &+= 1
+        packedInputDiagnostics.lastPath = "Copied fallback"
       }
-      defer { CVPixelBufferUnlockBaseAddress(input, .readOnly) }
-      let length = CVPixelBufferGetBytesPerRow(input) * height
-      if packedBuffer == nil || packedBuffer!.length < length { packedBuffer = device.makeBuffer(length: length, options: .storageModeShared) }
-      guard let packedBuffer, let base = CVPixelBufferGetBaseAddress(input) else { throw VideoError.message("Cannot read packed capture frame.") }
-      memcpy(packedBuffer.contents(), base, length)
       try dispatch("packedLUT", on: command, width: width, height: height) { encoder in
-        encoder.setBuffer(packedBuffer, offset: 0, index: 2)
+        encoder.setBuffer(source, offset: 0, index: 2)
         encoder.setBuffer(cubeBuffer, offset: 0, index: 0)
         encoder.setBytes(&parameters, length: MemoryLayout<Parameters>.size, index: 1)
         encoder.setTexture(full, index: 2)
