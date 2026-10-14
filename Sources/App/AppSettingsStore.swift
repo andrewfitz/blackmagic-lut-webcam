@@ -43,6 +43,7 @@ final class AppSettingsStore {
 struct LoadedLUT: Sendable {
   let cube: CubeLUT
   let bookmark: Data
+  let fileName: String
 }
 
 // File access and cube parsing run off the main actor. Every security-scope
@@ -58,7 +59,7 @@ actor LUTFileLoader {
     let bookmark = try url.bookmarkData(options: scopedBookmarks
       ? [.withSecurityScope, .securityScopeAllowOnlyReadAccess] : [.minimalBookmark],
       includingResourceValuesForKeys: nil, relativeTo: nil)
-    return LoadedLUT(cube: try read(url), bookmark: bookmark)
+    return LoadedLUT(cube: try read(url), bookmark: bookmark, fileName: url.lastPathComponent)
   }
 
   func restore(bookmark: Data) throws -> LoadedLUT {
@@ -72,15 +73,34 @@ actor LUTFileLoader {
     let refreshed = stale ? try url.bookmarkData(options: scopedBookmarks
       ? [.withSecurityScope, .securityScopeAllowOnlyReadAccess] : [.minimalBookmark],
       includingResourceValuesForKeys: nil, relativeTo: nil) : bookmark
-    return LoadedLUT(cube: cube, bookmark: refreshed)
+    return LoadedLUT(cube: cube, bookmark: refreshed, fileName: url.lastPathComponent)
   }
 
   private func read(_ url: URL) throws -> CubeLUT {
-    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-    guard ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 32 * 1024 * 1024 else {
+    let limit = 32 * 1024 * 1024
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
+    guard attributes[.type] as? FileAttributeType == .typeRegular else {
+      throw VideoError.message("Choose a regular .cube file.")
+    }
+    guard ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= limit else {
       throw VideoError.message("LUT file exceeds 32 MB.")
     }
-    return try CubeLUT(text: String(contentsOf: url, encoding: .utf8),
+    // Bound the actual read as well as the preflight size: a file can grow
+    // between stat and read, and an unbounded String initializer allocates it
+    // before the parser can enforce its own limit.
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var bytes = Data()
+    while bytes.count <= limit {
+      let chunk = try handle.read(upToCount: min(1024 * 1024, limit + 1 - bytes.count))
+      guard let chunk, !chunk.isEmpty else { break }
+      bytes.append(chunk)
+    }
+    guard bytes.count <= limit else { throw VideoError.message("LUT file exceeds 32 MB.") }
+    guard let text = String(data: bytes, encoding: .utf8) else {
+      throw VideoError.message("LUT file must contain valid UTF-8 text.")
+    }
+    return try CubeLUT(text: text,
       fallbackTitle: url.deletingPathExtension().lastPathComponent)
   }
 }

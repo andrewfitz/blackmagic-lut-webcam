@@ -37,6 +37,8 @@ import XCTest
     defer { try? FileManager.default.removeItem(at: directory) }
     let file = directory.appendingPathComponent("identity.cube")
     try cubeText().write(to: file, atomically: true, encoding: .utf8)
+    let symbolicLink = directory.appendingPathComponent("linked-look.cube")
+    try FileManager.default.createSymbolicLink(at: symbolicLink, withDestinationURL: file)
     let completed = expectation(description: "Bookmark restored off the main actor")
     Task {
       // Tests use ordinary bookmarks because this executable has no sandbox
@@ -45,6 +47,12 @@ import XCTest
       do {
         let selected = try await loader.load(url: file)
         let restored = try await loader.restore(bookmark: selected.bookmark)
+        XCTAssertEqual(selected.fileName, "identity.cube")
+        XCTAssertEqual(restored.fileName, "identity.cube")
+        XCTAssertFalse(restored.fileName.contains("/"), "Display name must not expose the source path")
+        let linked = try await loader.load(url: symbolicLink)
+        XCTAssertEqual(linked.fileName, "linked-look.cube")
+        XCTAssertEqual(linked.cube.rgba, selected.cube.rgba)
         XCTAssertEqual(restored.cube.dimension, 2)
         XCTAssertEqual(restored.cube.rgba, selected.cube.rgba)
         try FileManager.default.removeItem(at: file)
@@ -80,13 +88,41 @@ import XCTest
       let loader = LUTFileLoader(scopedBookmarks: false)
       do {
         let original = try await loader.load(url: good)
+        XCTAssertEqual(original.fileName, "good.cube")
         do {
           _ = try await loader.load(url: bad)
           XCTFail("Invalid cube cannot replace a valid choice")
         } catch { }
         let restored = try await loader.restore(bookmark: original.bookmark)
+        XCTAssertEqual(restored.fileName, "good.cube")
         XCTAssertEqual(restored.cube.rgba, original.cube.rgba)
       } catch { XCTFail(error.localizedDescription) }
+      completed.fulfill()
+    }
+    wait(for: [completed], timeout: 10)
+  }
+
+  func testLUTReadRejectsOversizedNonTextAndNonFileInputs() throws {
+    let directory = URL(fileURLWithPath: "/Volumes/8TB/cinesomatic-director-work/tmp")
+      .appendingPathComponent("settings-check-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let oversized = directory.appendingPathComponent("oversized.cube")
+    XCTAssertTrue(FileManager.default.createFile(atPath: oversized.path, contents: Data()))
+    let handle = try FileHandle(forWritingTo: oversized)
+    try handle.truncate(atOffset: 32 * 1024 * 1024 + 1)
+    try handle.close()
+    let invalidText = directory.appendingPathComponent("non-text.cube")
+    try Data([0xff, 0xfe, 0x80]).write(to: invalidText)
+    let completed = expectation(description: "Unsafe file inputs rejected off main actor")
+    Task {
+      let loader = LUTFileLoader(scopedBookmarks: false)
+      for file in [oversized, invalidText, directory] {
+        do {
+          _ = try await loader.load(url: file)
+          XCTFail("Unsafe input must not become a loaded LUT")
+        } catch { }
+      }
       completed.fulfill()
     }
     wait(for: [completed], timeout: 10)

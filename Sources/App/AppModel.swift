@@ -36,6 +36,7 @@ final class AppModel {
     }
   }
   var lutTitle = "No LUT loaded"
+  private(set) var lutFileName: String?
   var lutLoaded = false
   var running = false
   var previewReady = false
@@ -138,6 +139,7 @@ final class AppModel {
           self.rememberedLUTEnabled = enable
           self.configuration.applyLUT = enable
           self.lutTitle = "\(loaded.cube.title) · \(loaded.cube.dimension)³"
+          self.lutFileName = loaded.fileName
           self.saveSettings()
           self.update.message = "LUT loaded. Confirm it expects \(self.gamut) and outputs Rec.709."
         case .failure(let error): self.lutLoadFailed(error, restoring: restoring)
