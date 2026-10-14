@@ -19,21 +19,30 @@ struct MenuBarInterface: View {
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        FeedStateLabel(model: model)
-        Spacer()
-        StartStopButton(model: model).controlSize(.small)
+    VStack(alignment: .leading, spacing: 10) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack {
+            FeedStateLabel(model: model)
+            Spacer()
+            StartStopButton(model: model).controlSize(.small)
+          }
+          FeedPreview(model: model, compact: true).frame(height: 150)
+          PipelineEnableControl(model: model)
+          Toggle("Video preview", isOn: $model.previewEnabled)
+            .toggleStyle(.switch).controlSize(.small)
+          Divider()
+          PipelineControls(model: model, compact: true)
+          LUTControls(model: model, compact: true)
+          DisclosureGroup("Feed details") {
+            VStack(alignment: .leading, spacing: 10) {
+              FeedMetadata(model: model)
+              FeedDiagnostics(model: model, compact: true)
+            }.padding(.top, 6)
+          }.font(.caption)
+        }
       }
-      FeedPreview(model: model, compact: true)
-      PipelineEnableControl(model: model)
-      Toggle("Video preview", isOn: $model.previewEnabled)
-        .toggleStyle(.switch).controlSize(.small)
-      FeedMetadata(model: model)
-      Divider()
-      PipelineControls(model: model, compact: true)
-      LUTControls(model: model, compact: true)
-      FeedDiagnostics(model: model, compact: true)
+      .scrollBounceBehavior(.basedOnSize)
       Divider()
       HStack {
         Button("Open window", systemImage: "macwindow") {
@@ -50,5 +59,6 @@ struct MenuBarInterface: View {
     }
     .padding(16)
     .frame(width: 360)
+    .frame(maxHeight: 640)
   }
 }

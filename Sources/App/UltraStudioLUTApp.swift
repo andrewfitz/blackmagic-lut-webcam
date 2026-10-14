@@ -36,19 +36,22 @@ struct ContentView: View {
   let model: AppModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      HStack(alignment: .top, spacing: 18) {
-        FeedPreview(model: model, compact: false)
-          .frame(maxWidth: .infinity)
-        FeedControls(model: model)
-          .frame(width: 285)
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .top, spacing: 18) {
+          FeedPreview(model: model, compact: false)
+            .frame(maxWidth: .infinity)
+          FeedControls(model: model)
+            .frame(width: 285)
+        }
+        Divider()
+        PipelineControls(model: model, compact: false)
+        LUTControls(model: model, compact: false)
+        CameraInstallationControls(model: model)
       }
-      Divider()
-      PipelineControls(model: model, compact: false)
-      LUTControls(model: model, compact: false)
-      CameraInstallationControls(model: model)
+      .padding(16)
     }
-    .padding(20)
+    .scrollBounceBehavior(.basedOnSize)
   }
 }
 
@@ -69,7 +72,7 @@ struct FeedPreview: View {
           Text(model.previewEnabled ? (model.running ? "Waiting for video" : "Feed stopped") : "Preview off")
             .font(compact ? .caption : .callout)
           if !model.previewEnabled && model.running {
-            Text("Feed continues with preview off")
+            Text(model.update.cameraOutputActive ? "Camera output continues" : "Capture remains armed")
               .font(.caption).foregroundStyle(.white.opacity(0.5))
           }
         }
@@ -87,7 +90,7 @@ struct FeedControls: View {
   @Bindable var model: AppModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 13) {
+    VStack(alignment: .leading, spacing: 10) {
       HStack {
         FeedStateLabel(model: model)
         Spacer()
@@ -207,7 +210,7 @@ struct FeedDiagnostics: View {
         Text("\(model.update.outputFPS, specifier: "%.2f") fps · \(model.update.processingMS, specifier: "%.1f") ms")
           .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         if !compact {
-          Text("Drops  source \(model.update.sourceDrops) · capture \(model.update.captureDrops)\nBuffers \(model.update.poolDrops) · camera \(model.update.cameraDrops) · preview \(model.update.previewDrops)")
+          Text("Drops  source \(model.update.sourceDrops) · capture \(model.update.captureDrops)\nBuffers \(model.update.poolDrops) · camera \(model.update.cameraDrops)\nPreview \(model.update.previewDrops) · renderer totals include prior runs")
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
         }
       }
@@ -224,7 +227,7 @@ struct PipelineControls: View {
   var compact: Bool
 
   var body: some View {
-    VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+    VStack(alignment: .leading, spacing: 8) {
       Text("Processing order").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
       if compact {
         controls
@@ -272,27 +275,37 @@ struct LUTControls: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Button("Load LUT…", systemImage: "folder", action: model.chooseLUT)
-          .disabled(model.loading)
-        if model.loading { ProgressView().controlSize(.small) }
-        if !compact {
+      if compact {
+        loadButton
+        gamutPicker
+      } else {
+        HStack(spacing: 12) {
+          loadButton
           Text(model.lutTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1).textSelection(.enabled)
-          Spacer()
+          Spacer(minLength: 8)
+          gamutPicker.frame(width: 310)
         }
-      }
-      Picker("LUT input", selection: $model.gamut) {
-        Text("S-Gamut3.Cine / S-Log3").tag("S-Gamut3.Cine / S-Log3")
-        Text("S-Gamut3 / S-Log3").tag("S-Gamut3 / S-Log3")
-      }
-      .font(.caption)
-      .frame(maxWidth: compact ? .infinity : 380, alignment: .leading)
-      .help("Declared input expected by the LUT. No additional log transform is applied.")
-      if !compact {
         Text("LUT first, then scale, color format and frame rate. Complete bypass preserves the original feed.")
           .font(.caption).foregroundStyle(.secondary)
       }
     }
+  }
+
+  private var loadButton: some View {
+    HStack(spacing: 6) {
+      Button("Load LUT…", systemImage: "folder", action: model.chooseLUT)
+        .disabled(model.loading)
+      if model.loading { ProgressView().controlSize(.small) }
+    }
+  }
+
+  private var gamutPicker: some View {
+    Picker("LUT input", selection: $model.gamut) {
+      Text("S-Gamut3.Cine / S-Log3").tag("S-Gamut3.Cine / S-Log3")
+      Text("S-Gamut3 / S-Log3").tag("S-Gamut3 / S-Log3")
+    }
+    .font(.caption)
+    .help("Declared input expected by the LUT. No additional log transform is applied.")
   }
 }
 
