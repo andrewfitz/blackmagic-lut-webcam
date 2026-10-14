@@ -158,7 +158,7 @@ import XCTest
     let config = PipelineConfiguration(applyLUT: false, downscale: true,
       convertTo420: true, reduceFrameRate: false, inputFast: true)
     var retained = [CVPixelBuffer]()
-    for frame in 0..<8 {
+    for frame in 0..<VideoContract.outputBufferLimit {
       let output = try processor.process(input, configuration: config)
       // Simulate consumer retention, as would happen with an occupied CMIO
       // queue. Distinct frames must not overwrite already published buffers.
@@ -210,6 +210,7 @@ private final class CaptureHarness: @unchecked Sendable {
   private var handlers = [(CVPixelBuffer, CMTime, Bool) -> Void]()
   private var automaticHandlers = [(CVPixelBuffer, CMTime, CMTime, Bool) -> Void]()
   private var connections = [(PipelineConfiguration, OSType)]()
+  private var deliveryObserver: ((Int) -> Void)?
   private var stopTotal = 0
   private var disconnectTotal = 0
   private var sendTotal = 0
@@ -255,6 +256,7 @@ private final class CaptureHarness: @unchecked Sendable {
   var negotiated: [(PipelineConfiguration, OSType)] { lock.withLock { connections } }
 
   func releaseOutputs() { lock.withLock { samples.removeAll(); latest = nil; latestPreview = nil } }
+  func observeDelivery(_ observer: ((Int) -> Void)?) { lock.withLock { deliveryObserver = observer } }
 
   func emit(_ image: CVPixelBuffer, frame: Int, from generation: Int? = nil) {
     let handler = lock.withLock { handlers[generation ?? handlers.count - 1] }
@@ -292,15 +294,17 @@ private final class CaptureHarness: @unchecked Sendable {
         self.lock.withLock { self.disconnectTotal += 1; self.samples.removeAll(); self.latest = nil }
       },
       send: { sample in
-        try self.lock.withLock {
+        let delivery: (Int, ((Int) -> Void)?) = try self.lock.withLock {
           self.attemptTotal += 1
           if self.failSending { throw VideoError.message("Synthetic consumer disconnected") }
           self.sendTotal += 1
           self.cameraSampleIDs.append(ObjectIdentifier(sample))
           self.latest = sample
           if self.retainOutputs { self.samples.append(sample) }
-          return true
+          return (self.sendTotal, self.deliveryObserver)
         }
+        delivery.1?(delivery.0)
+        return true
       },
       preview: { sample in
         self.lock.withLock {
@@ -385,10 +389,17 @@ private final class PacedDriverMetrics: @unchecked Sendable {
   private func deliver(until target: Int, using harness: CaptureHarness,
     image: CVPixelBuffer, frame: inout Int) {
     let deadline = Date().addingTimeInterval(3)
+    defer { harness.observeDelivery(nil) }
     while harness.sent < target && Date() < deadline {
+      let next = harness.sent + 1
+      let delivered = expectation(description: "Camera accepted output \(next)")
+      harness.observeDelivery { count in if count == next { delivered.fulfill() } }
       harness.emit(image, frame: frame)
       frame += 1
-      allowQueueWork()
+      // Drive this pressure/recovery fixture from actual camera delivery rather
+      // than adding a coalescible 20 ms main-queue timer between every sample.
+      // The existing overall three-second completion deadline is unchanged.
+      wait(for: [delivered], timeout: max(0.001, deadline.timeIntervalSinceNow))
     }
     XCTAssertEqual(harness.sent, target, "Capture must continue delivering through its real processing pipeline")
   }
@@ -856,14 +867,15 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     wait(for: [ready], timeout: 3)
     let source = try EndToEndChecks.source()
     var frame = 0
-    deliver(until: 8, using: harness, image: source, frame: &frame)
+    deliver(until: VideoContract.outputBufferLimit, using: harness, image: source, frame: &frame)
     harness.emit(source, frame: frame)
     frame += 1
     allowQueueWork(0.05)
-    XCTAssertEqual(harness.sent, 8, "The ninth retained output must hit the eight-buffer cap")
+    XCTAssertEqual(harness.sent, VideoContract.outputBufferLimit,
+      "Retaining the entire shared output budget must reject the next output")
     XCTAssertEqual(harness.stops, 1, "Capture must remain open while output buffers are occupied")
     harness.releaseOutputs()
-    deliver(until: 9, using: harness, image: source, frame: &frame)
+    deliver(until: VideoContract.outputBufferLimit + 1, using: harness, image: source, frame: &frame)
     XCTAssertEqual(harness.starts, 1, "Released consumer buffers must recover without restarting the device")
     XCTAssertEqual(harness.stops, 1)
   }

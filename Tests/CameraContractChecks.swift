@@ -377,7 +377,13 @@ import XCTest
     let source = try borrowedV210(width: 96, height: 4)
     let stager = CameraFrameStager()
     var held: [CMSampleBuffer] = []
-    for _ in 0..<6 { held.append(try XCTUnwrap(stager.stage(source))) }
+    for _ in 0..<VideoContract.outputBufferLimit {
+      let staged = try XCTUnwrap(stager.stage(source))
+      let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(staged))
+      XCTAssertFalse(held.contains { CMSampleBufferGetImageBuffer($0) === image },
+        "Staging must not overwrite an output still retained by a consumer")
+      held.append(staged)
+    }
     XCTAssertNil(try stager.stage(source), "Slow clients must not grow staging memory without bound")
     held.removeAll()
     XCTAssertNotNil(try stager.stage(source), "Release permits reuse after backpressure")
