@@ -105,6 +105,26 @@ After signing, place the app in `/Applications`, launch it and click **Install
 camera**. Approve the camera extension in System Settings when macOS asks.
 **Remove camera** requests deactivation of this app's extension.
 
+For local testing on a Mac already configured to permit unsigned system
+extensions (including SIP disabled), build an explicitly marked development
+package without an Apple Developer identity:
+
+```sh
+bash scripts/build.sh --local-development
+```
+
+The ad-hoc signed package is staged at
+`/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/local-development/UltraStudio LUT.app`.
+Quit the previous app, copy this package into `/Applications`, launch it there,
+then request **Install camera** and approve **UltraStudio LUT Camera** in
+System Settings → General → Login Items & Extensions → Camera Extensions.
+This mode embeds the actual install entitlement and matching local app groups;
+its compile-time policy accepts a valid local signature. Production builds
+still require developer signing. The script never changes SIP, extension
+developer mode, certificates or other macOS security settings, and never
+installs the package. macOS retains control over activation and approval.
+Both build modes validate the built bundle metadata before finishing.
+
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
 and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the
 processing checkboxes and start the

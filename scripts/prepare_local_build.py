@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Stage an ad-hoc signed local camera build. Never install or change macOS policy."""
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+# Keep imports from creating cache files beside the project scripts.
+sys.dont_write_bytecode = True
+from validate_bundle import validate
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCAL_GROUP = "group.org.ultrastudiolut.local"
+LOCAL_MARKER = "UltraStudioLUTLocalDevelopmentBuild"
+APP_ID = "org.ultrastudiolut.app"
+EXTENSION_ID = APP_ID + ".camera"
+
+
+def read_plist(path):
+    with path.open("rb") as stream:
+        return plistlib.load(stream)
+
+
+def write_plist(path, value):
+    with path.open("wb") as stream:
+        plistlib.dump(value, stream)
+
+
+def main():
+    if len(sys.argv) != 3:
+        raise SystemExit("Usage: prepare_local_build.py INPUT.app STAGED.app")
+    source, destination = (Path(argument).absolute() for argument in sys.argv[1:])
+    validate(source)
+    if source == destination or destination.is_relative_to(source) or source.is_relative_to(destination):
+        raise SystemExit("Source and staging destination must be separate bundles.")
+    if read_plist(source / "Contents/Info.plist").get("CFBundleIdentifier") != APP_ID:
+        raise SystemExit("Input is not an UltraStudio LUT build.")
+    if destination.is_symlink():
+        raise SystemExit("Refusing a symlink staging destination.")
+    if destination.exists():
+        previous = read_plist(destination / "Contents/Info.plist")
+        if previous.get("CFBundleIdentifier") != APP_ID or previous.get(LOCAL_MARKER) is not True:
+            raise SystemExit("Refusing to replace a bundle not marked as our local build.")
+        executable = destination / "Contents/MacOS" / previous["CFBundleExecutable"]
+        opened = subprocess.run(["/usr/sbin/lsof", "-t", str(executable)], capture_output=True)
+        if opened.returncode != 1 or opened.stdout:
+            raise SystemExit("Quit the staged local app before rebuilding it.")
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination, symlinks=True)
+    extension = destination / "Contents/Library/SystemExtensions" / (EXTENSION_ID + ".systemextension")
+    version = str(int(time.time()))
+    for bundle in (destination, extension):
+        info_path = bundle / "Contents/Info.plist"
+        info = read_plist(info_path)
+        info[LOCAL_MARKER] = True
+        info["CFBundleVersion"] = version
+        if bundle == extension:
+            info["CMIOExtension"]["CMIOExtensionMachServiceName"] = LOCAL_GROUP + ".camera"
+        write_plist(info_path, info)
+    # Generate outside the repo; both signatures must contain the exact same
+    # app group, and the extension's Mach service must start with that group.
+    with tempfile.TemporaryDirectory(prefix="ultrastudio-sign-", dir=os.environ.get("TMPDIR")) as work:
+        for bundle, template, name in (
+            (extension, "Camera.entitlements", "camera"),
+            (destination, "App.entitlements", "app"),
+        ):
+            entitlements = read_plist(ROOT / "Config" / template)
+            entitlements["com.apple.security.application-groups"] = [LOCAL_GROUP]
+            entitlements_path = Path(work) / (name + ".entitlements")
+            write_plist(entitlements_path, entitlements)
+            subprocess.run([
+                "/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none",
+                "--options", "runtime", "--entitlements", str(entitlements_path), str(bundle),
+            ], check=True)
+    for bundle in (extension, destination):
+        subprocess.run(["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", str(bundle)], check=True)
+    validate(destination)
+    print(f"Local development build: {destination}")
+    print("Ad-hoc signed with embedded entitlements; not notarized. macOS must permit local system extensions.")
+
+
+if __name__ == "__main__":
+    main()

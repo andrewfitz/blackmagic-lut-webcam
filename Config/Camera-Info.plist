@@ -8,7 +8,8 @@
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+  <key>NSSystemExtensionUsageDescription</key><string>Publish UltraStudio LUT as a camera for Zoom and other video applications.</string>
   <key>CMIOExtension</key><dict>
-    <key>CMIOExtensionMachServiceName</key><string>$(TeamIdentifierPrefix)org.ultrastudiolut.app.camera</string>
+    <key>CMIOExtensionMachServiceName</key><string>$(TeamIdentifierPrefix)org.ultrastudiolut.shared.camera</string>
   </dict>
 </dict></plist>
