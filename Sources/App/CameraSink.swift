@@ -2,14 +2,168 @@ import CoreMediaIO
 import Foundation
 
 // The CMIO queue owns one retain until it reports removal of that token.
-private let sinkQueueAltered: CMIODeviceStreamQueueAlteredProc = { _, token, _ in
+let cameraSinkQueueAltered: CMIODeviceStreamQueueAlteredProc = { _, token, _ in
   if let token { Unmanaged<CMSampleBuffer>.fromOpaque(token).release() }
+}
+
+// CMSimpleQueue does not retain its elements. Each successful enqueue owns
+// exactly one retain, released by CMIO's removal callback or our stop drain.
+final class CameraBufferQueue {
+  let queue: CMSimpleQueue
+
+  init(_ queue: CMSimpleQueue) { self.queue = queue }
+  deinit { drain() }
+
+  func send(_ sample: CMSampleBuffer) throws -> Bool {
+    guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue) else { return false }
+    let retained = Unmanaged.passRetained(sample)
+    let status = CMSimpleQueueEnqueue(queue, element: retained.toOpaque())
+    if status != noErr { retained.release() }
+    if status == kCMSimpleQueueError_QueueIsFull { return false }
+    guard status == noErr else { throw VideoError.message("Send camera frame failed (\(status)).") }
+    return true
+  }
+
+  // Call only after stopping the CMIO consumer. CMSimpleQueue permits one
+  // producer and one consumer; draining a live consumer would violate that.
+  func drain() {
+    while let token = CMSimpleQueueDequeue(queue) {
+      Unmanaged<CMSampleBuffer>.fromOpaque(token).release()
+    }
+  }
+}
+
+// DeckLink's borrowed v210 capture buffers are not necessarily IOSurfaces.
+// CMIO's interprocess transport requires shareable storage, so stage raw bytes
+// without changing format, quantizing pixels or losing sample metadata.
+final class CameraFrameStager {
+  private var pool: CVPixelBufferPool?
+  private var dimensions: (Int, Int, OSType)?
+
+  func stage(_ sample: CMSampleBuffer) throws -> CMSampleBuffer? {
+    guard let input = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Camera sample has no image.") }
+    if CVPixelBufferGetIOSurface(input) != nil { return sample }
+    let width = CVPixelBufferGetWidth(input)
+    let height = CVPixelBufferGetHeight(input)
+    let type = CVPixelBufferGetPixelFormatType(input)
+    if dimensions?.0 != width || dimensions?.1 != height || dimensions?.2 != type {
+      var next: CVPixelBufferPool?
+      let status = CVPixelBufferPoolCreate(kCFAllocatorDefault,
+        [kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary,
+        [kCVPixelBufferWidthKey: width, kCVPixelBufferHeightKey: height,
+          kCVPixelBufferPixelFormatTypeKey: type,
+          kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &next)
+      guard status == kCVReturnSuccess, let next else { throw VideoError.message("Cannot allocate shareable camera pool (\(status)).") }
+      pool = next
+      dimensions = (width, height, type)
+    }
+    guard let pool else { throw VideoError.message("Camera staging pool is unavailable.") }
+    var output: CVPixelBuffer?
+    let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
+      [kCVPixelBufferPoolAllocationThresholdKey: 6] as CFDictionary, &output)
+    if status == kCVReturnWouldExceedAllocationThreshold { return nil }
+    guard status == kCVReturnSuccess, let output, CVPixelBufferGetIOSurface(output) != nil else {
+      throw VideoError.message("Cannot allocate shareable camera image (\(status)).")
+    }
+    guard CVPixelBufferLockBaseAddress(input, .readOnly) == kCVReturnSuccess else {
+      throw VideoError.message("Cannot read captured camera image.")
+    }
+    defer { CVPixelBufferUnlockBaseAddress(input, .readOnly) }
+    guard CVPixelBufferLockBaseAddress(output, []) == kCVReturnSuccess else {
+      throw VideoError.message("Cannot write shareable camera image.")
+    }
+    defer { CVPixelBufferUnlockBaseAddress(output, []) }
+    guard CVPixelBufferGetPlaneCount(input) == CVPixelBufferGetPlaneCount(output) else {
+      throw VideoError.message("Captured and shareable camera layouts do not match.")
+    }
+    if CVPixelBufferIsPlanar(input) {
+      for plane in 0..<CVPixelBufferGetPlaneCount(input) {
+        let rows = CVPixelBufferGetHeightOfPlane(input, plane)
+        guard rows == CVPixelBufferGetHeightOfPlane(output, plane),
+          let source = CVPixelBufferGetBaseAddressOfPlane(input, plane),
+          let destination = CVPixelBufferGetBaseAddressOfPlane(output, plane) else {
+          throw VideoError.message("Captured camera plane is unavailable.")
+        }
+        let bytesPerComponent = type == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ? 1 : 2
+        let rowBytes = width * bytesPerComponent
+        try copyRows(source: source, sourceStride: CVPixelBufferGetBytesPerRowOfPlane(input, plane),
+          destination: destination, destinationStride: CVPixelBufferGetBytesPerRowOfPlane(output, plane),
+          rowBytes: rowBytes, rows: rows)
+      }
+    } else {
+      guard type == kCVPixelFormatType_422YpCbCr10,
+        let source = CVPixelBufferGetBaseAddress(input), let destination = CVPixelBufferGetBaseAddress(output) else {
+        throw VideoError.message("Unsupported captured camera layout.")
+      }
+      // v210 stores six pixels in four 32-bit words. Row padding is not media.
+      let rowBytes = ((width + 5) / 6) * 16
+      try copyRows(source: source, sourceStride: CVPixelBufferGetBytesPerRow(input),
+        destination: destination, destinationStride: CVPixelBufferGetBytesPerRow(output),
+        rowBytes: rowBytes, rows: height)
+    }
+    CVBufferRemoveAllAttachments(output)
+    for mode in [CVAttachmentMode.shouldPropagate, .shouldNotPropagate] {
+      if let attachments = CVBufferCopyAttachments(input, mode) { CVBufferSetAttachments(output, attachments, mode) }
+    }
+    var timing = CMSampleTimingInfo()
+    var result: CMSampleBuffer?
+    var resultStatus = CMSampleBufferGetSampleTimingInfo(sample, at: 0, timingInfoOut: &timing)
+    guard resultStatus == noErr, let format = CMSampleBufferGetFormatDescription(sample) else {
+      throw VideoError.message("Captured camera timing or format is unavailable.")
+    }
+    // Packed format descriptions include BytesPerRow. Preserve source format
+    // extensions while updating that layout field for the destination stride.
+    var extensions = CMFormatDescriptionGetExtensions(format) as? [String: Any] ?? [:]
+    if !CVPixelBufferIsPlanar(output) {
+      extensions[kCMFormatDescriptionExtension_BytesPerRow as String] = CVPixelBufferGetBytesPerRow(output)
+    }
+    var stagedFormat: CMVideoFormatDescription?
+    resultStatus = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: type,
+      width: Int32(width), height: Int32(height), extensions: extensions as CFDictionary,
+      formatDescriptionOut: &stagedFormat)
+    guard resultStatus == noErr, let stagedFormat else { throw VideoError.message("Cannot describe staged camera image (\(resultStatus)).") }
+    resultStatus = CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
+      imageBuffer: output, formatDescription: stagedFormat, sampleTiming: &timing, sampleBufferOut: &result)
+    guard resultStatus == noErr, let result else { throw VideoError.message("Cannot stage camera sample (\(resultStatus)).") }
+    for mode in [kCMAttachmentMode_ShouldPropagate, kCMAttachmentMode_ShouldNotPropagate] {
+      if let attachments = CMCopyDictionaryOfAttachments(allocator: kCFAllocatorDefault, target: sample, attachmentMode: mode) {
+        CMSetAttachments(result, attachments: attachments, attachmentMode: mode)
+      }
+    }
+    if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[AnyHashable: Any]],
+      let destinations = CMSampleBufferGetSampleAttachmentsArray(result, createIfNecessary: true) as? [NSMutableDictionary] {
+      for (destination, attachment) in zip(destinations, attachments) { destination.addEntries(from: attachment) }
+    }
+    return result
+  }
+
+  private func copyRows(source: UnsafeMutableRawPointer, sourceStride: Int,
+    destination: UnsafeMutableRawPointer, destinationStride: Int, rowBytes: Int, rows: Int) throws {
+    guard sourceStride >= rowBytes, destinationStride >= rowBytes, rows > 0 else {
+      throw VideoError.message("Captured camera row stride is too short for its pixel format.")
+    }
+    if sourceStride == rowBytes && destinationStride == rowBytes {
+      memcpy(destination, source, rowBytes * rows)
+      return
+    }
+    for row in 0..<rows {
+      let destinationRow = destination.advanced(by: row * destinationStride)
+      memcpy(destinationRow, source.advanced(by: row * sourceStride), rowBytes)
+      if destinationStride > rowBytes { memset(destinationRow.advanced(by: rowBytes), 0, destinationStride - rowBytes) }
+    }
+  }
 }
 
 final class CameraSink {
   private var deviceID: CMIODeviceID = 0
   private var streamID: CMIOStreamID = 0
-  private var queue: CMSimpleQueue?
+  private var queue: CameraBufferQueue?
+  private var negotiatedFormat: CMVideoFormatDescription?
+  private var negotiatedDuration: CMTime?
+  private var stager = CameraFrameStager()
+
+  init(bufferQueue: CameraBufferQueue? = nil) { queue = bufferQueue }
+  deinit { disconnect() }
 
   func connect(configuration: PipelineConfiguration, passthroughFormat: OSType) throws {
     disconnect()
@@ -25,7 +179,12 @@ final class CameraSink {
       let streams = try ids(id, selector: kCMIODevicePropertyStreams)
       let format = try VideoContract.formatDescription(width: configuration.width, height: configuration.height,
         pixelFormat: configuration.untouched ? passthroughFormat : configuration.pixelFormat)
-      for stream in streams {
+      let namedStreams = try streams.map { ($0, try string($0, selector: kCMIOObjectPropertyName)) }
+      guard let sinkStream = namedStreams.first(where: { $0.1 == VideoContract.sinkName })?.0,
+        let sourceStream = namedStreams.first(where: { $0.1 == VideoContract.cameraName })?.0 else {
+        throw VideoError.message("The virtual camera does not publish its source and input streams.")
+      }
+      for stream in [sinkStream, sourceStream] {
         var address = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIOStreamPropertyFormatDescription),
           mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
         var description = Unmanaged.passUnretained(format).toOpaque()
@@ -36,41 +195,46 @@ final class CameraSink {
         try check(CMIOObjectSetPropertyData(stream, &address, 0, nil, UInt32(MemoryLayout<Double>.size), &rate),
           "Set virtual camera frame rate")
       }
-      for stream in streams {
-        guard try string(stream, selector: kCMIOObjectPropertyName) == VideoContract.sinkName else { continue }
-        var unmanaged: Unmanaged<CMSimpleQueue>?
-        try check(CMIOStreamCopyBufferQueue(stream, sinkQueueAltered, nil, &unmanaged), "Open camera queue")
-        guard let unmanaged else { throw VideoError.message("Camera queue is unavailable.") }
-        queue = unmanaged.takeRetainedValue()
-        deviceID = id
-        streamID = stream
-        do { try check(CMIODeviceStartStream(id, stream), "Start virtual camera input") }
-        catch { disconnect(); throw error }
-        return
-      }
+      var unmanaged: Unmanaged<CMSimpleQueue>?
+      try check(CMIOStreamCopyBufferQueue(sinkStream, cameraSinkQueueAltered, nil, &unmanaged), "Open camera queue")
+      guard let unmanaged else { throw VideoError.message("Camera queue is unavailable.") }
+      queue = CameraBufferQueue(unmanaged.takeRetainedValue())
+      negotiatedFormat = format
+      negotiatedDuration = configuration.duration
+      deviceID = id
+      streamID = sinkStream
+      do { try check(CMIODeviceStartStream(id, sinkStream), "Start virtual camera input") }
+      catch { disconnect(); throw error }
+      return
     }
     throw VideoError.message("Install and approve the UltraStudio LUT camera extension, then reconnect.")
   }
 
   func send(_ sample: CMSampleBuffer) throws -> Bool {
     guard let queue else { throw VideoError.message("Virtual camera is disconnected.") }
-    guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue) else { return false }
-    let retained = Unmanaged.passRetained(sample)
-    let status = CMSimpleQueueEnqueue(queue, element: retained.toOpaque())
-    if status != noErr { retained.release() }
-    if status == kCMSimpleQueueError_QueueIsFull { return false }
-    try check(status, "Send camera frame")
-    return true
+    if let negotiatedFormat, let negotiatedDuration {
+      let expected = CMVideoFormatDescriptionGetDimensions(negotiatedFormat)
+      let time = CMSampleBufferGetPresentationTimeStamp(sample)
+      guard CMSampleBufferDataIsReady(sample), let image = CMSampleBufferGetImageBuffer(sample),
+        CVPixelBufferGetWidth(image) == expected.width,
+        CVPixelBufferGetHeight(image) == expected.height,
+        CVPixelBufferGetPixelFormatType(image) == CMFormatDescriptionGetMediaSubType(negotiatedFormat),
+        time.isNumeric, time.epoch == 0, time.seconds >= 0,
+        CMSampleBufferGetDuration(sample) == negotiatedDuration else {
+        throw VideoError.message("Frame does not match the virtual camera's negotiated format and timing.")
+      }
+    }
+    guard let staged = try stager.stage(sample) else { return false }
+    return try queue.send(staged)
   }
 
   func disconnect() {
     if streamID != 0 { CMIODeviceStopStream(deviceID, streamID) }
-    if let queue {
-      while let token = CMSimpleQueueDequeue(queue) {
-        Unmanaged<CMSampleBuffer>.fromOpaque(token).release()
-      }
-    }
+    queue?.drain()
     queue = nil
+    negotiatedFormat = nil
+    negotiatedDuration = nil
+    stager = CameraFrameStager()
     deviceID = 0
     streamID = 0
   }
