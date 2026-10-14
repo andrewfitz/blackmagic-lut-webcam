@@ -9,6 +9,7 @@ class FakeFrame final : public IDeckLinkVideoInputFrame {
   bool *destroyed;
   std::vector<uint8_t> bytes = std::vector<uint8_t>(10240 * 2160, 0);
   bool noSignal = false, invalidTime = false, badBytes = false;
+  BMDTimeValue frameDuration = 1001;
   long width = 3840;
   FakeFrame(bool *result) : destroyed(result) {}
   ~FakeFrame() override { *destroyed = true; }
@@ -24,7 +25,7 @@ class FakeFrame final : public IDeckLinkVideoInputFrame {
   HRESULT GetTimecode(BMDTimecodeFormat, IDeckLinkTimecode **) override { return E_NOTIMPL; }
   HRESULT GetAncillaryData(IDeckLinkVideoFrameAncillary **) override { return E_NOTIMPL; }
   HRESULT GetStreamTime(BMDTimeValue *pts, BMDTimeValue *duration, BMDTimeScale) override {
-    *pts = 123123; *duration = 1001; return invalidTime ? E_FAIL : S_OK;
+    *pts = 123123; *duration = frameDuration; return invalidTime ? E_FAIL : S_OK;
   }
   HRESULT GetHardwareReferenceTimestamp(BMDTimeScale, BMDTimeValue *, BMDTimeValue *) override { return E_NOTIMPL; }
 };
@@ -33,14 +34,15 @@ class FakeMode final : public IDeckLinkDisplayMode {
  public:
   ULONG references = 1;
   BMDDisplayMode mode = bmdMode4K2160p5994;
+  long width = 3840, height = 2160;
   HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
   ULONG AddRef() override { return ++references; }
   ULONG Release() override { return --references; }
   HRESULT GetName(CFStringRef *name) override { *name = CFSTR("Synthetic 4K"); CFRetain(*name); return S_OK; }
   BMDDisplayMode GetDisplayMode() override { return mode; }
-  long GetWidth() override { return 3840; }
-  long GetHeight() override { return 2160; }
-  HRESULT GetFrameRate(BMDTimeValue *duration, BMDTimeScale *scale) override { *duration = 1001; *scale = 60000; return S_OK; }
+  long GetWidth() override { return width; }
+  long GetHeight() override { return height; }
+  HRESULT GetFrameRate(BMDTimeValue *duration, BMDTimeScale *scale) override { *duration = 1001; *scale = mode == bmdMode4K2160p2997 ? 30000 : 60000; return S_OK; }
   BMDFieldDominance GetFieldDominance() override { return bmdProgressiveFrame; }
   BMDDisplayModeFlags GetFlags() override { return bmdDisplayModeColorspaceRec709; }
 };
@@ -50,19 +52,23 @@ class FakeInput final : public IDeckLinkInput {
   ULONG references = 1;
   std::vector<std::string> calls;
   HRESULT enableResult = S_OK, startResult = S_OK, callbackResult = S_OK;
+  HRESULT pauseResult = S_OK, flushResult = S_OK;
+  bool reconfiguredOnMainThread = false;
+  BMDDisplayMode enabledMode = bmdModeUnknown;
   IDeckLinkInputCallback *callback = nullptr;
   ~FakeInput() override { if (callback) callback->Release(); }
   HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
   ULONG AddRef() override { return ++references; }
   ULONG Release() override { return --references; }
   HRESULT DoesSupportVideoMode(BMDVideoConnection, BMDDisplayMode, BMDPixelFormat, BMDVideoInputConversionMode,
-    BMDSupportedVideoModeFlags, BMDDisplayMode *, bool *) override { return E_NOTIMPL; }
+    BMDSupportedVideoModeFlags, BMDDisplayMode *, bool *supported) override { calls.push_back("support"); *supported = true; return S_OK; }
   HRESULT GetDisplayMode(BMDDisplayMode, IDeckLinkDisplayMode **) override { return E_NOTIMPL; }
   HRESULT GetDisplayModeIterator(IDeckLinkDisplayModeIterator **) override { return E_NOTIMPL; }
   HRESULT SetScreenPreviewCallback(IDeckLinkScreenPreviewCallback *) override { return E_NOTIMPL; }
   HRESULT EnableVideoInput(BMDDisplayMode mode, BMDPixelFormat format, BMDVideoInputFlags) override {
     calls.push_back("enable");
-    if (mode != bmdMode4K2160p5994 || format != bmdFormat10BitYUV) return E_INVALIDARG;
+    if ((mode != bmdMode4K2160p5994 && mode != bmdMode4K2160p2997) || format != bmdFormat10BitYUV) return E_INVALIDARG;
+    enabledMode = mode;
     return enableResult;
   }
   HRESULT DisableVideoInput() override { calls.push_back("disable"); return S_OK; }
@@ -73,8 +79,8 @@ class FakeInput final : public IDeckLinkInput {
   HRESULT GetAvailableAudioSampleFrameCount(uint32_t *) override { return E_NOTIMPL; }
   HRESULT StartStreams() override { calls.push_back("start"); return startResult; }
   HRESULT StopStreams() override { calls.push_back("stop"); return S_OK; }
-  HRESULT PauseStreams() override { return E_NOTIMPL; }
-  HRESULT FlushStreams() override { return E_NOTIMPL; }
+  HRESULT PauseStreams() override { calls.push_back("pause"); reconfiguredOnMainThread = [NSThread isMainThread]; return pauseResult; }
+  HRESULT FlushStreams() override { calls.push_back("flush"); return flushResult; }
   HRESULT SetCallback(IDeckLinkInputCallback *value) override {
     calls.push_back(value ? "callback" : "clear");
     if (value && callbackResult != S_OK) return callbackResult;

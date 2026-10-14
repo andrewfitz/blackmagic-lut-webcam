@@ -17,8 +17,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly, copy) NSArray<UDLMode *> *modes;
 @end
 
-// Calls start/stop on one control queue. Handlers execute on Blackmagic's
-// callback thread and must return promptly: reject a frame while processing is
+// Calls start/stop on one control queue. Frames execute on Blackmagic's
+// callback thread; events may also use the native control queue. Handlers must
+// return promptly: reject a frame while processing is
 // busy, then retain the CVPixelBuffer for any accepted asynchronous work. The
 // pixel buffer owns the underlying DeckLink frame until its final release.
 // Never call stop() synchronously from a handler (it waits for callbacks).
@@ -31,12 +32,20 @@ NS_ASSUME_NONNULL_BEGIN
             eventHandler:(void (^)(NSString *message))eventHandler
                    error:(NSError *_Nullable *_Nullable)error
   NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:eventHandler:));
+// Automatically follows supported HDMI source modes. actualDuration comes
+// from the source frame's stream time, never a user-selected expected rate.
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+                frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
+                eventHandler:(void (^)(NSString *message))eventHandler
+                       error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(startAuto(deviceID:frameHandler:eventHandler:));
 - (void)stop;
 @end
 
 #if defined(UDL_BACKEND_TESTING)
 // Synthetic SDK callbacks only; never opens hardware or saves video.
 FOUNDATION_EXPORT BOOL UDLRunSyntheticChecks(NSError *_Nullable *_Nullable error);
+FOUNDATION_EXPORT BOOL UDLRunAutoSyntheticChecks(NSError *_Nullable *_Nullable error);
 #endif
 
 NS_ASSUME_NONNULL_END
