@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Observation
 import UniformTypeIdentifiers
 
@@ -19,11 +18,15 @@ final class AppModel {
   var lutLoaded = false
   var running = false
   var loading = false
-  var update = CaptureUpdate(message: "Select the UltraStudio input and load a log-to-Rec.709 .cube LUT.")
+  var update = CaptureUpdate(message: "Select the UltraStudio input and start the feed. LUT loading is optional.")
   let installer = ExtensionInstaller()
-  private let capture = CaptureController()
+  let previewRenderer: VideoPreviewRenderer
+  private let capture: CaptureController
 
   init() {
+    let renderer = VideoPreviewRenderer()
+    previewRenderer = renderer
+    capture = CaptureController(previewRenderer: renderer)
     capture.onUpdate = { [weak self] update in
       MainActor.assumeIsolated {
         self?.update = update
@@ -34,19 +37,14 @@ final class AppModel {
   }
 
   func refresh() {
-    let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.external], mediaType: .video, position: .unspecified).devices
-    self.devices = devices.filter {
-      let name = $0.localizedName.lowercased()
-      return name.contains("blackmagic") || name.contains("ultrastudio")
-    }.map { device in
-      let modes = Set(device.formats.compactMap { format -> String? in
-        let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        guard size.width == 3840, size.height == 2160 else { return nil }
-        return VideoContract.fourCC(CMFormatDescriptionGetMediaSubType(format.formatDescription))
-      }).sorted().joined(separator: ", ")
-      return InputDevice(id: device.uniqueID, name: device.localizedName,
-        modes: modes.isEmpty ? "No 4K formats advertised" : "4K driver formats: \(modes)")
-    }
+    do {
+      self.devices = try UDLBackend.devices().map { device in
+        let modes = device.modes.filter { $0.width == 3840 && $0.height == 2160 }
+        let rates = Set(modes.map { String(format: "%.2f", 1 / $0.frameDuration.seconds) }).sorted().joined(separator: ", ")
+        return InputDevice(id: device.identifier, name: device.name,
+          modes: rates.isEmpty ? "No 4K capture modes" : "4K 10-bit SDK capture · \(rates) fps")
+      }
+    } catch { devices = []; update.message = error.localizedDescription }
     if !self.devices.contains(where: { $0.id == selectedDevice }) {
       selectedDevice = self.devices.first?.id ?? ""
     }
@@ -74,6 +72,7 @@ final class AppModel {
           switch result {
           case .success:
             self.lutLoaded = true
+            self.configuration.applyLUT = true
             self.lutTitle = "\(cube.title) · \(cube.dimension)³"
             self.update.message = "LUT loaded. Confirm it expects \(self.gamut) and outputs Rec.709."
           case .failure(let error): self.update.message = error.localizedDescription
@@ -86,16 +85,9 @@ final class AppModel {
   func start() {
     running = true
     update.message = "Opening UltraStudio…"
-    Task {
-      let allowed = await AVCaptureDevice.requestAccess(for: .video)
-      guard allowed else {
-        running = false
-        update.message = "Camera access is denied. Enable UltraStudio LUT in System Settings → Privacy & Security → Camera."
-        return
-      }
-      guard running else { return }
-      capture.start(deviceID: selectedDevice, configuration: configuration)
-    }
+    var snapshot = configuration
+    snapshot.applyLUT = snapshot.applyLUT && lutLoaded
+    capture.start(deviceID: selectedDevice, configuration: snapshot)
   }
-  func stop() { capture.stop() }
+  func stop() { running = false; capture.stop() }
 }

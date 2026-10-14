@@ -42,7 +42,7 @@ struct ContentView: View {
             if model.devices.isEmpty { Text("No UltraStudio detected").tag("") }
             ForEach(model.devices) { Text($0.name).tag($0.id) }
           }
-          Text(model.devices.first(where: { $0.id == model.selectedDevice })?.modes ?? "Connect UltraStudio and enable its Blackmagic camera extension.")
+          Text(model.devices.first(where: { $0.id == model.selectedDevice })?.modes ?? "Connect UltraStudio and install Blackmagic Desktop Video.")
             .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
         Button("Refresh", systemImage: "arrow.clockwise", action: model.refresh)
@@ -54,7 +54,8 @@ struct ContentView: View {
 
       GroupBox("Processing — in this order") {
         HStack(alignment: .top, spacing: 24) {
-          pipelineToggle("1  Apply LUT", detail: "Full-resolution, floating-point processing", value: $model.configuration.applyLUT)
+          pipelineToggle("1  Apply LUT", detail: model.lutLoaded ? "Full-resolution, floating-point processing" : "Optional · load a LUT to enable", value: $model.configuration.applyLUT)
+            .disabled(!model.lutLoaded)
           pipelineToggle("2  Downscale", detail: "4K → 1080p · Lanczos", value: $model.configuration.downscale)
           pipelineToggle("3  Color format", detail: "4:2:2 10-bit → 4:2:0 8-bit", value: $model.configuration.convertTo420)
           pipelineToggle("4  Frame rate", detail: "59.94 → 29.97 fps", value: $model.configuration.reduceFrameRate)
@@ -76,16 +77,15 @@ struct ContentView: View {
 
       ZStack {
         RoundedRectangle(cornerRadius: 12).fill(.black)
-        if let preview = model.update.preview {
-          Image(decorative: preview, scale: 1).resizable().aspectRatio(contentMode: .fit).padding(2)
-        } else {
+        VideoPreview(renderer: model.previewRenderer).padding(2)
+        if !model.update.previewDelivered {
           VStack(spacing: 12) {
             Image(systemName: "video.badge.waveform").font(.system(size: 40))
             Text("Processed feed preview")
             Text("Select UltraStudio LUT as the camera in Zoom.").font(.caption)
           }.foregroundStyle(.white.opacity(0.65))
         }
-      }.aspectRatio(16 / 9, contentMode: .fit).frame(maxHeight: .infinity)
+      }.aspectRatio(16 / 9, contentMode: .fit).frame(maxWidth: .infinity, maxHeight: .infinity)
 
       HStack {
         VStack(alignment: .leading, spacing: 4) {
@@ -93,16 +93,18 @@ struct ContentView: View {
           Text(model.update.input).font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Text("\(model.update.frames) sent · \(model.update.dropped) dropped · \(model.update.processingMS, specifier: "%.1f") ms")
+        Text("\(model.update.outputFPS, specifier: "%.2f") fps · \(model.update.displayedFrames) displayed · \(model.update.processingMS, specifier: "%.1f") ms\nDrops: source \(model.update.sourceDrops) · capture \(model.update.captureDrops) · pool \(model.update.poolDrops) · camera \(model.update.cameraDrops) · preview \(model.update.previewDrops)")
           .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         if model.running {
           Button("Stop", systemImage: "stop.fill", action: model.stop).buttonStyle(.borderedProminent).tint(.red)
         } else {
           Button("Start feed", systemImage: "play.fill", action: model.start).buttonStyle(.borderedProminent)
-            .disabled(model.selectedDevice.isEmpty || model.loading || (model.configuration.applyLUT && !model.lutLoaded))
+            .disabled(model.selectedDevice.isEmpty || model.loading)
         }
       }
-      Text(model.update.message).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+      Text(model.update.message).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+      Label(model.update.cameraMessage, systemImage: model.update.cameraOutputActive ? "video.fill" : "video.slash")
+        .font(.caption).foregroundStyle(model.update.cameraOutputActive ? .green : .secondary)
       Divider()
       HStack {
         Button("Install camera", action: model.installer.install).disabled(model.installer.pending || model.running)

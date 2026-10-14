@@ -75,6 +75,11 @@ struct CubeLUT: Sendable {
     guard high.x > low.x, high.y > low.y, high.z > low.z else {
       throw ParseError.invalid("DOMAIN_MAX must exceed DOMAIN_MIN")
     }
+    let span = high - low
+    let inverse = SIMD3<Float>(repeating: 1) / span
+    guard [span.x, span.y, span.z, inverse.x, inverse.y, inverse.z].allSatisfy(\.isFinite) else {
+      throw ParseError.invalid("domain span cannot be represented safely in floating-point processing")
+    }
     self.title = title
     self.dimension = size
     self.domainMin = low

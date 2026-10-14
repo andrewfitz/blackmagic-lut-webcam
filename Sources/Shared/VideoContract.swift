@@ -16,8 +16,9 @@ enum VideoContract {
   ]
 
   static func fourCC(_ value: OSType) -> String {
-    String(bytes: [24, 16, 8, 0].map { UInt8((value >> $0) & 255) }, encoding: .ascii)
-      ?? String(value)
+    let bytes = [24, 16, 8, 0].map { UInt8((value >> $0) & 255) }
+    guard bytes.allSatisfy({ (32...126).contains($0) }) else { return String(format: "0x%08X", value) }
+    return String(bytes: bytes, encoding: .ascii) ?? String(value)
   }
 
   static func formatDescription(width: Int, height: Int, pixelFormat: OSType) throws -> CMVideoFormatDescription {
@@ -49,7 +50,7 @@ enum VideoContract {
 }
 
 struct PipelineConfiguration: Equatable, Sendable {
-  var applyLUT = true
+  var applyLUT = false
   var downscale = true
   var convertTo420 = true
   var reduceFrameRate = false
@@ -71,7 +72,11 @@ struct PipelineConfiguration: Equatable, Sendable {
 
 enum VideoError: LocalizedError {
   case message(String)
+  case outputBackPressure
   var errorDescription: String? {
-    switch self { case .message(let text): return text }
+    switch self {
+    case .message(let text): return text
+    case .outputBackPressure: return "Output buffers are busy; dropping this frame."
+    }
   }
 }

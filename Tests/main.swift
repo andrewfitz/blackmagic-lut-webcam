@@ -56,6 +56,10 @@ func syntheticRamp() throws -> CVPixelBuffer {
     XCTAssertEqual(cube.domainMin, SIMD3(-1, 0, 0))
     XCTAssertEqual(cube.domainMax, SIMD3(1, 2, 3))
     XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2", with: "LUT_3D_SIZE 2\nDOMAIN_MAX 0 1 1")))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2",
+      with: "LUT_3D_SIZE 2\nDOMAIN_MIN -3e38 0 0\nDOMAIN_MAX 3e38 1 1")))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2",
+      with: "LUT_3D_SIZE 2\nDOMAIN_MAX 1e-45 1 1")))
   }
   static let allTests = [
     ("ordering and whitespace", testOrderingAndWhitespace),
@@ -84,7 +88,7 @@ func syntheticRamp() throws -> CVPixelBuffer {
   func testLUTAndLanczosThenNV12() throws {
     let processor = try LUTProcessor()
     try processor.load(CubeLUT(text: cubeText(size: 17, transform: { $0 * $0 })))
-    let output = try processor.process(syntheticRamp(), configuration: PipelineConfiguration())
+    let output = try processor.process(syntheticRamp(), configuration: PipelineConfiguration(applyLUT: true))
     XCTAssertEqual(CVPixelBufferGetWidth(output), 1920)
     XCTAssertEqual(CVPixelBufferGetHeight(output), 1080)
     XCTAssertEqual(CVPixelBufferGetPixelFormatType(output), kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
@@ -104,14 +108,70 @@ func syntheticRamp() throws -> CVPixelBuffer {
     let output = try processor.process(source, configuration: configuration)
     XCTAssertTrue(source === output)
   }
-  func testIndependentSwitches() {
-    for bits in 0..<16 {
+  func testIndependentSwitches() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let source = try syntheticRamp()
+    for bits in 0..<8 {
       let config = PipelineConfiguration(applyLUT: bits & 1 != 0, downscale: bits & 2 != 0,
         convertTo420: bits & 4 != 0, reduceFrameRate: bits & 8 != 0, inputFast: true)
       XCTAssertEqual(config.width, bits & 2 != 0 ? 1920 : 3840)
       XCTAssertEqual(config.duration, bits & 8 != 0 ? VideoContract.slowDuration : VideoContract.fastDuration)
       XCTAssertEqual(config.pixelFormat, bits & 4 != 0 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+      let output = try processor.process(source, configuration: config)
+      XCTAssertEqual(CVPixelBufferGetWidth(output), bits & 2 != 0 ? 1920 : 3840)
+      XCTAssertEqual(CVPixelBufferGetHeight(output), bits & 2 != 0 ? 1080 : 2160)
+      XCTAssertEqual(CVPixelBufferGetPixelFormatType(output), bits & 4 != 0 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
     }
+  }
+  func testNonlinearLUTPrecedesLanczos() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText(size: 17, transform: { $0 * $0 })))
+    let source = try syntheticRamp()
+    CVPixelBufferLockBaseAddress(source, [])
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(source, 0) / 2
+    let pixels = CVPixelBufferGetBaseAddressOfPlane(source, 0)!.assumingMemoryBound(to: UInt16.self)
+    for y in 0..<2160 {
+      for x in 0..<3840 { pixels[y * stride + x] = UInt16(x % 2 == 0 ? 64 : 940) << 6 }
+    }
+    CVPixelBufferUnlockBaseAddress(source, [])
+    let output = try processor.process(source, configuration: PipelineConfiguration(applyLUT: true))
+    CVPixelBufferLockBaseAddress(output, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(output, .readOnly) }
+    let result = CVPixelBufferGetBaseAddressOfPlane(output, 0)!.assumingMemoryBound(to: UInt8.self)
+    // LUT-first preserves the black/white endpoints, which Lanczos averages to
+    // 0.5. Applying the square LUT after scaling would give 0.25 instead.
+    XCTAssertEqual(Double(result[960]), 16 + 219 * 0.5, accuracy: 3)
+  }
+  func testPackedV210Precision() throws {
+    var input: CVPixelBuffer?
+    XCTAssertEqual(CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_422YpCbCr10,
+      [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &input), kCVReturnSuccess)
+    let source = try XCTUnwrap(input)
+    CVPixelBufferLockBaseAddress(source, [])
+    let stride = CVPixelBufferGetBytesPerRow(source) / 4
+    let base = CVPixelBufferGetBaseAddress(source)!.assumingMemoryBound(to: UInt32.self)
+    func luma(_ x: Int) -> UInt32 { UInt32(64 + x * 876 / 3839) }
+    var row = [UInt32](repeating: 0, count: stride)
+    for x in Swift.stride(from: 0, to: 3840, by: 6) {
+      let offset = x / 6 * 4
+      row[offset] = 512 | (luma(x) << 10) | (512 << 20)
+      row[offset + 1] = luma(x + 1) | (512 << 10) | (luma(x + 2) << 20)
+      row[offset + 2] = 512 | (luma(x + 3) << 10) | (512 << 20)
+      row[offset + 3] = luma(x + 4) | (512 << 10) | (luma(x + 5) << 20)
+    }
+    row.withUnsafeBytes { bytes in
+      for y in 0..<2160 { memcpy(base.advanced(by: y * stride), bytes.baseAddress!, bytes.count) }
+    }
+    CVPixelBufferUnlockBaseAddress(source, [])
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let output = try processor.process(source, configuration: PipelineConfiguration(
+      applyLUT: true, downscale: false, convertTo420: false, reduceFrameRate: false, inputFast: true))
+    CVPixelBufferLockBaseAddress(output, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(output, .readOnly) }
+    let pixels = CVPixelBufferGetBaseAddressOfPlane(output, 0)!.assumingMemoryBound(to: UInt16.self)
+    for x in 0..<3840 { XCTAssertEqual(Double(pixels[x] >> 6), Double(luma(x)), accuracy: 1) }
   }
   func testRationalFrameReductionDoesNotDrift() {
     var gate = FrameRateGate()
@@ -135,6 +195,14 @@ func syntheticRamp() throws -> CVPixelBuffer {
 let suite = XCTestSuite(name: "UltraStudio LUT synthetic checks")
 suite.addTest(XCTestSuite(forTestCaseClass: CubeTests.self))
 suite.addTest(XCTestSuite(forTestCaseClass: PipelineTests.self))
+suite.addTest(XCTestSuite(forTestCaseClass: GPUExtendedChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: EndToEndChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: CameraContractChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: DeckLinkChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: PreviewChecks.self))
+#if CAPTURE_LIFECYCLE_TESTS
+suite.addTest(XCTestSuite(forTestCaseClass: CaptureLifecycleChecks.self))
+#endif
 suite.run()
 guard let run = suite.testRun, run.executionCount > 0 else { exit(2) }
 exit(run.hasSucceeded ? 0 : 1)

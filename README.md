@@ -21,12 +21,13 @@ The four checkboxes are independent and ordered:
 4. **Frame rate:** reduce 59.94 to 29.97 by selecting every second source frame
    after pixel processing. This does not affect a 29.97 source.
 
-Defaults: LUT, downscale, and color conversion enabled; frame-rate reduction
-disabled. Both source rates use their exact rational values, 30000/1001 and
+Defaults: LUT off, downscale and color conversion enabled, frame-rate reduction
+disabled. A LUT is optional; loading one enables its checkbox. Both source rates use their exact rational values, 30000/1001 and
 60000/1001. DF is a timecode convention, not a pixel-processing operation.
 
 With all pixel-processing switches disabled, the original input pixel buffer
-is forwarded without a pixel copy or color conversion. Frame-rate reduction
+is forwarded without color conversion. A bounded bit-exact IOSurface copy is
+used only when camera transport or native display requires shareable memory. Frame-rate reduction
 can still be enabled independently. A processed 10-bit output is high-precision
 video, but the LUT intentionally changes its pixel values.
 
@@ -80,7 +81,7 @@ camera**. Approve the camera extension in System Settings when macOS asks.
 **Remove camera** requests deactivation of this app's extension.
 
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
-and any HDMI display LUT disabled. Load the matching LUT here. Select the
+and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the
 correct source frame rate, select the processing checkboxes, and start the
 feed. In Zoom, choose **UltraStudio LUT**. Zoom determines transmitted quality
 and frame rate from its own supported features, settings, and meeting conditions.
@@ -88,12 +89,24 @@ and frame rate from its own supported features, settings, and meeting conditions
 ## Qualification status and boundaries
 
 See [VALIDATION.md](VALIDATION.md) for executed checks and outstanding live tests.
-The first capture adapter uses Blackmagic's AVFoundation camera interface and
-requires the driver to advertise native 4K 10-bit 4:2:2 input and deliver it.
-It checks every received frame and stops on format changes. It never silently
-falls back to 8-bit. If the driver exposes only 8-bit camera formats, a direct
-DeckLink SDK capture adapter is still required; that adapter is not implemented.
+Capture uses the native DeckLink SDK directly and validates every received frame
+as 3840 × 2160 10-bit 4:2:2. It stops on incompatible format changes. The build
+fetches checksum-pinned, permissively licensed Blackmagic headers and dispatch
+source from official OBS upstream; Blackmagic Desktop Video supplies the runtime.
 
+The preview receives the same final pixel buffer and timing as camera output.
+AVSampleBufferDisplayLayer renders it through native video hardware without
+CGImage readback or per-frame SwiftUI state. Preview sample attachments are
+independent from camera transport. Its only extra operation is display fitting
+and the native display color conversion; every selected processing checkbox
+affects both preview and camera output. Capture can run in preview mode before
+the camera extension is signed and installed.
+
+GPU resources and output buffers are warmed before capture starts. Capture,
+processing pools, camera transport and preview queues are bounded. The UI shows
+source timestamp gaps, capture admission drops, pool pressure, transport drops
+and native preview delivery separately. Intentional frame-rate reduction does
+not count as a dropped frame.
 No footage is recorded or written to disk. There is no audio virtual device or
 SMPTE/DF timecode transport in this version. Select your existing microphone or
 Blackmagic audio input separately in Zoom and qualify A/V synchronization.

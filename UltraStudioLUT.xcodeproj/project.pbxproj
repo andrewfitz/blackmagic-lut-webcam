@@ -48,6 +48,12 @@
 			"path" = "Sources/App/UltraStudioLUTApp.swift";
 			"sourceTree" = "<group>";
 		};
+		"FD76054520E1FD1C70C49484" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/VideoPreview.swift";
+			"sourceTree" = "<group>";
+		};
 		"8725D62A8CE1EF20CBDB40C3" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -58,6 +64,30 @@
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/CameraExtension/main.swift";
+			"sourceTree" = "<group>";
+		};
+		"173187DDBD87871C21027E79" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "Sources/DeckLinkBackend/BackendTestSupport.inc";
+			"sourceTree" = "<group>";
+		};
+		"21BDA984EA18A3C5373C790E" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "Sources/DeckLinkBackend/BridgingHeader.h";
+			"sourceTree" = "<group>";
+		};
+		"AAF6F2FC0D45A52F9599BCFC" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "Sources/DeckLinkBackend/UDLBackend.h";
+			"sourceTree" = "<group>";
+		};
+		"32548022BBBBD26CE5F60BA6" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.cpp.objcpp";
+			"path" = "Sources/DeckLinkBackend/UDLBackend.mm";
 			"sourceTree" = "<group>";
 		};
 		"F74775F581B3FF2EEEB636F5" = {
@@ -77,6 +107,12 @@
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/Shared/VideoContract.swift";
 			"sourceTree" = "<group>";
+		};
+		"CBB0F44387152B90D4ECE2C1" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.cpp.cpp";
+			"path" = "/Volumes/8TB/cinesomatic-director-work/cache/ultrastudio-lut/decklink-sdk/DeckLinkAPIDispatch.cpp";
+			"sourceTree" = "<absolute>";
 		};
 		"9F1C542B10A779EB6C6C5E71" = {
 			"isa" = "PBXFileReference";
@@ -122,7 +158,7 @@
 		};
 		"C69913C7EE4DFDD011BE172F" = {
 			"isa" = "PBXGroup";
-			"children" = ("C1564F1D0EFAC8F18D6AC93F", "B6E8B98502793D5E05911D6F", "916E35D9EACA9AF2F9101463", "FD96F6DA7E56364B31FD0045", "EF900CDADA08A24069FC5044", "5C09F9D937B3723D73D0AA7F", "3079C2E30BE7A84D9032CDD9", "8725D62A8CE1EF20CBDB40C3", "447BB8FEDD97C07EA2446011", "F74775F581B3FF2EEEB636F5", "9D135D5DE518783CBB02E690", "4708BC5A3EF4C6BE110346A2", "9F1C542B10A779EB6C6C5E71", "A67D62E8DB1DC8FBCDAF9B63", "0EE95EE248748209E883C7A7", "0AA6AB03441E906E3D76376A", "0A3E27B8CA818264D75C8D81");
+			"children" = ("C1564F1D0EFAC8F18D6AC93F", "B6E8B98502793D5E05911D6F", "916E35D9EACA9AF2F9101463", "FD96F6DA7E56364B31FD0045", "EF900CDADA08A24069FC5044", "5C09F9D937B3723D73D0AA7F", "3079C2E30BE7A84D9032CDD9", "FD76054520E1FD1C70C49484", "8725D62A8CE1EF20CBDB40C3", "447BB8FEDD97C07EA2446011", "173187DDBD87871C21027E79", "21BDA984EA18A3C5373C790E", "AAF6F2FC0D45A52F9599BCFC", "32548022BBBBD26CE5F60BA6", "F74775F581B3FF2EEEB636F5", "9D135D5DE518783CBB02E690", "4708BC5A3EF4C6BE110346A2", "CBB0F44387152B90D4ECE2C1", "9F1C542B10A779EB6C6C5E71", "A67D62E8DB1DC8FBCDAF9B63", "0EE95EE248748209E883C7A7", "0AA6AB03441E906E3D76376A", "0A3E27B8CA818264D75C8D81");
 			"sourceTree" = "<group>";
 		};
 		"488864B3D19480A82F7F1786" = {
@@ -132,6 +168,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "5.0";
 				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "c++17";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
@@ -149,6 +187,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "5.0";
 				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "c++17";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
@@ -271,6 +311,10 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "3079C2E30BE7A84D9032CDD9";
 		};
+		"9B689B458635180D647D9DAC" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FD76054520E1FD1C70C49484";
+		};
 		"3E63573547C8C369BF028C3C" = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = "F74775F581B3FF2EEEB636F5";
@@ -283,10 +327,18 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "4708BC5A3EF4C6BE110346A2";
 		};
+		"C138C81E7D71035ECD0C5A78" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "32548022BBBBD26CE5F60BA6";
+		};
+		"D1810BAA7CA972705C125392" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CBB0F44387152B90D4ECE2C1";
+		};
 		"AFF87A50730392B6633ACECE" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("639F764C0F391FB04AAD6BAE", "DAADF81B79352C98982C1109", "BE80CB30B04AEEE090DC2B39", "FB7199A283E7A151CFFFEFAC", "B366815C407EA3E471D92EFF", "3B18707A84A5FCF9536BF21A", "3E63573547C8C369BF028C3C", "C9B210DDDEF3A092B84AE646", "0AB2C3CDF5BEEA14D06A8424");
+			"files" = ("639F764C0F391FB04AAD6BAE", "DAADF81B79352C98982C1109", "BE80CB30B04AEEE090DC2B39", "FB7199A283E7A151CFFFEFAC", "B366815C407EA3E471D92EFF", "3B18707A84A5FCF9536BF21A", "9B689B458635180D647D9DAC", "3E63573547C8C369BF028C3C", "C9B210DDDEF3A092B84AE646", "0AB2C3CDF5BEEA14D06A8424", "C138C81E7D71035ECD0C5A78", "D1810BAA7CA972705C125392");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"7A4C2DC8FCA657188648E999" = {
@@ -318,6 +370,9 @@
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
 				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "Sources/DeckLinkBackend/BridgingHeader.h";
+				"DECKLINK_SDK_DIR" = "/Volumes/8TB/cinesomatic-director-work/cache/ultrastudio-lut/decklink-sdk";
+				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(DECKLINK_SDK_DIR)");
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_COMPILATION_MODE" = "singlefile";
 			};
@@ -333,6 +388,9 @@
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
 				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "Sources/DeckLinkBackend/BridgingHeader.h";
+				"DECKLINK_SDK_DIR" = "/Volumes/8TB/cinesomatic-director-work/cache/ultrastudio-lut/decklink-sdk";
+				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(DECKLINK_SDK_DIR)");
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_COMPILATION_MODE" = "wholemodule";
 			};

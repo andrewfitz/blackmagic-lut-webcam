@@ -2,6 +2,7 @@
 """Generate the two-target Xcode project using only the Python standard library."""
 import hashlib
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,8 +24,19 @@ def file(path, type):
 
 shared = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/Shared").glob("*.swift"))
 app = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/App").iterdir() if p.suffix in (".swift", ".metal")) + shared
+native = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/DeckLinkBackend").iterdir() if p.suffix in (".h", ".mm", ".inc"))
+app += native
 camera = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/CameraExtension").glob("*.swift")) + ["Sources/Shared/VideoContract.swift"]
-source_refs = {path: file(path, "sourcecode.metal" if path.endswith(".metal") else "sourcecode.swift") for path in sorted(set(app + camera))}
+def source_type(path):
+    if path.endswith(".metal"): return "sourcecode.metal"
+    if path.endswith(".mm"): return "sourcecode.cpp.objcpp"
+    if path.endswith((".h", ".inc")): return "sourcecode.c.h"
+    return "sourcecode.swift"
+source_refs = {path: file(path, source_type(path)) for path in sorted(set(app + camera))}
+sdk_dir = os.environ.get("DECKLINK_SDK_DIR", "/Volumes/8TB/cinesomatic-director-work/cache/ultrastudio-lut/decklink-sdk")
+dispatch_path = str(Path(sdk_dir) / "DeckLinkAPIDispatch.cpp")
+source_refs[dispatch_path] = add("sdk-dispatch-reference", "PBXFileReference", lastKnownFileType="sourcecode.cpp.cpp", path=dispatch_path, sourceTree="<absolute>")
+app.append(dispatch_path)
 config_refs = [file(p.relative_to(ROOT).as_posix(), "text.plist.xml") for p in sorted((ROOT / "Config").glob("*")) if p.name != "Signing.xcconfig"]
 app_product = add("app-product", "PBXFileReference", explicitFileType="wrapper.application", path="UltraStudio LUT.app", sourceTree="BUILT_PRODUCTS_DIR")
 camera_product = add("camera-product", "PBXFileReference", explicitFileType="wrapper.system-extension", path="org.ultrastudiolut.app.camera.systemextension", sourceTree="BUILT_PRODUCTS_DIR")
@@ -41,16 +53,19 @@ def configs(key, settings):
     return add(f"{key}-configs", "XCConfigurationList", buildConfigurations=ids, defaultConfigurationIsVisible=0, defaultConfigurationName="Debug")
 
 
-project_configs = configs("project", dict(SDKROOT="macosx", MACOSX_DEPLOYMENT_TARGET="15.0", SWIFT_VERSION="5.0", CLANG_ENABLE_MODULES="YES", ENABLE_HARDENED_RUNTIME="YES", CODE_SIGN_STYLE="Automatic", SWIFT_STRICT_CONCURRENCY="complete", SWIFT_TREAT_WARNINGS_AS_ERRORS="YES", ARCHS="arm64"))
+project_configs = configs("project", dict(SDKROOT="macosx", MACOSX_DEPLOYMENT_TARGET="15.0", SWIFT_VERSION="5.0", CLANG_ENABLE_MODULES="YES", CLANG_ENABLE_OBJC_ARC="YES", CLANG_CXX_LANGUAGE_STANDARD="c++17", ENABLE_HARDENED_RUNTIME="YES", CODE_SIGN_STYLE="Automatic", SWIFT_STRICT_CONCURRENCY="complete", SWIFT_TREAT_WARNINGS_AS_ERRORS="YES", ARCHS="arm64"))
 
 
 def target(key, name, sources, product, product_type, bundle_id, plist, entitlements):
-    builds = [add(f"{key}-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith(".swift")]
+    builds = [add(f"{key}-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith((".swift", ".mm", ".cpp"))]
     phase = add(f"{key}-sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=builds, runOnlyForDeploymentPostprocessing=0)
     frameworks = add(f"{key}-frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0)
     settings = dict(PRODUCT_NAME=name, PRODUCT_BUNDLE_IDENTIFIER=bundle_id, INFOPLIST_FILE=plist, CODE_SIGN_ENTITLEMENTS=entitlements, GENERATE_INFOPLIST_FILE="NO", LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/../Frameworks", COMBINE_HIDPI_IMAGES="YES")
     if key == "camera":
         settings.update(PRODUCT_NAME=bundle_id, SKIP_INSTALL="YES")
+    else:
+        settings.update(SWIFT_OBJC_BRIDGING_HEADER="Sources/DeckLinkBackend/BridgingHeader.h", DECKLINK_SDK_DIR=sdk_dir,
+                        HEADER_SEARCH_PATHS=["$(inherited)", "$(DECKLINK_SDK_DIR)"])
     resources = [add(f"{key}-resource-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith(".metal")]
     resource_phase = add(f"{key}-resources", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, files=resources, dstPath="", dstSubfolderSpec=7, name="Copy GPU Shader Source", runOnlyForDeploymentPostprocessing=0)
     return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=[phase, frameworks, resource_phase], buildRules=[], dependencies=[], name=name, productName=name, productReference=product, productType=product_type)
