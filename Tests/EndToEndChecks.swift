@@ -7,7 +7,7 @@ import XCTest
 // construction together. These checks need neither capture hardware nor an
 // installed/signed camera extension, and never store source imagery on disk.
 @objcMembers final class EndToEndChecks: XCTestCase {
-  private func source(luma: (Int) -> UInt16 = { _ in 283 }) throws -> CVPixelBuffer {
+  fileprivate static func source(luma: (Int) -> UInt16 = { _ in 283 }) throws -> CVPixelBuffer {
     var buffer: CVPixelBuffer?
     let status = CVPixelBufferCreate(nil, 3840, 2160,
       kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
@@ -49,7 +49,7 @@ import XCTest
   func testAllSwitchesAndBothRatesProduceUsableSamples() throws {
     let processor = try LUTProcessor()
     try processor.load(CubeLUT(text: cubeText(transform: { 1 - $0 })))
-    let input = try source()
+    let input = try Self.source()
     // Every checkbox is independent, including rate reduction. Test both
     // source rates: reducing a 29.97 source must never halve it again.
     for inputFast in [false, true] {
@@ -103,7 +103,7 @@ import XCTest
 
   func testNoLUTFileNeededWithEveryOtherSwitchCombination() throws {
     let processor = try LUTProcessor()
-    let input = try source()
+    let input = try Self.source()
     for bits in 0..<8 {
       try autoreleasepool {
         let config = PipelineConfiguration(applyLUT: false, downscale: bits & 1 != 0,
@@ -128,7 +128,7 @@ import XCTest
     let cube = cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2",
       with: "LUT_3D_SIZE 2\nDOMAIN_MIN 0.35 0.35 0.35\nDOMAIN_MAX 0.55 0.55 0.55")
     try processor.load(CubeLUT(text: cube))
-    let input = try source { UInt16(400 + $0 % 80) }
+    let input = try Self.source { UInt16(400 + $0 % 80) }
     let config = PipelineConfiguration(applyLUT: true, downscale: false,
       convertTo420: true, reduceFrameRate: false, inputFast: true)
     let output = try processor.process(input, configuration: config)
@@ -153,7 +153,7 @@ import XCTest
 
   func testPoolBackpressureIsBoundedAndRecoversAfterConsumerReleases() throws {
     let processor = try LUTProcessor()
-    let input = try source()
+    let input = try Self.source()
     let config = PipelineConfiguration(applyLUT: false, downscale: true,
       convertTo420: true, reduceFrameRate: false, inputFast: true)
     var retained = [CVPixelBuffer]()
@@ -168,7 +168,12 @@ import XCTest
       retained.append(output)
     }
     XCTAssertThrowsError(try processor.process(input, configuration: config),
-      "A stalled consumer must not cause unbounded allocation")
+      "A stalled consumer must not cause unbounded allocation") { error in
+      guard case VideoError.outputBackPressure = error else {
+        XCTFail("Pool pressure must be distinguishable from fatal GPU errors: \(error)")
+        return
+      }
+    }
     retained.removeAll()
     let recovered = try processor.process(input, configuration: config)
     XCTAssertEqual(Double(try luma(recovered, x: 960, y: 540)), 71, accuracy: 1)
@@ -195,3 +200,224 @@ import XCTest
     XCTAssertTrue(gate.shouldDeliver(VideoContract.slowDuration, duration: VideoContract.slowDuration))
   }
 }
+
+#if CAPTURE_LIFECYCLE_TESTS
+// Only hardware/service boundaries are replaced. The real CaptureController,
+// Metal processor, Core Image preview and CMSampleBuffer creation still run.
+private final class CaptureHarness: @unchecked Sendable {
+  private let lock = NSLock()
+  private var handlers = [(CVPixelBuffer, CMTime, Bool) -> Void]()
+  private var stopTotal = 0
+  private var disconnectTotal = 0
+  private var sendTotal = 0
+  private var attemptTotal = 0
+  private var captureActive = false
+  private var samples = [CMSampleBuffer]()
+  private var latest: CMSampleBuffer?
+  let startGate: DispatchSemaphore?
+  let started: XCTestExpectation?
+  let retainOutputs: Bool
+  let failSending: Bool
+
+  init(startGate: DispatchSemaphore? = nil, started: XCTestExpectation? = nil,
+    retainOutputs: Bool = false, failSending: Bool = false) {
+    self.startGate = startGate
+    self.started = started
+    self.retainOutputs = retainOutputs
+    self.failSending = failSending
+  }
+
+  var starts: Int { lock.withLock { handlers.count } }
+  var stops: Int { lock.withLock { stopTotal } }
+  var disconnects: Int { lock.withLock { disconnectTotal } }
+  var sent: Int { lock.withLock { sendTotal } }
+  var attempts: Int { lock.withLock { attemptTotal } }
+  var active: Bool { lock.withLock { captureActive } }
+  var lastSample: CMSampleBuffer? { lock.withLock { latest } }
+
+  func releaseOutputs() { lock.withLock { samples.removeAll(); latest = nil } }
+
+  func emit(_ image: CVPixelBuffer, frame: Int, from generation: Int? = nil) {
+    let handler = lock.withLock { handlers[generation ?? handlers.count - 1] }
+    handler(image, CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)), true)
+  }
+
+  func services() -> CaptureServices {
+    CaptureServices(
+      start: { _, _, frames, _ in
+        self.lock.withLock { self.handlers.append(frames); self.captureActive = true }
+        self.started?.fulfill()
+        if let gate = self.startGate {
+          guard gate.wait(timeout: .now() + 5) == .success else {
+            throw VideoError.message("Test did not release the blocked capture start")
+          }
+        }
+      },
+      stop: { self.lock.withLock { self.stopTotal += 1; self.captureActive = false } },
+      connect: { _, _ in },
+      disconnect: {
+        self.lock.withLock { self.disconnectTotal += 1; self.samples.removeAll(); self.latest = nil }
+      },
+      send: { sample in
+        try self.lock.withLock {
+          self.attemptTotal += 1
+          if self.failSending { throw VideoError.message("Synthetic consumer disconnected") }
+          self.sendTotal += 1
+          self.latest = sample
+          if self.retainOutputs { self.samples.append(sample) }
+          return true
+        }
+      })
+  }
+}
+
+@objcMembers final class CaptureLifecycleChecks: XCTestCase {
+  private let config = PipelineConfiguration(applyLUT: false, downscale: true,
+    convertTo420: true, reduceFrameRate: false, inputFast: true)
+
+  private func allowQueueWork(_ seconds: TimeInterval = 0.02) {
+    let resumed = expectation(description: "Allow asynchronous capture/preview work")
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { resumed.fulfill() }
+    wait(for: [resumed], timeout: 3)
+  }
+
+  private func deliver(until target: Int, using harness: CaptureHarness,
+    image: CVPixelBuffer, frame: inout Int) {
+    let deadline = Date().addingTimeInterval(3)
+    while harness.sent < target && Date() < deadline {
+      harness.emit(image, frame: frame)
+      frame += 1
+      allowQueueWork()
+    }
+    XCTAssertEqual(harness.sent, target, "Capture must continue delivering through its real processing pipeline")
+  }
+
+  func testStopDuringBlockedStartCannotPublishLiveOrKeepResources() throws {
+    let started = expectation(description: "Native start entered")
+    let stopped = expectation(description: "Stop completed")
+    let unexpectedLive = expectation(description: "Cancelled start must not deliver frames")
+    unexpectedLive.isInverted = true
+    let gate = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(startGate: gate, started: started)
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop(); gate.signal() }
+    controller.onUpdate = { update in
+      if update.stopped { stopped.fulfill() }
+      if update.frames > 0 { unexpectedLive.fulfill() }
+    }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [started], timeout: 3)
+    controller.stop()
+    gate.signal()
+    wait(for: [stopped], timeout: 3)
+    XCTAssertEqual(harness.starts, 1)
+    XCTAssertFalse(harness.active, "A cancelled in-flight Start must finish with the capture resource closed")
+    harness.emit(try EndToEndChecks.source(), frame: 0, from: 0)
+    wait(for: [unexpectedLive], timeout: 0.05)
+    XCTAssertEqual(harness.sent, 0)
+  }
+
+  func testRestartRejectsFramesFromPreviousDriverCallback() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop() }
+    let firstStart = expectation(description: "First start ready")
+    controller.onUpdate = { update in
+      if update.message.hasPrefix("Waiting") { firstStart.fulfill() }
+    }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [firstStart], timeout: 3)
+    let stopped = expectation(description: "First stop completed")
+    controller.onUpdate = { if $0.stopped { stopped.fulfill() } }
+    controller.stop()
+    wait(for: [stopped], timeout: 3)
+    let secondStart = expectation(description: "Second start ready")
+    controller.onUpdate = { update in
+      if update.message.hasPrefix("Waiting") { secondStart.fulfill() }
+    }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [secondStart], timeout: 3)
+    let delivered = expectation(description: "New generation frame processed")
+    controller.onUpdate = { update in
+      if update.frames > 0 {
+        XCTAssertFalse(update.stopped)
+        XCTAssertEqual(update.frames, 1)
+        delivered.fulfill()
+      }
+    }
+    harness.emit(try EndToEndChecks.source(), frame: 0, from: 0)
+    harness.emit(try EndToEndChecks.source { _ in 721 }, frame: 0, from: 1)
+    wait(for: [delivered], timeout: 3)
+    XCTAssertEqual(harness.sent, 1)
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(try XCTUnwrap(harness.lastSample)))
+    CVPixelBufferLockBaseAddress(image, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
+    let pixels = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(image, 0)).assumingMemoryBound(to: UInt8.self)
+    XCTAssertEqual(Double(pixels[960]), 180, accuracy: 1,
+      "Old callbacks must not win the single-frame slot or overwrite the new source")
+  }
+
+  func testStalledConsumerPoolPressureDropsThenRecoversWithoutRestart() throws {
+    let harness = CaptureHarness(retainOutputs: true)
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop(); harness.releaseOutputs() }
+    let ready = expectation(description: "Start ready")
+    controller.onUpdate = { update in
+      if update.message.hasPrefix("Waiting") { ready.fulfill() }
+      XCTAssertFalse(update.stopped, "Backpressure must not be a fatal capture error")
+    }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [ready], timeout: 3)
+    let source = try EndToEndChecks.source()
+    var frame = 0
+    deliver(until: 8, using: harness, image: source, frame: &frame)
+    harness.emit(source, frame: frame)
+    frame += 1
+    allowQueueWork(0.05)
+    XCTAssertEqual(harness.sent, 8, "The ninth retained output must hit the eight-buffer cap")
+    XCTAssertEqual(harness.stops, 1, "Capture must remain open while output buffers are occupied")
+    harness.releaseOutputs()
+    deliver(until: 9, using: harness, image: source, frame: &frame)
+    XCTAssertEqual(harness.starts, 1, "Released consumer buffers must recover without restarting the device")
+    XCTAssertEqual(harness.stops, 1)
+  }
+
+  func testConsumerDisconnectKeepsLocalPreviewRunning() throws {
+    let harness = CaptureHarness(failSending: true)
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop() }
+    let ready = expectation(description: "Start ready")
+    controller.onUpdate = { if $0.message.hasPrefix("Waiting") { ready.fulfill() } }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [ready], timeout: 3)
+    let firstPreview = expectation(description: "Preview survives consumer disconnect")
+    controller.onUpdate = { update in
+      if update.frames == 1 {
+        XCTAssertFalse(update.stopped)
+        XCTAssertFalse(update.cameraOutputActive)
+        XCTAssertNotNil(update.preview)
+        XCTAssertTrue(update.cameraMessage.contains("Synthetic consumer disconnected"))
+        firstPreview.fulfill()
+      }
+    }
+    let source = try EndToEndChecks.source()
+    harness.emit(source, frame: 0)
+    wait(for: [firstPreview], timeout: 3)
+    allowQueueWork(0.3)
+    let secondPreview = expectation(description: "Subsequent local preview remains live")
+    controller.onUpdate = { update in
+      if update.frames == 2 {
+        XCTAssertNotNil(update.preview)
+        XCTAssertFalse(update.cameraOutputActive)
+        XCTAssertFalse(update.stopped)
+        secondPreview.fulfill()
+      }
+    }
+    harness.emit(source, frame: 20)
+    wait(for: [secondPreview], timeout: 3)
+    XCTAssertEqual(harness.attempts, 1, "Do not keep writing to a disconnected virtual camera")
+    XCTAssertEqual(harness.starts, 1)
+    XCTAssertEqual(harness.stops, 1)
+  }
+}
+#endif
