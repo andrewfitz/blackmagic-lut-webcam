@@ -37,6 +37,7 @@ final class AppModel {
   }
   var lutTitle = "No LUT loaded"
   private(set) var lutFileName: String?
+  private(set) var lutError: String?
   var lutLoaded = false
   var running = false
   var previewReady = false
@@ -106,6 +107,7 @@ final class AppModel {
     panel.allowedContentTypes = [UTType(filenameExtension: "cube") ?? .plainText]
     panel.allowsMultipleSelection = false
     guard panel.runModal() == .OK, let url = panel.url else { return }
+    lutError = nil
     loading = true
     Task { [weak self, lutLoader] in
       do {
@@ -116,6 +118,7 @@ final class AppModel {
   }
 
   private func restoreLUT(bookmark: Data) {
+    lutError = nil
     loading = true
     update.message = "Restoring saved LUT…"
     Task { [weak self, lutLoader] in
@@ -133,6 +136,7 @@ final class AppModel {
         guard let self else { return }
         switch result {
         case .success:
+          self.lutError = nil
           self.loading = false
           self.lutLoaded = true
           self.lutBookmark = loaded.bookmark
@@ -153,7 +157,9 @@ final class AppModel {
     // Keep the last saved bookmark and an already-loaded LUT. A missing moved
     // file is recoverable by choosing it again; it does not erase preferences.
     if restoring { lutTitle = "Saved LUT unavailable" }
-    update.message = "\(restoring ? "Saved LUT could not be restored" : "LUT was not changed"): \(error.localizedDescription)"
+    let message = "\(restoring ? "Saved LUT could not be restored" : "LUT was not changed"): \(error.localizedDescription)"
+    lutError = message
+    update.message = message
   }
 
   func saveSettings() {
