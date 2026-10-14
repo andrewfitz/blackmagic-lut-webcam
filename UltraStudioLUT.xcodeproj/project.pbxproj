@@ -1,0 +1,405 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+
+	};
+	"objectVersion" = 56;
+	"objects" = {
+		"C1564F1D0EFAC8F18D6AC93F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/AppModel.swift";
+			"sourceTree" = "<group>";
+		};
+		"B6E8B98502793D5E05911D6F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/CameraSink.swift";
+			"sourceTree" = "<group>";
+		};
+		"916E35D9EACA9AF2F9101463" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/CaptureController.swift";
+			"sourceTree" = "<group>";
+		};
+		"FD96F6DA7E56364B31FD0045" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/ExtensionInstaller.swift";
+			"sourceTree" = "<group>";
+		};
+		"EF900CDADA08A24069FC5044" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/LUTProcessor.swift";
+			"sourceTree" = "<group>";
+		};
+		"5C09F9D937B3723D73D0AA7F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.metal";
+			"path" = "Sources/App/LUTShaders.metal";
+			"sourceTree" = "<group>";
+		};
+		"3079C2E30BE7A84D9032CDD9" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/App/UltraStudioLUTApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"8725D62A8CE1EF20CBDB40C3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CameraExtension/CameraProvider.swift";
+			"sourceTree" = "<group>";
+		};
+		"447BB8FEDD97C07EA2446011" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CameraExtension/main.swift";
+			"sourceTree" = "<group>";
+		};
+		"F74775F581B3FF2EEEB636F5" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/Shared/CubeLUT.swift";
+			"sourceTree" = "<group>";
+		};
+		"9D135D5DE518783CBB02E690" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/Shared/FrameRateGate.swift";
+			"sourceTree" = "<group>";
+		};
+		"4708BC5A3EF4C6BE110346A2" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/Shared/VideoContract.swift";
+			"sourceTree" = "<group>";
+		};
+		"9F1C542B10A779EB6C6C5E71" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "Config/App-Info.plist";
+			"sourceTree" = "<group>";
+		};
+		"A67D62E8DB1DC8FBCDAF9B63" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "Config/App.entitlements";
+			"sourceTree" = "<group>";
+		};
+		"0EE95EE248748209E883C7A7" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "Config/Camera-Info.plist";
+			"sourceTree" = "<group>";
+		};
+		"0AA6AB03441E906E3D76376A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "Config/Camera.entitlements";
+			"sourceTree" = "<group>";
+		};
+		"681C948D238C526E9E3424E0" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"path" = "UltraStudio LUT.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"9B097DB9FD7D736C72018CEF" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.system-extension";
+			"path" = "org.ultrastudiolut.app.camera.systemextension";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"0A3E27B8CA818264D75C8D81" = {
+			"isa" = "PBXGroup";
+			"children" = ("681C948D238C526E9E3424E0", "9B097DB9FD7D736C72018CEF");
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"C69913C7EE4DFDD011BE172F" = {
+			"isa" = "PBXGroup";
+			"children" = ("C1564F1D0EFAC8F18D6AC93F", "B6E8B98502793D5E05911D6F", "916E35D9EACA9AF2F9101463", "FD96F6DA7E56364B31FD0045", "EF900CDADA08A24069FC5044", "5C09F9D937B3723D73D0AA7F", "3079C2E30BE7A84D9032CDD9", "8725D62A8CE1EF20CBDB40C3", "447BB8FEDD97C07EA2446011", "F74775F581B3FF2EEEB636F5", "9D135D5DE518783CBB02E690", "4708BC5A3EF4C6BE110346A2", "9F1C542B10A779EB6C6C5E71", "A67D62E8DB1DC8FBCDAF9B63", "0EE95EE248748209E883C7A7", "0AA6AB03441E906E3D76376A", "0A3E27B8CA818264D75C8D81");
+			"sourceTree" = "<group>";
+		};
+		"488864B3D19480A82F7F1786" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SDKROOT" = "macosx";
+				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"SWIFT_VERSION" = "5.0";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
+				"ARCHS" = "arm64";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_COMPILATION_MODE" = "singlefile";
+			};
+			"name" = "Debug";
+		};
+		"35B1014F135DE9B45529B733" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SDKROOT" = "macosx";
+				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"SWIFT_VERSION" = "5.0";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
+				"ARCHS" = "arm64";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_COMPILATION_MODE" = "wholemodule";
+			};
+			"name" = "Release";
+		};
+		"B4E10CAA9C5E22150B71559C" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("488864B3D19480A82F7F1786", "35B1014F135DE9B45529B733");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Debug";
+		};
+		"469D0F9103C7890C2B120EA8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "8725D62A8CE1EF20CBDB40C3";
+		};
+		"D16681AEBABAB3FFBBC44ABB" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "447BB8FEDD97C07EA2446011";
+		};
+		"E972D7BEEECF91300922872A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4708BC5A3EF4C6BE110346A2";
+		};
+		"B58AD6072B29ECF86A28C4E6" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("469D0F9103C7890C2B120EA8", "D16681AEBABAB3FFBBC44ABB", "E972D7BEEECF91300922872A");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"E8590BD7FC2E500B39EDDFC8" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"DB96C45271A2189469C4F5DA" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"dstPath" = "";
+			"dstSubfolderSpec" = 7;
+			"name" = "Copy GPU Shader Source";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"D2B49ABE50F5C31FFA1DF9DD" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "org.ultrastudiolut.app.camera";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.ultrastudiolut.app.camera";
+				"INFOPLIST_FILE" = "Config/Camera-Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "Config/Camera.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_COMPILATION_MODE" = "singlefile";
+			};
+			"name" = "Debug";
+		};
+		"D2F3D375F807D5AAA92FD9C4" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "org.ultrastudiolut.app.camera";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.ultrastudiolut.app.camera";
+				"INFOPLIST_FILE" = "Config/Camera-Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "Config/Camera.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_COMPILATION_MODE" = "wholemodule";
+			};
+			"name" = "Release";
+		};
+		"FE49783760CE718E86791ABE" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("D2B49ABE50F5C31FFA1DF9DD", "D2F3D375F807D5AAA92FD9C4");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Debug";
+		};
+		"165D8D32214BB888FB58C89E" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "FE49783760CE718E86791ABE";
+			"buildPhases" = ("B58AD6072B29ECF86A28C4E6", "E8590BD7FC2E500B39EDDFC8", "DB96C45271A2189469C4F5DA");
+			"buildRules" = ();
+			"dependencies" = ();
+			"name" = "UltraStudioLUTCamera";
+			"productName" = "UltraStudioLUTCamera";
+			"productReference" = "9B097DB9FD7D736C72018CEF";
+			"productType" = "com.apple.product-type.system-extension";
+		};
+		"639F764C0F391FB04AAD6BAE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "C1564F1D0EFAC8F18D6AC93F";
+		};
+		"DAADF81B79352C98982C1109" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "B6E8B98502793D5E05911D6F";
+		};
+		"BE80CB30B04AEEE090DC2B39" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "916E35D9EACA9AF2F9101463";
+		};
+		"FB7199A283E7A151CFFFEFAC" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FD96F6DA7E56364B31FD0045";
+		};
+		"B366815C407EA3E471D92EFF" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "EF900CDADA08A24069FC5044";
+		};
+		"3B18707A84A5FCF9536BF21A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "3079C2E30BE7A84D9032CDD9";
+		};
+		"3E63573547C8C369BF028C3C" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F74775F581B3FF2EEEB636F5";
+		};
+		"C9B210DDDEF3A092B84AE646" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9D135D5DE518783CBB02E690";
+		};
+		"0AB2C3CDF5BEEA14D06A8424" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4708BC5A3EF4C6BE110346A2";
+		};
+		"AFF87A50730392B6633ACECE" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("639F764C0F391FB04AAD6BAE", "DAADF81B79352C98982C1109", "BE80CB30B04AEEE090DC2B39", "FB7199A283E7A151CFFFEFAC", "B366815C407EA3E471D92EFF", "3B18707A84A5FCF9536BF21A", "3E63573547C8C369BF028C3C", "C9B210DDDEF3A092B84AE646", "0AB2C3CDF5BEEA14D06A8424");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"7A4C2DC8FCA657188648E999" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"5CBABBD58BD110CEF998B5FC" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "5C09F9D937B3723D73D0AA7F";
+		};
+		"F9187E824FE171A6F0EFAE28" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("5CBABBD58BD110CEF998B5FC");
+			"dstPath" = "";
+			"dstSubfolderSpec" = 7;
+			"name" = "Copy GPU Shader Source";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"2A04C20BF6D5C20A63A1D4CC" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "UltraStudio LUT";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.ultrastudiolut.app";
+				"INFOPLIST_FILE" = "Config/App-Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_COMPILATION_MODE" = "singlefile";
+			};
+			"name" = "Debug";
+		};
+		"E28089EB494F94D6F9770EC2" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "UltraStudio LUT";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.ultrastudiolut.app";
+				"INFOPLIST_FILE" = "Config/App-Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"COMBINE_HIDPI_IMAGES" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_COMPILATION_MODE" = "wholemodule";
+			};
+			"name" = "Release";
+		};
+		"7BCEE9A04133D8A2FED7D4D3" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("2A04C20BF6D5C20A63A1D4CC", "E28089EB494F94D6F9770EC2");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Debug";
+		};
+		"C1E9827DB735CA9BAA54A540" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "7BCEE9A04133D8A2FED7D4D3";
+			"buildPhases" = ("AFF87A50730392B6633ACECE", "7A4C2DC8FCA657188648E999", "F9187E824FE171A6F0EFAE28", "D96E4898459569162B4403ED");
+			"buildRules" = ();
+			"dependencies" = ("C8A866A35DAC7743BBB7ED1D");
+			"name" = "UltraStudio LUT";
+			"productName" = "UltraStudio LUT";
+			"productReference" = "681C948D238C526E9E3424E0";
+			"productType" = "com.apple.product-type.application";
+		};
+		"4BAE6B5B09AFC1BC8B61B36A" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "244210E48437B6556980A702";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "165D8D32214BB888FB58C89E";
+			"remoteInfo" = "UltraStudioLUTCamera";
+		};
+		"C8A866A35DAC7743BBB7ED1D" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "165D8D32214BB888FB58C89E";
+			"targetProxy" = "4BAE6B5B09AFC1BC8B61B36A";
+		};
+		"56AE0FF78910F7570AC90567" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9B097DB9FD7D736C72018CEF";
+			"settings" = {
+				"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy");
+			};
+		};
+		"D96E4898459569162B4403ED" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"dstPath" = "$(CONTENTS_FOLDER_PATH)/Library/SystemExtensions";
+			"dstSubfolderSpec" = 16;
+			"files" = ("56AE0FF78910F7570AC90567");
+			"name" = "Embed Camera Extension";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"244210E48437B6556980A702" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"BuildIndependentTargetsInParallel" = 1;
+				"LastUpgradeCheck" = "2700";
+			};
+			"buildConfigurationList" = "B4E10CAA9C5E22150B71559C";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "en";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("en", "Base");
+			"mainGroup" = "C69913C7EE4DFDD011BE172F";
+			"productRefGroup" = "0A3E27B8CA818264D75C8D81";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("C1E9827DB735CA9BAA54A540", "165D8D32214BB888FB58C89E");
+		};
+	};
+	"rootObject" = "244210E48437B6556980A702";
+}

@@ -1,0 +1,140 @@
+import CoreImage
+import CoreMedia
+import CoreVideo
+import XCTest
+
+func cubeText(size: Int = 2, transform: (Float) -> Float = { $0 }) -> String {
+  var lines = ["TITLE \"Synthetic test LUT\"", "LUT_3D_SIZE \(size)"]
+  for b in 0..<size {
+    for g in 0..<size {
+      for r in 0..<size {
+        lines.append("\(transform(Float(r) / Float(size - 1))) \(transform(Float(g) / Float(size - 1))) \(transform(Float(b) / Float(size - 1)))")
+      }
+    }
+  }
+  return lines.joined(separator: "\n")
+}
+
+func syntheticRamp() throws -> CVPixelBuffer {
+  var image: CVPixelBuffer?
+  let status = CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
+    [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary, &image)
+  guard status == kCVReturnSuccess, let image else { throw VideoError.message("Synthetic buffer allocation failed.") }
+  CVPixelBufferLockBaseAddress(image, [])
+  defer { CVPixelBufferUnlockBaseAddress(image, []) }
+  for plane in 0..<2 {
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(image, plane) / 2
+    let pointer = CVPixelBufferGetBaseAddressOfPlane(image, plane)!.assumingMemoryBound(to: UInt16.self)
+    for y in 0..<2160 {
+      for x in 0..<stride {
+        pointer[y * stride + x] = UInt16(plane == 0 ? 64 + min(x, 3839) * 876 / 3839 : 512) << 6
+      }
+    }
+  }
+  CVBufferSetAttachment(image, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+  return image
+}
+
+@objcMembers final class CubeTests: XCTestCase {
+  func testOrderingAndWhitespace() throws {
+    let cube = try CubeLUT(text: cubeText().replacingOccurrences(of: "LUT_3D_SIZE ", with: "LUT_3D_SIZE\t") + "\n# comment")
+    XCTAssertEqual(cube.dimension, 2)
+    XCTAssertEqual(Array(cube.rgba[4..<8]), [1, 0, 0, 1])
+    XCTAssertEqual(Array(cube.rgba[8..<12]), [0, 1, 0, 1])
+    XCTAssertEqual(Array(cube.rgba[16..<20]), [0, 0, 1, 1])
+  }
+  func testRejectIncompleteOversizedAndNonFinite() {
+    XCTAssertThrowsError(try CubeLUT(text: "LUT_3D_SIZE 2\n0 0 0"))
+    XCTAssertThrowsError(try CubeLUT(text: "LUT_3D_SIZE 256"))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "0.0 0.0 0.0", with: "nan 0 0")))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText() + "\n0 0 0"))
+    XCTAssertThrowsError(try CubeLUT(text: "LUT_1D_SIZE 2\n0 0 0\n1 1 1"))
+  }
+  func testDomain() throws {
+    let text = cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2", with: "LUT_3D_SIZE 2\nDOMAIN_MIN -1 0 0\nDOMAIN_MAX 1 2 3")
+    let cube = try CubeLUT(text: text)
+    XCTAssertEqual(cube.domainMin, SIMD3(-1, 0, 0))
+    XCTAssertEqual(cube.domainMax, SIMD3(1, 2, 3))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "LUT_3D_SIZE 2", with: "LUT_3D_SIZE 2\nDOMAIN_MAX 0 1 1")))
+  }
+  static let allTests = [
+    ("ordering and whitespace", testOrderingAndWhitespace),
+    ("invalid LUT rejection", testRejectIncompleteOversizedAndNonFinite),
+    ("domain validation", testDomain),
+  ]
+}
+
+@objcMembers final class PipelineTests: XCTestCase {
+  func testTenBitPrecision() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let source = try syntheticRamp()
+    let configuration = PipelineConfiguration(applyLUT: true, downscale: false,
+      convertTo420: false, reduceFrameRate: false, inputFast: true)
+    let output = try processor.process(source, configuration: configuration)
+    XCTAssertEqual(CVPixelBufferGetPixelFormatType(output), kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    CVPixelBufferLockBaseAddress(output, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(output, .readOnly) }
+    let pointer = CVPixelBufferGetBaseAddressOfPlane(output, 0)!.assumingMemoryBound(to: UInt16.self)
+    let levels = Set((0..<3840).map { pointer[$0] >> 6 })
+    XCTAssertGreaterThan(levels.count, 800, "10-bit gradient must not be reduced to 256 levels inside LUT processing")
+    XCTAssertEqual(Double(pointer[0] >> 6), 64, accuracy: 2)
+    XCTAssertEqual(Double(pointer[3839] >> 6), 940, accuracy: 2)
+  }
+  func testLUTAndLanczosThenNV12() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText(size: 17, transform: { $0 * $0 })))
+    let output = try processor.process(syntheticRamp(), configuration: PipelineConfiguration())
+    XCTAssertEqual(CVPixelBufferGetWidth(output), 1920)
+    XCTAssertEqual(CVPixelBufferGetHeight(output), 1080)
+    XCTAssertEqual(CVPixelBufferGetPixelFormatType(output), kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+    XCTAssertEqual(CVPixelBufferGetHeightOfPlane(output, 1), 540)
+    CVPixelBufferLockBaseAddress(output, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(output, .readOnly) }
+    let pointer = CVPixelBufferGetBaseAddressOfPlane(output, 0)!.assumingMemoryBound(to: UInt8.self)
+    // Mid-ramp log code 0.5 maps to 0.25 through this synthetic cube.
+    // Video range output is 16 + 219 * 0.25, not a hidden gamma transform.
+    XCTAssertEqual(Double(pointer[960]), 16 + 219 * 0.25, accuracy: 3)
+  }
+  func testUntouchedFrameIsSameBuffer() throws {
+    let processor = try LUTProcessor()
+    let source = try syntheticRamp()
+    let configuration = PipelineConfiguration(applyLUT: false, downscale: false,
+      convertTo420: false, reduceFrameRate: false, inputFast: true)
+    let output = try processor.process(source, configuration: configuration)
+    XCTAssertTrue(source === output)
+  }
+  func testIndependentSwitches() {
+    for bits in 0..<16 {
+      let config = PipelineConfiguration(applyLUT: bits & 1 != 0, downscale: bits & 2 != 0,
+        convertTo420: bits & 4 != 0, reduceFrameRate: bits & 8 != 0, inputFast: true)
+      XCTAssertEqual(config.width, bits & 2 != 0 ? 1920 : 3840)
+      XCTAssertEqual(config.duration, bits & 8 != 0 ? VideoContract.slowDuration : VideoContract.fastDuration)
+      XCTAssertEqual(config.pixelFormat, bits & 4 != 0 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    }
+  }
+  func testRationalFrameReductionDoesNotDrift() {
+    var gate = FrameRateGate()
+    var delivered = 0
+    for frame in 0..<6000 {
+      if gate.shouldDeliver(CMTime(value: Int64(frame) * 1001, timescale: 60_000), duration: VideoContract.slowDuration) { delivered += 1 }
+    }
+    XCTAssertEqual(delivered, 3000)
+    XCTAssertFalse(gate.shouldDeliver(.invalid, duration: VideoContract.slowDuration))
+    XCTAssertTrue(gate.shouldDeliver(.zero, duration: VideoContract.slowDuration), "Clock reset should restart cadence")
+  }
+  static let allTests = [
+    ("10-bit GPU precision", testTenBitPrecision),
+    ("LUT then Lanczos then NV12", testLUTAndLanczosThenNV12),
+    ("full-data passthrough", testUntouchedFrameIsSameBuffer),
+    ("independent switches", testIndependentSwitches),
+    ("exact frame-rate reduction", testRationalFrameReductionDoesNotDrift),
+  ]
+}
+
+let suite = XCTestSuite(name: "UltraStudio LUT synthetic checks")
+suite.addTest(XCTestSuite(forTestCaseClass: CubeTests.self))
+suite.addTest(XCTestSuite(forTestCaseClass: PipelineTests.self))
+suite.run()
+guard let run = suite.testRun, run.executionCount > 0 else { exit(2) }
+exit(run.hasSucceeded ? 0 : 1)
