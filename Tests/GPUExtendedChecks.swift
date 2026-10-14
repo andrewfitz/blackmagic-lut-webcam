@@ -149,4 +149,18 @@ import XCTest
     XCTAssertEqual(CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_32BGRA, nil, &wrongFormat), kCVReturnSuccess)
     XCTAssertThrowsError(try processor.process(XCTUnwrap(wrongFormat), configuration: config))
   }
+
+  func testReusedPoolDoesNotLeakLUTColorLabelsOntoBypass() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let source = try input()
+    var config = PipelineConfiguration(applyLUT: true, downscale: true, convertTo420: true)
+    for _ in 0..<8 { _ = try processor.process(source, configuration: config) }
+    config.applyLUT = false
+    let bypass = try processor.process(source, configuration: config)
+    XCTAssertNil(CVBufferCopyAttachment(bypass, kCVImageBufferColorPrimariesKey, nil))
+    XCTAssertNil(CVBufferCopyAttachment(bypass, kCVImageBufferTransferFunctionKey, nil))
+    XCTAssertEqual(CVBufferCopyAttachment(bypass, kCVImageBufferYCbCrMatrixKey, nil) as? String,
+      kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String)
+  }
 }

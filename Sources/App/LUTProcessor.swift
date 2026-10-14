@@ -194,6 +194,7 @@ final class LUTProcessor {
     var output: CVPixelBuffer?
     let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
       [kCVPixelBufferPoolAllocationThresholdKey: 8] as CFDictionary, &output)
+    if status == kCVReturnWouldExceedAllocationThreshold { throw VideoError.outputBackPressure }
     guard status == kCVReturnSuccess, let output else { throw VideoError.message("Output buffers are busy (\(status)).") }
     let (yWrapper, y) = try plane(output, index: 0, format: configuration.convertTo420 ? .r8Unorm : .r16Unorm)
     let (uvWrapper, uv) = try plane(output, index: 1, format: configuration.convertTo420 ? .rg8Unorm : .rg16Unorm)
@@ -206,6 +207,9 @@ final class LUTProcessor {
     command.waitUntilCompleted()
     withExtendedLifetime(wrappers) {}
     guard command.status == .completed else { throw VideoError.message(command.error?.localizedDescription ?? "GPU processing failed.") }
+    // Pool buffers can carry attachments from their previous use. A bypassed
+    // log frame must not inherit the preceding LUT frame's Rec.709 labels.
+    CVBufferRemoveAllAttachments(output)
     if !configuration.applyLUT { CVBufferPropagateAttachments(input, output) }
     // Encoders average each pair/block, producing centered chroma even if input
     // samples were left-cosited. Never carry the source's location onto output.
