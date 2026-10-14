@@ -282,16 +282,153 @@ live video screenshot was taken. Capture remains stopped, with Processing and
 Preview enabled. This does not qualify sustained hardware presentation or
 signed extension IPC.
 
+## Local camera extension installation — October 14, 2026
+
+With SIP disabled by the owner, an explicitly compiled `UDL_LOCAL_DEVELOPMENT`
+Release build was ad-hoc signed and installed in `/Applications/UltraStudio LUT.app`.
+Both bundles contain the same local app group; the extension's Mach service
+starts with that group. The host has the effective system-extension install
+entitlement. The installer accepts local signatures only in the explicitly
+compiled development mode; production behavior remains developer-signing-only.
+Nine focused installer tests passed in each compile mode, including rejecting
+missing entitlements/invalid signatures and accepting a valid entitled local
+build. Environment variables cannot enable this policy in a production build.
+
+The first real activation attempt identified a missing
+`NSSystemExtensionUsageDescription` in the extension's own Info.plist. Adding it
+fixed the activation error; having the description only in the host is
+insufficient. Every build now checks the built extension's metadata before
+finishing. A valid synthetic bundle passed; missing usage description and
+unexpanded Mach service fixtures were rejected.
+
+After the owner approved Camera Extensions in System Settings,
+`systemextensionsctl list` reported `org.ultrastudiolut.app.camera` as
+`[activated enabled]`, and the app received successful activation completion.
+Global extension developer mode remains off; no signing identity, certificate
+or keychain entry was created. Both ad-hoc signatures verify strictly on disk.
+Receipt: `logs/local-activation-20261014T230200Z.log`.
+
+Actual producer connection then exposed a second local-only issue: CMIO reports
+the ad-hoc producer's signing ID as the literal `unknown`, causing the original
+exact-ID guard to reject it with -4. A valid self signature alone did not qualify
+this path. Ordinary process inspection and an attempted on-disk check also
+returned EPERM inside the camera sandbox. The local build now uses the public
+`kSecGuestAttributeDynamicCode` option to obtain the running process's signature
+representation, then strictly validates it against the exact producer
+identifier. Missing, terminated or differently signed processes fail closed.
+Only nil/`unknown` CMIO identities are eligible for this local fallback.
+Production builds retain their original CMIO signing-ID guard and one-producer
+rule. The earlier disk/path fallback was removed.
+
+A temporary file-read exception was tested and removed: macOS 27's
+`cmioextension.sb` fails to compile its profile when that entitlement is present.
+The extension retains its original sandbox entitlements. No system-wide
+security setting is changed by these scripts.
+
+The existing LUT bookmark needed reselecting once after the move to the signed
+app. The authorized LUT, filename and all four selected effects were then
+verified after quitting and relaunching the installed app. Capture remained
+stopped throughout this installation check.
+
+The integrated suite passed **99 tests, zero failures** in 26.334 seconds:
+`logs/tests-20261014T225933Z.log`. The local development build, bundle validation
+and both signature checks also passed.
+
+The expanded audit exposed intermittent native sample creation errors (-12743)
+in two 103-test runs (`tests-20261014T230859Z.log` and
+`tests-20261014T231151Z.log`). A deterministic probe reproduced the same failure
+when image metadata changed after a sample's original format was created. The
+native writer was not directly observed. Preview now copies the existing sample
+wrapper, preserving its original image/format/timing and separate sample
+attachments without copying pixels. The source factory refreshes its description
+once only for the exact InvalidMediaFormat error. Both deterministic regressions
+pass, including nonempty source-attachment isolation. The complete final suite
+passed **105 tests, zero failures** in 26.871 seconds:
+`logs/tests-20261014T231506Z.log`. All 12 native preview cases received every
+expected frame without replacement, native drops or corruption. Strict
+concurrency/warnings-as-errors checks also passed at the actual macOS 15 target.
+
+Installed transport testing uncovered an additional real ownership bug that the
+old simulated consumer had encoded incorrectly. The sink queue-altered callback
+released a sample whose enqueue retain already belonged to CMIO's native
+consumer. Actual IPC crashed in CMIO's later release. ASAN and a zombie probe
+reproduced it; an otherwise identical notification-only callback passed. The
+production callback is now notification-only. Rejected and stopped/unconsumed
+queue entries still release their owned retain, and the regression verifies
+that a dequeued sample remains alive/readable until the native owner releases it.
+
+The final production-source ASAN helper passed all six installed IPC cases:
+1080p NV12, 4K bi-planar 10-bit x422, and 4K packed 10-bit v210, each at both
+29.97 and 59.94 fps. Every case delivered **60 of 60 frames** (360 total), with
+bit-exact active bytes including adjacent 10-bit codes, exact rational timestamps
+and duration, correct order, zero send retries and successful stop/unregister.
+No sanitizer error occurred. Receipt:
+`/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut-e2e/cmio-smoke/logs/run-production-asan-full.log`.
+These inputs used synthetic shareable IOSurfaces; SDK borrowed-buffer staging
+is covered separately by the integrated tests. The optimized reusable helper
+also builds with strict concurrency and warnings as errors.
+
+After the production ownership fix, the complete suite again passed **105
+tests, zero failures** in 29.049 seconds (`logs/tests-20261014T232510Z.log`).
+
+The installed app then captured actual FX3 3840 × 2160 v210 4:2:2 10-bit at
+59.94 fps and delivered the selected LUT/Lanczos/NV12 output at 1920 × 1080,
+29.97 fps. Camera output connected successfully. Approximately one minute of
+steady capture added no source gaps, admission drops, pool drops, camera drops
+or preview drops; three admission drops had occurred during the cold start.
+Packed input used the direct Metal path with no upload fallbacks. Accessibility
+metadata now exposes separate live Input/Output values instead of a stale
+combined selectable-text label. Zoom 7.2.2 was restarted to refresh its cached
+camera list and showed **UltraStudio LUT** selected in local video settings.
+No meeting was started. The HDMI signal later became unavailable; local camera
+selection alone does not qualify Zoom's remote transmission.
+
+The startup admission drops identified another cold path: automatic capture
+previously deferred both CMIO connection and, with preview hidden, GPU warming
+until its first queued frame. Known backend storage now permits provisional
+camera connection and resource warming before native capture begins. The first
+validated real frame still negotiates the detected rate/layout, and only real
+frames populate source metadata. No-camera/no-preview starts continue to skip
+pixel preparation. Focused lifecycle checks passed **24 tests**, including cold
+connection ordering and processing preparation with preview off; the fixture
+also verifies that preparation cannot publish synthetic source frames.
+
+The final integrated suite passed **107 tests, zero failures** in 28.925
+seconds: `logs/startup-perf-full-20261014T233554Z.log`. The updated Release app
+build and both local signatures passed (`logs/build-20261014T233147Z.log`).
+The installed app's embedded extension and the currently active extension have
+the same compiled Mach-O build UUID; the last update changed host startup code.
+
+Final actual hardware verification recovered the 59.94 FX3 signal after capture
+restart. From the first delivered frame through more than two minutes, all five
+UI counters stayed at zero: source gaps, capture admission, output pool, camera
+transport and preview. Preview off continued delivering LUT-applied 1080p NV12
+at 29.97. Complete bypass with preview off switched output to original 4K v210
+10-bit 4:2:2 at 59.94; returning to enabled processing and preview restored the
+selected LUT/Lanczos/NV12/29.97 settings without adding drops. Input/output
+metadata reflected these actual changes. Receipt: `logs/live-final-startup.log`.
+The app is left **Live**, Processing and Preview on, with the owner's LUT and
+all four processing selections preserved. This is a bounded observed run, not
+a universal no-drop claim under every future workload.
+
+All owned source changes were committed in coherent checkpoints, including
+`722b9cb`, `a384e58`, `22be60d`, `fa88851`, `1a66d4d`, `ca14566` and `b02ffce`.
+Finished diagnostic cleanup recovered 14,376,960 allocated bytes. Automatic
+cleanup review rejected embedded `os.unlink` and recursive `shutil.rmtree`
+deletion patterns; an obsolete 20,480-byte allocated Apple HTML download and
+156,315,648 bytes of reusable startup-test module cache remain externally.
+No cleanup bypass or process termination was used. Other retained binaries,
+module caches and useful failure/success receipts are current reusable lanes.
+
 ## Remaining qualification
 
 - Broaden sustained hardware/display qualification to other output modes,
   actual 29.97 source input, and controlled host workloads. The observed live
   59.94-source/29.97-output run and counters do not establish all hardware modes
   or a universal zero-drop guarantee.
-- Sign/approve the camera extension and verify service IPC and actual Zoom
-  consumption. No valid signing identity is installed and the owner has not
-  enrolled in the Apple Developer Program. In-process camera tests do not
-  substitute for installed-service evidence.
+- Qualify actual Zoom consumption/transmission in a meeting. Installed-service
+  frame IPC now passes the six synthetic cases above with SIP disabled; this
+  does not qualify production signing or operation with SIP enabled.
 - Qualify the actual Sony LUT, gamut, levels and chroma siting against a trusted
   reference chart; measure hardware latency and A/V synchronization.
 - Verify actual remote Zoom quality at both rates and 4K 10-bit consumption in
@@ -303,4 +440,4 @@ logs remain under
 `/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/`.
 
 Original passing test receipt: `logs/tests-20261014T064354Z.log`.
-Current passing test receipt: `logs/tests-20261014T213543Z.log`.
+Current passing test receipt: `logs/startup-perf-full-20261014T233554Z.log`.

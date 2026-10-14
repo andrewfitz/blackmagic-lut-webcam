@@ -125,6 +125,15 @@ developer mode, certificates or other macOS security settings, and never
 installs the package. macOS retains control over activation and approval.
 Both build modes validate the built bundle metadata before finishing.
 
+With the local development extension installed and approved, stop the app's feed
+and run
+`bash scripts/camera-smoke.sh --run` to check actual camera transport with
+synthetic numbered frames. The helper checks received pixels, frame counts and
+timestamps in memory; it never opens the physical capture device, records video
+or submits an installation request. Running the script without `--run` only
+builds the helper. Use `--full` instead of `--run` to include 4K 10-bit x422 and
+packed v210 at both rates. Build products and receipts stay on the external drive.
+
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
 and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the
 processing checkboxes and start the
