@@ -10,6 +10,12 @@ final class LUTProcessor {
     var lastPath = "No packed processing"
   }
 
+  struct WorkingResourceDiagnostics: Sendable {
+    var floatTextureBytes: Int
+    var packedCopyBytes: Int
+    var outputPoolActive: Bool
+  }
+
   private(set) var packedInputDiagnostics = PackedInputDiagnostics()
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
@@ -23,6 +29,12 @@ final class LUTProcessor {
   private var fullTexture: MTLTexture?
   private var horizontalTexture: MTLTexture?
   private var scaledTexture: MTLTexture?
+
+  var workingResourceDiagnostics: WorkingResourceDiagnostics {
+    WorkingResourceDiagnostics(floatTextureBytes: [fullTexture, horizontalTexture, scaledTexture]
+      .compactMap { $0 }.reduce(0) { $0 + $1.allocatedSize },
+      packedCopyBytes: packedBuffer?.allocatedSize ?? 0, outputPoolActive: pool != nil)
+  }
 
   private struct Parameters {
     var geometry: SIMD4<UInt32>
@@ -76,7 +88,7 @@ final class LUTProcessor {
   // floating-point working textures, output pool and first three frames while
   // no live frame can arrive. The generated black image is never published.
   func prepare(configuration: PipelineConfiguration) throws {
-    guard !configuration.untouched else { return }
+    if configuration.untouched { releaseIdleResources(); return }
     var source: CVPixelBuffer?
     let status = CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_422YpCbCr10,
       [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &source)
@@ -133,6 +145,20 @@ final class LUTProcessor {
     return result
   }
 
+  // Capture-queue only, after synchronous processing has finished. Published
+  // pixel buffers remain valid; loaded LUT and compiled pipeline states stay.
+  func releaseIdleResources() {
+    let hadResources = fullTexture != nil || horizontalTexture != nil || scaledTexture != nil ||
+      packedBuffer != nil || pool != nil
+    fullTexture = nil
+    horizontalTexture = nil
+    scaledTexture = nil
+    packedBuffer = nil
+    pool = nil
+    poolConfiguration = nil
+    if hadResources { CVMetalTextureCacheFlush(textureCache, 0) }
+  }
+
   private func plane(_ buffer: CVPixelBuffer, index: Int, format: MTLPixelFormat) throws -> (CVMetalTexture, MTLTexture) {
     var wrapper: CVMetalTexture?
     let status = CVMetalTextureCacheCreateTextureFromImage(nil, textureCache, buffer, nil, format,
@@ -174,7 +200,7 @@ final class LUTProcessor {
       }
       packedLength = length
     }
-    if configuration.untouched { return input }
+    if configuration.untouched { releaseIdleResources(); return input }
     guard !configuration.applyLUT || cube != nil else { throw VideoError.message("Load a LUT or turn off Apply LUT.") }
     let chromaLocation = CVBufferCopyAttachment(input, kCVImageBufferChromaLocationTopFieldKey, nil) as? String
     // SMPTE/QuickTime 4:2:2 is left-cosited unless the producer labels it centered.
@@ -197,10 +223,20 @@ final class LUTProcessor {
       decodeMatrix: SIMD4(2 * (1 - kr), 2 * (1 - kb), 2 * kb * (1 - kb) / kg, 2 * kr * (1 - kr) / kg),
       encodeMatrix: SIMD4(configuration.applyLUT ? 0.2126 : kr, configuration.applyLUT ? 0.0722 : kb, 0, 0),
       options: SIMD4(configuration.applyLUT ? 1 : 0, 0, 0, 0))
+    // Reserve output before encoding or mapping a borrowed capture frame. A
+    // stalled consumer must not cause work or extend native frame lifetimes.
+    let pool = try preparePool(configuration)
+    var output: CVPixelBuffer?
+    let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
+      [kCVPixelBufferPoolAllocationThresholdKey: 8] as CFDictionary, &output)
+    if status == kCVReturnWouldExceedAllocationThreshold { throw VideoError.outputBackPressure }
+    guard status == kCVReturnSuccess, let output else { throw VideoError.message("Output buffers are busy (\(status)).") }
+    let (yWrapper, y) = try plane(output, index: 0, format: configuration.convertTo420 ? .r8Unorm : .r16Unorm)
+    let (uvWrapper, uv) = try plane(output, index: 1, format: configuration.convertTo420 ? .rg8Unorm : .rg16Unorm)
     guard let command = commandQueue.makeCommandBuffer() else { throw VideoError.message("GPU is unavailable.") }
     command.label = "LUT → Lanczos → output format"
     let full = try texture(width: width, height: height, existing: &fullTexture)
-    var wrappers: [CVMetalTexture] = []
+    var wrappers: [CVMetalTexture] = [yWrapper, uvWrapper]
     if type == kCVPixelFormatType_422YpCbCr10 {
       let source: MTLBuffer
       if let shared = SharedMetalBuffer.make(pixelBuffer: input, device: device, readOnly: true) {
@@ -247,16 +283,10 @@ final class LUTProcessor {
         $0.setTexture(horizontal, index: 0); $0.setTexture(scaled, index: 1)
       }
       final = scaled
+    } else {
+      horizontalTexture = nil
+      scaledTexture = nil
     }
-    let pool = try preparePool(configuration)
-    var output: CVPixelBuffer?
-    let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
-      [kCVPixelBufferPoolAllocationThresholdKey: 8] as CFDictionary, &output)
-    if status == kCVReturnWouldExceedAllocationThreshold { throw VideoError.outputBackPressure }
-    guard status == kCVReturnSuccess, let output else { throw VideoError.message("Output buffers are busy (\(status)).") }
-    let (yWrapper, y) = try plane(output, index: 0, format: configuration.convertTo420 ? .r8Unorm : .r16Unorm)
-    let (uvWrapper, uv) = try plane(output, index: 1, format: configuration.convertTo420 ? .rg8Unorm : .rg16Unorm)
-    wrappers += [yWrapper, uvWrapper]
     try dispatch(configuration.convertTo420 ? "encodeNV12" : "encode422", on: command, width: final.width, height: final.height) {
       $0.setTexture(final, index: 0); $0.setTexture(y, index: 1); $0.setTexture(uv, index: 2)
       $0.setBytes(&parameters, length: MemoryLayout<Parameters>.size, index: 1)

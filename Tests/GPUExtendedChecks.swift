@@ -299,4 +299,44 @@ private final class GPUReleaseCounter: @unchecked Sendable {
     XCTAssertEqual(processor.packedInputDiagnostics.noCopyFrames, 0)
     XCTAssertEqual(processor.packedInputDiagnostics.copiedFrames, 0)
   }
+
+  func testBypassReleasesWorkingAllocationsWithoutInvalidatingPublishedFrame() throws {
+    let processor = try LUTProcessor()
+    let source = try borrowedInput(offset: 4)
+    let processed = PipelineConfiguration(applyLUT: false, downscale: true, convertTo420: true)
+    let published = try processor.process(source, configuration: processed)
+    XCTAssertGreaterThan(processor.workingResourceDiagnostics.floatTextureBytes, 0)
+    XCTAssertGreaterThan(processor.workingResourceDiagnostics.packedCopyBytes, 0)
+    XCTAssertTrue(processor.workingResourceDiagnostics.outputPoolActive)
+    func middleLuma() -> UInt8 {
+      CVPixelBufferLockBaseAddress(published, .readOnly)
+      defer { CVPixelBufferUnlockBaseAddress(published, .readOnly) }
+      return CVPixelBufferGetBaseAddressOfPlane(published, 0)!.assumingMemoryBound(to: UInt8.self)[960]
+    }
+    let expected = middleLuma()
+    let bypass = PipelineConfiguration(applyLUT: false, downscale: false, convertTo420: false)
+    try processor.prepare(configuration: bypass)
+    XCTAssertEqual(processor.workingResourceDiagnostics.floatTextureBytes, 0)
+    XCTAssertEqual(processor.workingResourceDiagnostics.packedCopyBytes, 0)
+    XCTAssertFalse(processor.workingResourceDiagnostics.outputPoolActive)
+    XCTAssertEqual(middleLuma(), expected, "Releasing working memory must preserve an already published IOSurface")
+    XCTAssertTrue(try processor.process(source, configuration: bypass) === source)
+    let resumed = try processor.process(source, configuration: processed)
+    XCTAssertEqual(CVPixelBufferGetWidth(resumed), 1920)
+    XCTAssertGreaterThan(processor.workingResourceDiagnostics.floatTextureBytes, 0)
+  }
+
+  func testDisablingDownscaleReleasesOnlyScalingTexturesAndPreservesPrecision() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let source = try syntheticRamp()
+    _ = try processor.process(source,
+      configuration: PipelineConfiguration(applyLUT: true, downscale: true, convertTo420: false))
+    let scaledBytes = processor.workingResourceDiagnostics.floatTextureBytes
+    let full = try processor.process(source,
+      configuration: PipelineConfiguration(applyLUT: true, downscale: false, convertTo420: false))
+    XCTAssertGreaterThan(processor.workingResourceDiagnostics.floatTextureBytes, 0)
+    XCTAssertLessThan(processor.workingResourceDiagnostics.floatTextureBytes, scaledBytes)
+    XCTAssertEqual(read10(full, plane: 0, x: 1920), UInt16(64 + 1920 * 876 / 3839))
+  }
 }
