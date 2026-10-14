@@ -87,8 +87,10 @@ bookkeeping. No footage was recorded. Native renderer counters showed zero
 preview losses during the observed run. Ten capture admission losses first
 appeared at 13:48:34, inside the intrusive 1-ms stack sampling interval starting
 13:48:32; the count did not increase after sampling. Earlier receipts retain
-that result rather than silently removing it. A fresh ordinary run follows
-without the sampler; the user's LUT and four processing selections are restored.
+that result rather than silently removing it. A fresh ordinary four-minute run
+without the sampler recorded zero source, capture, pool and preview loss counters;
+camera transport was inactive. The user's LUT and four processing selections
+are restored.
 
 ## Remaining qualification
 
