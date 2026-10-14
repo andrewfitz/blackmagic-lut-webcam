@@ -50,6 +50,14 @@ starts manually. A missing or invalid saved LUT leaves capture usable and keeps
 the saved choice for recovery. The menu bar popover shares the window's controls
 and includes its own native mini preview; closing the window does not stop capture.
 
+The Feed menu provides **⌘Return** to start/stop, **⇧⌘B** to enable/bypass
+processing, and **⇧⌘P** to show/hide previews. The tray keeps feed and processing
+controls above its scrolling details. Diagnostics expand separately from the
+everyday controls. LUTs display their actual filename, and failed loads remain
+visible without replacing a working LUT. Start is unavailable when the selected
+device is missing. Preview errors include a retry action that leaves camera
+output running.
+
 ## Build and synthetic checks
 
 Requirements: Apple silicon, Xcode, macOS 15 or later, Blackmagic Desktop Video
@@ -79,6 +87,9 @@ The app is built unsigned with Release optimization by default. Use
 An unsigned build is for compilation/UI review and cannot activate a camera
 system extension. Use an Apple Developer signing identity and configure the
 same team for the app and extension, including their shared app group.
+The app checks its running signature and effective install entitlement before
+offering installation. Unsupported builds explain the signing requirement and
+keep Install/Remove disabled; capture and preview remain available.
 
 ```sh
 DEVELOPMENT_TEAM=YOUR_TEAM_ID bash scripts/build.sh --signed

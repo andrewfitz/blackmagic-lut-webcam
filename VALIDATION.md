@@ -94,7 +94,7 @@ are restored.
 
 ## Saved controls, menu bar and performance pass
 
-The final integrated suite passed **77 tests, zero failures**, in 23.11 seconds
+The previous integrated suite passed **77 tests, zero failures**, in 23.11 seconds
 (`logs/tests-20261014T205650Z.log`). All twelve native preview variants consumed
 every paced sample with zero replacements, drops or corruption. Controlled
 capture delivered 180/180 fast and 90/90 reduced camera/preview samples, with
@@ -216,6 +216,72 @@ or visible preview needs frames. Receipts:
 `gpu-review/encoder-profile/comparison.log`, and
 `gpu-review/backpressure-profile/comparison.log`.
 
+## UI refinement and independent code audit
+
+The updated integrated suite passes **96 tests, zero failures**, in 26.408 seconds:
+`logs/tests-20261014T213543Z.log`. All twelve native variants consumed every
+30/15 frame with zero replacements, native drops or corruption. Controlled
+capture delivered exactly 180/180 fast and 90/90 reduced samples with zero
+reported loss and exact timestamp assertions. The suite includes 15 GPU,
+eight preview, thirteen camera-contract, twenty-two capture-lifecycle and six
+installer checks. Native focused checks also pass AddressSanitizer and
+ThreadSanitizer. No signing or OS extension installation request was submitted
+by tests.
+
+The final unsigned Release app and embedded extension build also pass strict
+concurrency and warnings as errors (`logs/build-20261014T213905Z.log`).
+
+Independent audits fixed concrete issues in the native callback lifecycle,
+capture/transport, preview, GPU buffer validation, LUT storage and installer:
+
+- Backend last-reference release cannot deallocate/stop inside its own driver
+  callback. Obsolete mode errors cannot stop a newer source, terminal errors
+  cannot restart delivery, and failed rate queries do not fabricate cadence.
+- Fatal capture updates survive queued UI changes. Forward source-clock jumps
+  cannot schedule output seconds into the future; ordinary processing jitter
+  preserves cadence. Final controller release tears down capture resources.
+- Camera transport loss gets a finite, rate-limited recovery budget after a
+  previous connection; initial unsigned absence stays quiet. A successful
+  connection alone cannot renew retries when every subsequent send fails.
+- Shared validation rejects malformed plane dimensions/count/stride before
+  GPU mapping, untouched bypass, staging and extension ingress. The generated
+  extension target explicitly includes that shared validator.
+- Retired native views cannot hide or resize their replacements, and obsolete
+  in-flight errors cannot alter a new preview generation's diagnostics.
+- LUT reads are bounded to 32 MB plus one detection byte even if the file grows
+  after its size check. Restored basenames identify the look; persistent LUT
+  errors cannot be overwritten by live status updates.
+- Installer requests preflight the running signature and effective Boolean
+  entitlement, reject unsupported builds before submission, guard duplicate
+  requests and ignore old callbacks. The source entitlement was already
+  declared; the owner's failure came from the unsigned executable lacking it.
+
+The main window now groups capture, processing and camera status beside the
+video, with a compact effect strip and filename-based LUT row. Common controls
+fit the existing 1080 × 640 pt window without scrolling. Advanced diagnostics
+and camera setup expand separately. The tray pins Start/Stop, Processing and
+its footer; details scroll inside an explicitly sized panel. Its height adapts
+to available screen space. Preview errors are visible with a preview-only retry
+action, bypass selection is distinct from active output, and unavailable camera
+output is visible in the tray.
+
+A real-source native layout harness checked light/dark appearances, 850 × 590
+and 1080 × 700 windows, long errors and synthetic input/output metadata. Native
+preview bounds remain 16:9, including the mini preview; the base shape now owns
+layout independently of native-view ideal sizing. The tray's compact-size
+proposal remains a nonzero fixed panel. Receipt: `logs/ui-polish-layout.log`.
+The final harness also covers preview errors and a remembered-but-missing
+device. The shared Start eligibility guard prevents that missing-device action
+from starting capture through the window, keyboard command or model. Capture
+was never started by that harness.
+
+Actual app checks restored the owner's filename, LUT and four selections;
+verified Processing/Preview keyboard shortcuts and unsigned installation controls;
+and visually checked the stopped window with all common controls visible. No
+live video screenshot was taken. Capture remains stopped, with Processing and
+Preview enabled. This does not qualify sustained hardware presentation or
+signed extension IPC.
+
 ## Remaining qualification
 
 - Broaden sustained hardware/display qualification to other output modes,
@@ -237,4 +303,4 @@ logs remain under
 `/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/`.
 
 Original passing test receipt: `logs/tests-20261014T064354Z.log`.
-Current passing test receipt: `logs/tests-20261014T205650Z.log`.
+Current passing test receipt: `logs/tests-20261014T213543Z.log`.
