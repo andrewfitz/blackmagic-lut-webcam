@@ -102,8 +102,10 @@ and the native display color conversion; every selected processing checkbox
 affects both preview and camera output. Capture can run in preview mode before
 the camera extension is signed and installed.
 
-GPU resources and output buffers are warmed before capture starts. Capture,
-processing pools, camera transport and preview queues are bounded. The UI shows
+GPU resources and output buffers are warmed before capture starts. Capture
+retains at most six source frames to absorb callback bursts, GPU output pools
+are limited to eight buffers, and preview keeps one latest pending sample.
+Camera transport is also bounded. The UI shows
 source timestamp gaps, capture admission drops, pool pressure, transport drops
 and native preview delivery separately. Intentional frame-rate reduction does
 not count as a dropped frame.

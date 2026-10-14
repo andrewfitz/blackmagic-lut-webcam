@@ -26,8 +26,8 @@ struct CaptureUpdate: @unchecked Sendable {
 }
 
 // Configuration, processing and stop resources are serial. Driver callbacks
-// only take a short lock; three retained frames absorb scheduling jitter without
-// allowing an unbounded queue or accumulating long preview latency.
+// only take a short lock; six retained frames absorb measured five-frame
+// callback bursts without allowing an unbounded queue.
 final class CaptureController: @unchecked Sendable {
   private let queue = DispatchQueue(label: "org.ultrastudiolut.capture", qos: .userInteractive)
   private let stateLock = NSLock()
@@ -199,7 +199,7 @@ final class CaptureController: @unchecked Sendable {
         }
         lastSourcePTS = pts
       }
-      if inFlight >= 3 { callbackDrops &+= 1; return false }
+      if inFlight >= 6 { callbackDrops &+= 1; return false }
       inFlight += 1
       return true
     }
