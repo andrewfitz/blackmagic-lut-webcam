@@ -163,4 +163,17 @@ import XCTest
     XCTAssertEqual(CVBufferCopyAttachment(bypass, kCVImageBufferYCbCrMatrixKey, nil) as? String,
       kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String)
   }
+
+  func testPrewarmPreservesTenBitLUTProcessingAndPoolCapacity() throws {
+    let processor = try LUTProcessor()
+    try processor.load(CubeLUT(text: cubeText()))
+    let config = PipelineConfiguration(applyLUT: true, downscale: false, convertTo420: false)
+    try processor.prepare(configuration: config)
+    let source = try syntheticRamp()
+    let output = try processor.process(source, configuration: config)
+    XCTAssertEqual(read10(output, plane: 0, x: 1920), UInt16(64 + 1920 * 876 / 3839))
+    var held = [output]
+    for _ in 1..<8 { held.append(try processor.process(source, configuration: config)) }
+    XCTAssertEqual(held.count, 8, "Prewarm must release all warm frames before native capture starts")
+  }
 }

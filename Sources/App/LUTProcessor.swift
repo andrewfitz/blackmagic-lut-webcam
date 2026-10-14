@@ -1,11 +1,9 @@
-import CoreImage
 import CoreVideo
 import Metal
 
-// Capture-queue ownership. Core Image is only for preview. All production
-// processing uses explicit 32-bit float Metal textures and LUT samples.
+// Capture-queue ownership. Production processing uses explicit 32-bit float
+// Metal textures and LUT samples. Native preview consumes the output directly.
 final class LUTProcessor {
-  let context: CIContext
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
   private let states: [String: MTLComputePipelineState]
@@ -35,7 +33,6 @@ final class LUTProcessor {
     }
     self.device = device
     commandQueue = queue
-    context = CIContext(mtlDevice: device, options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull()])
     let library: MTLLibrary
     if let path = ProcessInfo.processInfo.environment["ULTRASTUDIO_LUT_METALLIB"] {
       library = try device.makeLibrary(URL: URL(fileURLWithPath: path))
@@ -66,6 +63,40 @@ final class LUTProcessor {
     }) else { throw VideoError.message("Cannot upload LUT to GPU.") }
     self.cube = cube
     cubeBuffer = buffer
+  }
+
+  // Run before enabling native capture. Allocate the packed input staging,
+  // floating-point working textures, output pool and first three frames while
+  // no live frame can arrive. The generated black image is never published.
+  func prepare(configuration: PipelineConfiguration) throws {
+    guard !configuration.untouched else { return }
+    var source: CVPixelBuffer?
+    let status = CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_422YpCbCr10,
+      [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &source)
+    guard status == kCVReturnSuccess, let source,
+      CVPixelBufferLockBaseAddress(source, []) == kCVReturnSuccess else {
+      throw VideoError.message("Cannot prepare capture processing buffers (\(status)).")
+    }
+    let stride = CVPixelBufferGetBytesPerRow(source) / 4
+    guard let address = CVPixelBufferGetBaseAddress(source) else {
+      CVPixelBufferUnlockBaseAddress(source, [])
+      throw VideoError.message("Cannot initialize capture processing buffers.")
+    }
+    let words = address.assumingMemoryBound(to: UInt32.self)
+    var row = [UInt32](repeating: 0, count: stride)
+    for offset in Swift.stride(from: 0, to: 3840 / 6 * 4, by: 4) {
+      row[offset] = 512 | (64 << 10) | (512 << 20)
+      row[offset + 1] = 64 | (512 << 10) | (64 << 20)
+      row[offset + 2] = 512 | (64 << 10) | (512 << 20)
+      row[offset + 3] = 64 | (512 << 10) | (64 << 20)
+    }
+    row.withUnsafeBytes { bytes in
+      for y in 0..<2160 { memcpy(words.advanced(by: y * stride), bytes.baseAddress!, bytes.count) }
+    }
+    CVPixelBufferUnlockBaseAddress(source, [])
+    var warm = [CVPixelBuffer]()
+    for _ in 0..<3 { warm.append(try process(source, configuration: configuration)) }
+    withExtendedLifetime(warm) {}
   }
 
   private func preparePool(_ configuration: PipelineConfiguration) throws -> CVPixelBufferPool {
