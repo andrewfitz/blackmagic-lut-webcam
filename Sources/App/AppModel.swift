@@ -193,4 +193,9 @@ final class AppModel {
   }
 
   func stop() { running = false; capture.stop() }
+
+  func resetPreview() {
+    previewRenderer.flush()
+    miniPreviewRenderer.flush()
+  }
 }

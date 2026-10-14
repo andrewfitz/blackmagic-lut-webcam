@@ -20,27 +20,41 @@ struct MenuBarInterface: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        VStack(alignment: .leading, spacing: 4) {
+          FeedStateLabel(model: model)
+          CameraConnectionLabel(model: model)
+        }
+        Spacer()
+        StartStopButton(model: model).controlSize(.small)
+      }
+      PipelineEnableControl(model: model)
+      Divider()
       ScrollView {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
           HStack {
-            FeedStateLabel(model: model)
+            Text("Output preview").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             Spacer()
-            StartStopButton(model: model).controlSize(.small)
+            PreviewVisibilityControl(model: model)
           }
-          FeedPreview(model: model, compact: true).frame(height: 150)
-          PipelineEnableControl(model: model)
-          Toggle("Video preview", isOn: $model.previewEnabled)
-            .toggleStyle(.switch).controlSize(.small)
+          FeedPreview(model: model, compact: true)
+          PreviewErrorNotice(model: model)
           Divider()
           PipelineControls(model: model, compact: true)
+          Divider()
           LUTControls(model: model, compact: true)
           DisclosureGroup("Feed details") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+              InputDeviceControl(model: model)
               FeedMetadata(model: model)
+              CameraOutputControls(model: model)
               FeedDiagnostics(model: model, compact: true)
             }.padding(.top, 6)
           }.font(.caption)
+          FeedNotice(model: model)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
       }
       .scrollBounceBehavior(.basedOnSize)
       Divider()
@@ -55,11 +69,17 @@ struct MenuBarInterface: View {
           model.stop()
           NSApplication.shared.terminate(nil)
         }
-      }.buttonStyle(.borderless).font(.callout)
+      }.buttonStyle(.borderless).font(.caption)
     }
-    .padding(16)
+    .padding(14)
     // A compact MenuBarExtra size proposal can collapse a flexible ScrollView
     // when only a maximum is specified, leaving only Open/Quit.
-    .frame(width: 360, height: 600)
+    .frame(width: 380, height: panelHeight)
+  }
+
+  // Keep a real height so flexible content cannot collapse. Leave room for
+  // native menu positioning on smaller displays; details scroll independently.
+  private var panelHeight: CGFloat {
+    min(700, max(420, (NSScreen.main?.visibleFrame.height ?? 800) - 80))
   }
 }
