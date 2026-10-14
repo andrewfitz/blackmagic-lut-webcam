@@ -333,8 +333,23 @@ import XCTest
     rejected = nil
     XCTAssertNil(rejectedWeak, "Backpressure must not retain rejected frames")
     let token = try XCTUnwrap(CMSimpleQueueDequeue(queue.queue))
+    // Model the native C consumer's ownership of the successful enqueue retain.
+    // Keep it explicit so a callback regression fails the weak assertion rather
+    // than making a Swift ARC local later release an already-freed sample.
+    let nativeOwner = Unmanaged<CMSampleBuffer>.fromOpaque(token)
     cameraSinkQueueAltered(0, UnsafeMutableRawPointer(mutating: token), nil)
-    XCTAssertNil(firstWeak, "Removal callback releases the queue retain exactly once")
+    let remainsOwned = firstWeak != nil
+    XCTAssertTrue(remainsOwned, "Removal notification must not release the native consumer's sample")
+    if remainsOwned {
+      autoreleasepool {
+        XCTAssertTrue(CMSampleBufferDataIsReady(nativeOwner.takeUnretainedValue()),
+          "The native consumer must still be able to read the sample after notification")
+        XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(nativeOwner.takeUnretainedValue()),
+          CMTime(value: 60_000, timescale: 60_000))
+      }
+      nativeOwner.release()
+    }
+    XCTAssertNil(firstWeak, "Native consumer releases the enqueue retain exactly once after use")
     XCTAssertEqual(CMSimpleQueueGetCount(queue.queue), 0)
     let sink = CameraSink(bufferQueue: queue)
     var remaining: CMSampleBuffer? = try sample()

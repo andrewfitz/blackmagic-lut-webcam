@@ -1,13 +1,14 @@
 import CoreMediaIO
 import Foundation
 
-// The CMIO queue owns one retain until it reports removal of that token.
-let cameraSinkQueueAltered: CMIODeviceStreamQueueAlteredProc = { _, token, _ in
-  if let token { Unmanaged<CMSampleBuffer>.fromOpaque(token).release() }
-}
+// Queue-altered is a notification, not a transfer of sample ownership. CMIO's
+// consumer owns the dequeued enqueue retain and releases it after use. Releasing
+// the notification token here caused real installed-extension double frees.
+let cameraSinkQueueAltered: CMIODeviceStreamQueueAlteredProc = { _, _, _ in }
 
 // CMSimpleQueue does not retain its elements. Each successful enqueue owns
-// exactly one retain, released by CMIO's removal callback or our stop drain.
+// exactly one retain, transferred to CMIO on dequeue or released by our stop
+// drain if the sample was never consumed.
 final class CameraBufferQueue {
   let queue: CMSimpleQueue
 
