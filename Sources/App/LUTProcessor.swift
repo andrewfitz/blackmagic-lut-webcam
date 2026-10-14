@@ -69,7 +69,9 @@ final class LUTProcessor {
   }
 
   private func preparePool(_ configuration: PipelineConfiguration) throws -> CVPixelBufferPool {
-    if poolConfiguration == configuration, let pool { return pool }
+    if let previous = poolConfiguration, previous.width == configuration.width,
+      previous.height == configuration.height, previous.pixelFormat == configuration.pixelFormat,
+      let pool { return pool }
     var pool: CVPixelBufferPool?
     let status = CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary, [
       kCVPixelBufferPixelFormatTypeKey: configuration.pixelFormat,
@@ -118,11 +120,19 @@ final class LUTProcessor {
   }
 
   func process(_ input: CVPixelBuffer, configuration: PipelineConfiguration) throws -> CVPixelBuffer {
-    if configuration.untouched { return input }
-    guard !configuration.applyLUT || cube != nil else { throw VideoError.message("Load a log-to-Rec.709 LUT before starting.") }
     let width = CVPixelBufferGetWidth(input), height = CVPixelBufferGetHeight(input)
     let type = CVPixelBufferGetPixelFormatType(input)
+    guard width == 3840, height == 2160 else {
+      throw VideoError.message("Expected 3840 × 2160 input; received \(width) × \(height).")
+    }
     guard VideoContract.tenBit422.contains(type) else { throw VideoError.message("Expected 10-bit 4:2:2 input.") }
+    if configuration.untouched { return input }
+    guard !configuration.applyLUT || cube != nil else { throw VideoError.message("Load a LUT or turn off Apply LUT.") }
+    let chromaLocation = CVBufferCopyAttachment(input, kCVImageBufferChromaLocationTopFieldKey, nil) as? String
+    // SMPTE/QuickTime 4:2:2 is left-cosited unless the producer labels it centered.
+    let chromaOffset: Float = chromaLocation == kCVImageBufferChromaLocation_Center as String ||
+      chromaLocation == kCVImageBufferChromaLocation_Top as String ||
+      chromaLocation == kCVImageBufferChromaLocation_Bottom as String ? 0.5 : 0
     let matrix = CVBufferCopyAttachment(input, kCVImageBufferYCbCrMatrixKey, nil) as? String
     let kr: Float = matrix == kCVImageBufferYCbCrMatrix_ITU_R_2020 as String ? 0.2627 :
       (matrix == kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String ? 0.299 : 0.2126)
@@ -134,7 +144,7 @@ final class LUTProcessor {
     let scale = SIMD3<Float>(repeating: 1) / ((cube?.domainMax ?? SIMD3(repeating: 1)) - low)
     var parameters = Parameters(
       geometry: SIMD4(UInt32(width), UInt32(height), UInt32(CVPixelBufferGetBytesPerRow(input) / 4), UInt32(cube?.dimension ?? 2)),
-      domainLow: SIMD4(low.x, low.y, low.z, 0), domainScale: SIMD4(scale.x, scale.y, scale.z, 0),
+      domainLow: SIMD4(low.x, low.y, low.z, chromaOffset), domainScale: SIMD4(scale.x, scale.y, scale.z, 0),
       decodeRange: SIMD4(fullRange ? 0 : 64, fullRange ? 1023 : 876, 512, fullRange ? 1023 : 896),
       decodeMatrix: SIMD4(2 * (1 - kr), 2 * (1 - kb), 2 * kb * (1 - kb) / kg, 2 * kr * (1 - kr) / kg),
       encodeMatrix: SIMD4(configuration.applyLUT ? 0.2126 : kr, configuration.applyLUT ? 0.0722 : kb, 0, 0),
@@ -144,7 +154,9 @@ final class LUTProcessor {
     let full = try texture(width: width, height: height, existing: &fullTexture)
     var wrappers: [CVMetalTexture] = []
     if type == kCVPixelFormatType_422YpCbCr10 {
-      CVPixelBufferLockBaseAddress(input, .readOnly)
+      guard CVPixelBufferLockBaseAddress(input, .readOnly) == kCVReturnSuccess else {
+        throw VideoError.message("Cannot lock packed capture frame.")
+      }
       defer { CVPixelBufferUnlockBaseAddress(input, .readOnly) }
       let length = CVPixelBufferGetBytesPerRow(input) * height
       if packedBuffer == nil || packedBuffer!.length < length { packedBuffer = device.makeBuffer(length: length, options: .storageModeShared) }
@@ -195,6 +207,14 @@ final class LUTProcessor {
     withExtendedLifetime(wrappers) {}
     guard command.status == .completed else { throw VideoError.message(command.error?.localizedDescription ?? "GPU processing failed.") }
     if !configuration.applyLUT { CVBufferPropagateAttachments(input, output) }
+    // Encoders average each pair/block, producing centered chroma even if input
+    // samples were left-cosited. Never carry the source's location onto output.
+    CVBufferSetAttachment(output, kCVImageBufferChromaLocationTopFieldKey, kCVImageBufferChromaLocation_Center, .shouldPropagate)
+    CVBufferRemoveAttachment(output, kCVImageBufferChromaLocationBottomFieldKey)
+    if configuration.downscale {
+      CVBufferRemoveAttachment(output, kCVImageBufferCleanApertureKey)
+      CVBufferRemoveAttachment(output, kCVImageBufferDisplayDimensionsKey)
+    }
     let outputMatrix = configuration.applyLUT ? kCVImageBufferYCbCrMatrix_ITU_R_709_2 :
       (matrix.map { $0 as CFString } ?? kCVImageBufferYCbCrMatrix_ITU_R_709_2)
     CVBufferSetAttachment(output, kCVImageBufferYCbCrMatrixKey, outputMatrix, .shouldPropagate)

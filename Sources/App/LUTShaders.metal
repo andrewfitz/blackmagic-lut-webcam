@@ -35,7 +35,7 @@ kernel void planarLUT(texture2d<float, access::read> y [[texture(0)]], texture2d
   constant Parameters &p [[buffer(1)]], uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= p.geometry.x || gid.y >= p.geometry.y) return;
   constexpr sampler chroma(coord::normalized, address::clamp_to_edge, filter::linear);
-  float2 coord = (float2(gid) + 0.5f) / float2(p.geometry.xy);
+  float2 coord = float2(float(gid.x) + 1.0f - p.domainLow.w, float(gid.y) + 0.5f) / float2(p.geometry.xy);
   float luma = y.read(gid).r * (65535.0f / 64.0f);
   float2 c = uv.sample(chroma, coord).rg * (65535.0f / 64.0f);
   rgb.write(float4(lookup(decode(luma, c, p), cube, p), 1), gid);
@@ -61,48 +61,39 @@ kernel void packedLUT(device const uint *words [[buffer(2)]], texture2d<float, a
   else if (lane == 3) value = (words[offset + 2] >> 10) & 1023;
   else if (lane == 4) value = words[offset + 3] & 1023;
   else value = (words[offset + 3] >> 20) & 1023;
-  float position = (float(gid.x) - 0.5f) / 2.0f;
+  float position = (float(gid.x) - p.domainLow.w) / 2.0f;
   int pair = int(floor(position));
   float2 c = mix(packedChroma(words, pair, gid.y, p), packedChroma(words, pair + 1, gid.y, p), position - floor(position));
   rgb.write(float4(lookup(decode(float(value), c, p), cube, p), 1), gid);
 }
 
-float lanczos3(float x) {
-  x = abs(x);
-  if (x < 1e-5f) return 1;
-  if (x >= 3) return 0;
-  float pi = 3.14159265358979323846f;
-  return (sin(pi * x) / (pi * x)) * (sin(pi * x / 3) / (pi * x / 3));
-}
+// This pipeline's scaler is exactly UHD -> 1080 (2:1). Its normalized
+// antialiasing Lanczos-3 weights are identical at every output pixel. Compute
+// them once rather than evaluating 48 sine functions per pixel per pass.
+constant float lanczosHalfWeights[12] = {
+  0.003689135430f, 0.015056142681f, -0.033998631514f, -0.066637317768f,
+  0.135505284129f, 0.446385387043f, 0.446385387043f, 0.135505284129f,
+  -0.066637317768f, -0.033998631514f, 0.015056142681f, 0.003689135430f
+};
 
 kernel void lanczosHorizontal(texture2d<float, access::read> input [[texture(0)]], texture2d<float, access::write> output [[texture(1)]], uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= output.get_width() || gid.y >= output.get_height()) return;
-  float scale = float(input.get_width()) / float(output.get_width());
-  float center = (float(gid.x) + 0.5f) * scale - 0.5f;
-  int begin = int(ceil(center - 3 * scale)), end = int(floor(center + 3 * scale));
+  int begin = int(gid.x) * 2 - 5;
   float4 sum = 0;
-  float weightSum = 0;
-  for (int x = begin; x <= end; ++x) {
-    float weight = lanczos3((float(x) - center) / scale);
-    sum += input.read(uint2(clamp(x, 0, int(input.get_width()) - 1), gid.y)) * weight;
-    weightSum += weight;
+  for (int tap = 0; tap < 12; ++tap) {
+    sum += input.read(uint2(clamp(begin + tap, 0, int(input.get_width()) - 1), gid.y)) * lanczosHalfWeights[tap];
   }
-  output.write(sum / weightSum, gid);
+  output.write(sum, gid);
 }
 
 kernel void lanczosVertical(texture2d<float, access::read> input [[texture(0)]], texture2d<float, access::write> output [[texture(1)]], uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= output.get_width() || gid.y >= output.get_height()) return;
-  float scale = float(input.get_height()) / float(output.get_height());
-  float center = (float(gid.y) + 0.5f) * scale - 0.5f;
-  int begin = int(ceil(center - 3 * scale)), end = int(floor(center + 3 * scale));
+  int begin = int(gid.y) * 2 - 5;
   float4 sum = 0;
-  float weightSum = 0;
-  for (int y = begin; y <= end; ++y) {
-    float weight = lanczos3((float(y) - center) / scale);
-    sum += input.read(uint2(gid.x, clamp(y, 0, int(input.get_height()) - 1))) * weight;
-    weightSum += weight;
+  for (int tap = 0; tap < 12; ++tap) {
+    sum += input.read(uint2(gid.x, clamp(begin + tap, 0, int(input.get_height()) - 1))) * lanczosHalfWeights[tap];
   }
-  output.write(sum / weightSum, gid);
+  output.write(sum, gid);
 }
 
 float3 encode(float3 rgb, constant Parameters &p) {
