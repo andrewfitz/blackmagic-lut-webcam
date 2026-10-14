@@ -75,6 +75,23 @@ private final class GPUReleaseCounter: @unchecked Sendable {
     return CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!.assumingMemoryBound(to: UInt16.self)[y * stride + x] >> 6
   }
 
+  private func customPlanarInput(type: OSType, widths: [Int], heights: [Int], strides: [Int]) throws -> CVPixelBuffer {
+    var widths = widths, heights = heights, strides = strides
+    let planeBytes = max(7680, strides.max() ?? 0) * 2160
+    let storage = UnsafeMutableRawPointer.allocate(byteCount: planeBytes * widths.count, alignment: 64)
+    var addresses: [UnsafeMutableRawPointer?] = widths.indices.map { storage.advanced(by: $0 * planeBytes) }
+    var image: CVPixelBuffer?
+    let status = CVPixelBufferCreateWithPlanarBytes(nil, 3840, 2160, type, nil, 0, widths.count,
+      &addresses, &widths, &heights, &strides, { context, _, _, _, _ in
+        context?.deallocate()
+      }, storage, nil, &image)
+    guard status == kCVReturnSuccess, let image else {
+      storage.deallocate()
+      throw VideoError.message("Cannot construct planar layout fixture (\(status)).")
+    }
+    return image
+  }
+
   private func borrowedInput(offset: Int = 0, stride: Int = 10240, splitVMRegion: Bool = false,
     released: @escaping @Sendable () -> Void = {}) throws -> CVPixelBuffer {
     let page = Int(getpagesize())
@@ -204,6 +221,43 @@ private final class GPUReleaseCounter: @unchecked Sendable {
     var wrongFormat: CVPixelBuffer?
     XCTAssertEqual(CVPixelBufferCreate(nil, 3840, 2160, kCVPixelFormatType_32BGRA, nil, &wrongFormat), kCVReturnSuccess)
     XCTAssertThrowsError(try processor.process(XCTUnwrap(wrongFormat), configuration: config))
+  }
+
+  func testMalformedPlanarGeometryIsRejectedBeforeProcessingOrBypass() throws {
+    let processor = try LUTProcessor()
+    let malformed = [
+      ([3840], [2160], [7680]),
+      ([3840, 960], [2160, 2160], [7680, 7680]),
+      ([3840, 1920], [2160, 1080], [7680, 7680]),
+      ([3840, 1920], [2160, 2160], [7680, 3840]),
+      ([3840, 1920], [2160, 2160], [7681, 7680]),
+    ]
+    for type in [kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange, kCVPixelFormatType_422YpCbCr10BiPlanarFullRange] {
+      for (widths, heights, strides) in malformed {
+        let image = try customPlanarInput(type: type, widths: widths, heights: heights, strides: strides)
+        XCTAssertThrowsError(try VideoBufferLayout.validate(image))
+        XCTAssertThrowsError(try processor.process(image, configuration: PipelineConfiguration()))
+        XCTAssertThrowsError(try processor.process(image,
+          configuration: PipelineConfiguration(applyLUT: false, downscale: false, convertTo420: false)))
+      }
+    }
+    XCTAssertFalse(processor.workingResourceDiagnostics.outputPoolActive,
+      "Malformed input must fail before output allocation or GPU mapping")
+  }
+
+  func testLayoutValidatorPreservesSupportedStorageAndChromaGeometry() throws {
+    for type in VideoContract.tenBit422 + [kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange] {
+      for (width, height) in [(3840, 2160), (1920, 1080)] {
+        var image: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(nil, width, height, type,
+          [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &image), kCVReturnSuccess)
+        XCTAssertNoThrow(try VideoBufferLayout.validate(XCTUnwrap(image)))
+      }
+    }
+    let invalid420 = try customPlanarInput(type: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      widths: [3840, 1920], heights: [2160, 2160], strides: [3840, 3840])
+    XCTAssertThrowsError(try VideoBufferLayout.validate(invalid420),
+      "4:2:0 requires half-height chroma; accepting 4:2:2 geometry would corrupt transport")
   }
 
   func testReusedPoolDoesNotLeakLUTColorLabelsOntoBypass() throws {

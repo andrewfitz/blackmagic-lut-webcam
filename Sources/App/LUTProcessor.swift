@@ -191,12 +191,15 @@ final class LUTProcessor {
       throw VideoError.message("Expected 3840 × 2160 input; received \(width) × \(height).")
     }
     guard VideoContract.tenBit422.contains(type) else { throw VideoError.message("Expected 10-bit 4:2:2 input.") }
+    try VideoBufferLayout.validate(input)
     var packedLength = 0
     if type == kCVPixelFormatType_422YpCbCr10 {
       let stride = CVPixelBufferGetBytesPerRow(input)
       let (length, overflow) = stride.multipliedReportingOverflow(by: height)
-      guard stride >= 10240, stride.isMultiple(of: 4), !overflow, length > 0,
-        length <= device.maxBufferLength else {
+      // Packed shader row offsets use 32-bit word indices. A Metal device may
+      // permit a larger buffer than that indexing can represent.
+      guard !overflow, length > 0, length <= device.maxBufferLength,
+        length / MemoryLayout<UInt32>.size <= Int(UInt32.max) else {
         throw VideoError.message("Invalid packed 10-bit capture row stride.")
       }
       packedLength = length
