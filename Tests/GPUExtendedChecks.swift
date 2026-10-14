@@ -339,4 +339,40 @@ private final class GPUReleaseCounter: @unchecked Sendable {
     XCTAssertLessThan(processor.workingResourceDiagnostics.floatTextureBytes, scaledBytes)
     XCTAssertEqual(read10(full, plane: 0, x: 1920), UInt16(64 + 1920 * 876 / 3839))
   }
+
+  func testExpandedConsumerBudgetPreservesRetainedTenBitFramesAndReleasesIdleResources() throws {
+    let processor = try LUTProcessor()
+    let source = try input()
+    let configuration = PipelineConfiguration(applyLUT: false, downscale: true, convertTo420: false)
+    var retained = [CVPixelBuffer]()
+    for frame in 0..<VideoContract.outputBufferLimit {
+      // Each published frame has a different sub-eight-bit luma level. A
+      // consumer backlog must preserve both buffer identity and actual pixels.
+      XCTAssertEqual(CVPixelBufferLockBaseAddress(source, []), kCVReturnSuccess)
+      let stride = CVPixelBufferGetBytesPerRowOfPlane(source, 0) / 2
+      let words = CVPixelBufferGetBaseAddressOfPlane(source, 0)!.assumingMemoryBound(to: UInt16.self)
+      for y in 0..<128 {
+        for x in 0..<128 { words[y * stride + x] = UInt16(400 + frame) << 6 }
+      }
+      CVPixelBufferUnlockBaseAddress(source, [])
+      let output = try processor.process(source, configuration: configuration)
+      XCTAssertFalse(retained.contains { $0 === output })
+      retained.append(output)
+    }
+    XCTAssertThrowsError(try processor.process(source, configuration: configuration)) { error in
+      guard case VideoError.outputBackPressure = error else {
+        XCTFail("Expanded demand must remain bounded: \(error)")
+        return
+      }
+    }
+    processor.releaseIdleResources()
+    XCTAssertFalse(processor.workingResourceDiagnostics.outputPoolActive)
+    XCTAssertEqual(processor.workingResourceDiagnostics.floatTextureBytes, 0)
+    for (frame, output) in retained.enumerated() {
+      XCTAssertEqual(read10(output, plane: 0, x: 16, y: 16), UInt16(400 + frame))
+    }
+    retained.removeAll()
+    let recovered = try processor.process(source, configuration: configuration)
+    XCTAssertEqual(read10(recovered, plane: 0, x: 16, y: 16), UInt16(399 + VideoContract.outputBufferLimit))
+  }
 }

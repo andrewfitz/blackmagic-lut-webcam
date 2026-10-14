@@ -114,7 +114,7 @@ final class LUTProcessor {
     }
     CVPixelBufferUnlockBaseAddress(source, [])
     var warm = [CVPixelBuffer]()
-    for _ in 0..<3 { warm.append(try process(source, configuration: configuration)) }
+    for _ in 0..<VideoContract.warmBufferCount { warm.append(try process(source, configuration: configuration)) }
     withExtendedLifetime(warm) {}
   }
 
@@ -123,7 +123,8 @@ final class LUTProcessor {
       previous.height == configuration.height, previous.pixelFormat == configuration.pixelFormat,
       let pool { return pool }
     var pool: CVPixelBufferPool?
-    let status = CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary, [
+    let status = CVPixelBufferPoolCreate(nil,
+      [kCVPixelBufferPoolMinimumBufferCountKey: VideoContract.warmBufferCount] as CFDictionary, [
       kCVPixelBufferPixelFormatTypeKey: configuration.pixelFormat,
       kCVPixelBufferWidthKey: configuration.width,
       kCVPixelBufferHeightKey: configuration.height,
@@ -228,7 +229,7 @@ final class LUTProcessor {
     let pool = try preparePool(configuration)
     var output: CVPixelBuffer?
     let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
-      [kCVPixelBufferPoolAllocationThresholdKey: 8] as CFDictionary, &output)
+      [kCVPixelBufferPoolAllocationThresholdKey: VideoContract.outputBufferLimit] as CFDictionary, &output)
     if status == kCVReturnWouldExceedAllocationThreshold { throw VideoError.outputBackPressure }
     guard status == kCVReturnSuccess, let output else { throw VideoError.message("Output buffers are busy (\(status)).") }
     let (yWrapper, y) = try plane(output, index: 0, format: configuration.convertTo420 ? .r8Unorm : .r16Unorm)
