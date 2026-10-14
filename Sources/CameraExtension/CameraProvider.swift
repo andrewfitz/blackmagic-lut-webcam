@@ -5,7 +5,6 @@ import IOKit.audio
 import Foundation
 import os
 #if UDL_LOCAL_DEVELOPMENT
-import Darwin
 import Security
 #endif
 
@@ -32,50 +31,19 @@ enum CameraProducerAuthorization {
     reportPhase("identifier requirement")
     guard creation == errSecSuccess, let requirement else { return creation == errSecSuccess ? errSecParam : creation }
     var code: SecCode?
+    // Apple's public dynamic-code attribute asks Security for the running
+    // process's signature representation rather than opening its executable.
+    // This avoids file access outside the camera extension's sandbox.
+    // https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_codesigning/lib/cskernel.cpp
     let lookup = SecCodeCopyGuestWithAttributes(nil,
-      [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary, [], &code)
-    reportPhase("dynamic process lookup")
-    let dynamicStatus: OSStatus
-    if lookup == errSecSuccess, let code {
-      reportPhase("dynamic signature verification")
-      dynamicStatus = SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
-    } else { dynamicStatus = lookup == errSecSuccess ? errSecCSNoSuchCode : lookup }
+      [kSecGuestAttributePid: NSNumber(value: pid), kSecGuestAttributeDynamicCode: true] as CFDictionary, [], &code)
+    reportPhase("running signature lookup")
+    guard lookup == errSecSuccess, let code else { return lookup == errSecSuccess ? errSecCSNoSuchCode : lookup }
     // Check the dynamic code's validity and identifier together. A missing,
     // terminated, unsigned or differently signed process fails closed. Nothing
     // is cached by PID across requests or CMIO client lifetimes.
-    guard dynamicStatus == 100001 else { return dynamicStatus }
-    // The CMIO assistant runs under another UID; Security can return its Unix
-    // EPERM status (100001) for ad-hoc cross-user dynamic inspection. Only this
-    // local build can then check the executable's signed bytes. This is not an
-    // audit-token-bound identity guarantee, and production never takes it.
-    reportPhase("static executable verification after dynamic EPERM")
-    return verifyStaticProcess(pid: pid, pathForPID: executablePath) { path in
-      var code: SecStaticCode?
-      let creation = SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code)
-      guard creation == errSecSuccess, let code else { return creation == errSecSuccess ? errSecCSNoSuchCode : creation }
-      return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
-    }
-  }
-
-  static func verifyStaticProcess(pid: pid_t, pathForPID: (pid_t) -> String?,
-    validate: (String) -> OSStatus) -> OSStatus {
-    guard pid > 0, let path = pathForPID(pid), path.hasPrefix("/") else { return errSecCSNoSuchCode }
-    let status = validate(path)
-    guard status == errSecSuccess else { return status }
-    guard pathForPID(pid) == path else { return errSecCSNoSuchCode }
-    return errSecSuccess
-  }
-
-  private static func executablePath(pid: pid_t) -> String? {
-    // PROC_PIDPATHINFO_MAXSIZE is the SDK's 4 * MAXPATHLEN macro; Swift does
-    // not import that compound macro, so retain its documented size here.
-    var bytes = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-    let length = bytes.withUnsafeMutableBytes { proc_pidpath(pid, $0.baseAddress, UInt32($0.count)) }
-    guard length > 0, length < bytes.count else { return nil }
-    return bytes.withUnsafeBufferPointer { buffer in
-      guard let base = buffer.baseAddress else { return nil }
-      return String(validatingUTF8: base)
-    }
+    reportPhase("running signature verification")
+    return SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
   }
 #endif
 }
