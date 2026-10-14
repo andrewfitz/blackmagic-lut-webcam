@@ -4,6 +4,81 @@ import CoreVideo
 import IOKit.audio
 import Foundation
 import os
+#if UDL_LOCAL_DEVELOPMENT
+import Darwin
+import Security
+#endif
+
+enum CameraProducerAuthorization {
+  static let identifier = "org.ultrastudiolut.app"
+
+  static func allows(signingID: String?, pid: pid_t, verifyLocalProcess: (pid_t) -> Bool) -> Bool {
+    if signingID == identifier { return true }
+#if UDL_LOCAL_DEVELOPMENT
+    // CMIO reports the literal "unknown" for an ad-hoc producer on macOS 27.
+    // Verify that particular running process instead of trusting the placeholder.
+    guard signingID == nil || signingID == "unknown", pid > 0 else { return false }
+    return verifyLocalProcess(pid)
+#else
+    return false
+#endif
+  }
+
+#if UDL_LOCAL_DEVELOPMENT
+  static func verifyRunningProcess(pid: pid_t, reportPhase: (String) -> Void = { _ in }) -> OSStatus {
+    guard pid > 0 else { return errSecParam }
+    var requirement: SecRequirement?
+    let creation = SecRequirementCreateWithString("identifier \"\(identifier)\"" as CFString, [], &requirement)
+    reportPhase("identifier requirement")
+    guard creation == errSecSuccess, let requirement else { return creation == errSecSuccess ? errSecParam : creation }
+    var code: SecCode?
+    let lookup = SecCodeCopyGuestWithAttributes(nil,
+      [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary, [], &code)
+    reportPhase("dynamic process lookup")
+    let dynamicStatus: OSStatus
+    if lookup == errSecSuccess, let code {
+      reportPhase("dynamic signature verification")
+      dynamicStatus = SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
+    } else { dynamicStatus = lookup == errSecSuccess ? errSecCSNoSuchCode : lookup }
+    // Check the dynamic code's validity and identifier together. A missing,
+    // terminated, unsigned or differently signed process fails closed. Nothing
+    // is cached by PID across requests or CMIO client lifetimes.
+    guard dynamicStatus == 100001 else { return dynamicStatus }
+    // The CMIO assistant runs under another UID; Security can return its Unix
+    // EPERM status (100001) for ad-hoc cross-user dynamic inspection. Only this
+    // local build can then check the executable's signed bytes. This is not an
+    // audit-token-bound identity guarantee, and production never takes it.
+    reportPhase("static executable verification after dynamic EPERM")
+    return verifyStaticProcess(pid: pid, pathForPID: executablePath) { path in
+      var code: SecStaticCode?
+      let creation = SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code)
+      guard creation == errSecSuccess, let code else { return creation == errSecSuccess ? errSecCSNoSuchCode : creation }
+      return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
+    }
+  }
+
+  static func verifyStaticProcess(pid: pid_t, pathForPID: (pid_t) -> String?,
+    validate: (String) -> OSStatus) -> OSStatus {
+    guard pid > 0, let path = pathForPID(pid), path.hasPrefix("/") else { return errSecCSNoSuchCode }
+    let status = validate(path)
+    guard status == errSecSuccess else { return status }
+    guard pathForPID(pid) == path else { return errSecCSNoSuchCode }
+    return errSecSuccess
+  }
+
+  private static func executablePath(pid: pid_t) -> String? {
+    // PROC_PIDPATHINFO_MAXSIZE is the SDK's 4 * MAXPATHLEN macro; Swift does
+    // not import that compound macro, so retain its documented size here.
+    var bytes = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+    let length = bytes.withUnsafeMutableBytes { proc_pidpath(pid, $0.baseAddress, UInt32($0.count)) }
+    guard length > 0, length < bytes.count else { return nil }
+    return bytes.withUnsafeBufferPointer { buffer in
+      guard let base = buffer.baseAddress else { return nil }
+      return String(validatingUTF8: base)
+    }
+  }
+#endif
+}
 
 typealias CameraSampleCompletion = @Sendable (CMSampleBuffer?, UInt64,
   CMIOExtensionStream.DiscontinuityFlags, Bool, Error?) -> Void
@@ -310,8 +385,20 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   }
   func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
     if isSink {
-      guard client.signingID == "org.ultrastudiolut.app" else {
-        logAuthorizationRejection(client, reason: "producer signing identifier does not match")
+      var verificationStatus: Int32?
+      var verificationPhase = "unavailable"
+      let allowed = CameraProducerAuthorization.allows(signingID: client.signingID, pid: client.pid) { pid in
+#if UDL_LOCAL_DEVELOPMENT
+        let status = CameraProducerAuthorization.verifyRunningProcess(pid: pid) { verificationPhase = $0 }
+        verificationStatus = status
+        return status == errSecSuccess
+#else
+        return false
+#endif
+      }
+      guard allowed else {
+        let detail = verificationStatus.map { "; local signature verification status=\($0), phase=\(verificationPhase)" } ?? ""
+        logAuthorizationRejection(client, reason: "producer signing identifier does not match\(detail)")
         return false
       }
       guard self.client == nil || self.client == client else {
