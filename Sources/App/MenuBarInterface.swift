@@ -58,7 +58,8 @@ struct MenuBarInterface: View {
       }.buttonStyle(.borderless).font(.callout)
     }
     .padding(16)
-    .frame(width: 360)
-    .frame(maxHeight: 640)
+    // A compact MenuBarExtra size proposal can collapse a flexible ScrollView
+    // when only a maximum is specified, leaving only Open/Quit.
+    .frame(width: 360, height: 600)
   }
 }

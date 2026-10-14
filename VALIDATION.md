@@ -174,7 +174,18 @@ processing and preview. Start opened automatic UltraStudio detection and reporte
 no HDMI signal while remaining armed. Stop worked; the app was left stopped with
 processing and preview enabled. Sustained hardware/display testing remains pending
 at the owner's request. The automation surface did not expose the actual menu
-bar item, so clicking the tray popover still needs a manual check.
+bar item; the subsequent owner check and sizing correction are recorded below.
+
+The owner reported that the tray showed only Open window and Quit. A native
+hosting-controller probe reproduced a compact-size proposal shrinking the old
+panel to 360 × 68 pt, despite its 360 × 562 pt ideal size. The earlier ideal-size
+layout check therefore missed the collapsed scroll area. The panel now has a
+defined 360 × 600 pt size, with overflow scrolling inside it; both ideal and
+compact proposals return that size. The unsigned Release rebuild passed
+(`logs/build-20261014T211553Z.log`) and was relaunched with the saved LUT/settings.
+The owner confirmed that clicking the tray icon now shows the preview and
+processing controls. Sizing receipt: `logs/tray-layout-sizing.log`. This UI-only
+correction did not rerun the media-processing suite.
 
 The final focused preview suite passes six tests, including actual native
 renderer frame/drop/corruption metrics across 12 format/rate combinations.
