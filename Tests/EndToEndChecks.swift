@@ -208,6 +208,8 @@ import XCTest
 private final class CaptureHarness: @unchecked Sendable {
   private let lock = NSLock()
   private var handlers = [(CVPixelBuffer, CMTime, Bool) -> Void]()
+  private var automaticHandlers = [(CVPixelBuffer, CMTime, CMTime, Bool) -> Void]()
+  private var connections = [(PipelineConfiguration, OSType)]()
   private var stopTotal = 0
   private var disconnectTotal = 0
   private var sendTotal = 0
@@ -227,16 +229,18 @@ private final class CaptureHarness: @unchecked Sendable {
   let started: XCTestExpectation?
   let retainOutputs: Bool
   let failSending: Bool
+  let failConnecting: Bool
 
   init(startGate: DispatchSemaphore? = nil, started: XCTestExpectation? = nil,
-    retainOutputs: Bool = false, failSending: Bool = false) {
+    retainOutputs: Bool = false, failSending: Bool = false, failConnecting: Bool = false) {
     self.startGate = startGate
     self.started = started
     self.retainOutputs = retainOutputs
     self.failSending = failSending
+    self.failConnecting = failConnecting
   }
 
-  var starts: Int { lock.withLock { handlers.count } }
+  var starts: Int { lock.withLock { handlers.count + automaticHandlers.count } }
   var stops: Int { lock.withLock { stopTotal } }
   var disconnects: Int { lock.withLock { disconnectTotal } }
   var sent: Int { lock.withLock { sendTotal } }
@@ -248,6 +252,7 @@ private final class CaptureHarness: @unchecked Sendable {
   var previewTiming: [(CMTime, CMTime)] { lock.withLock { Array(zip(previewTimes, previewDurations)) } }
   var cameraAndPreviewSamplesMatch: Bool { lock.withLock { cameraSampleIDs == previewSampleIDs } }
   var processingTiming: [(Double, Double)] { lock.withLock { Array(zip(processTimes, queueWaitTimes)) } }
+  var negotiated: [(PipelineConfiguration, OSType)] { lock.withLock { connections } }
 
   func releaseOutputs() { lock.withLock { samples.removeAll(); latest = nil; latestPreview = nil } }
 
@@ -256,19 +261,33 @@ private final class CaptureHarness: @unchecked Sendable {
     handler(image, CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)), true)
   }
 
-  func services() -> CaptureServices {
-    CaptureServices(
+  func emitAutomatic(_ image: CVPixelBuffer, at time: CMTime, duration: CMTime, from generation: Int? = nil) {
+    let handler = lock.withLock { automaticHandlers[generation ?? automaticHandlers.count - 1] }
+    handler(image, time, duration, true)
+  }
+
+  private func finishStart() throws {
+    started?.fulfill()
+    if let gate = startGate {
+      guard gate.wait(timeout: .now() + 5) == .success else {
+        throw VideoError.message("Test did not release the blocked capture start")
+      }
+    }
+  }
+
+  func services(automatic: Bool = false, previewConsumer: Bool = true) -> CaptureServices {
+    var services = CaptureServices(
       start: { _, _, frames, _ in
         self.lock.withLock { self.handlers.append(frames); self.captureActive = true }
-        self.started?.fulfill()
-        if let gate = self.startGate {
-          guard gate.wait(timeout: .now() + 5) == .success else {
-            throw VideoError.message("Test did not release the blocked capture start")
-          }
-        }
+        try self.finishStart()
       },
       stop: { self.lock.withLock { self.stopTotal += 1; self.captureActive = false } },
-      connect: { _, _ in },
+      connect: { configuration, pixelFormat in
+        try self.lock.withLock {
+          self.connections.append((configuration, pixelFormat))
+          if self.failConnecting { throw VideoError.message("Synthetic virtual camera unavailable") }
+        }
+      },
       disconnect: {
         self.lock.withLock { self.disconnectTotal += 1; self.samples.removeAll(); self.latest = nil }
       },
@@ -295,6 +314,14 @@ private final class CaptureHarness: @unchecked Sendable {
       didProcess: { processingMS, queueWaitMS in
         self.lock.withLock { self.processTimes.append(processingMS); self.queueWaitTimes.append(queueWaitMS) }
       })
+    if !previewConsumer { services.preview = nil }
+    if automatic {
+      services.startAutomatic = { _, frames, _ in
+        self.lock.withLock { self.automaticHandlers.append(frames); self.captureActive = true }
+        try self.finishStart()
+      }
+    }
+    return services
   }
 }
 
@@ -302,22 +329,42 @@ private final class CaptureStatusRecorder: @unchecked Sendable {
   private let lock = NSLock()
   private var largestDropCount: UInt64 = 0
   private var stoppedMessages = [String]()
+  private var updates = [CaptureUpdate]()
 
   func record(_ update: CaptureUpdate) {
     lock.withLock {
       largestDropCount = max(largestDropCount, update.dropped)
+      updates.append(update)
       if update.stopped { stoppedMessages.append(update.message) }
     }
   }
 
   var drops: UInt64 { lock.withLock { largestDropCount } }
   var failures: [String] { lock.withLock { stoppedMessages } }
+  var last: CaptureUpdate? { lock.withLock { updates.last } }
 }
 
 private final class PacedDriverMetrics: @unchecked Sendable {
   private let lock = NSLock()
   private var emittedTimes = [Double]()
+  private var callbackCPU = [Double]()
+  private var setup: kern_return_t?
+  private var restored: kern_return_t?
+  private var activePolicy = false
   private var cancelled = false
+
+  init() {
+    emittedTimes.reserveCapacity(180)
+    callbackCPU.reserveCapacity(180)
+  }
+
+  func recordPolicy(_ result: kern_return_t, active: Bool) { lock.withLock { setup = result; activePolicy = active } }
+  func recordRestore(_ result: kern_return_t) { lock.withLock { restored = result } }
+  func recordCPU(_ ms: Double) { lock.withLock { callbackCPU.append(ms) } }
+  var policySetup: kern_return_t? { lock.withLock { setup } }
+  var policyRestore: kern_return_t? { lock.withLock { restored } }
+  var policyActive: Bool { lock.withLock { activePolicy } }
+  var cpuTimes: [Double] { lock.withLock { callbackCPU } }
 
   func record() { lock.withLock { emittedTimes.append(ProcessInfo.processInfo.systemUptime) } }
   func cancel() { lock.withLock { cancelled = true } }
@@ -353,6 +400,344 @@ private final class PacedDriverMetrics: @unchecked Sendable {
       sorted[Int((Double(sorted.count - 1) * fraction).rounded())]
     }
     return "count=\(sorted.count),min=\(first),p50=\(percentile(0.5)),p95=\(percentile(0.95)),max=\(last)"
+  }
+
+  private func awaitCondition(_ description: String, _ predicate: () -> Bool) {
+    let deadline = Date().addingTimeInterval(3)
+    while !predicate() && Date() < deadline { allowQueueWork(0.01) }
+    XCTAssertTrue(predicate(), description)
+  }
+
+  private func ready(_ controller: CaptureController, harness: CaptureHarness,
+    configuration: PipelineConfiguration, pipelineEnabled: Bool = true, previewEnabled: Bool = true) {
+    let started = expectation(description: "Capture start completed")
+    controller.onUpdate = { update in
+      if update.message.hasPrefix("Waiting") { started.fulfill() }
+    }
+    controller.start(deviceID: "synthetic", configuration: configuration,
+      pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
+    wait(for: [started], timeout: 5)
+    XCTAssertEqual(harness.starts, 1)
+  }
+
+  private func assertCameraContract(_ harness: CaptureHarness, sample: CMSampleBuffer) throws {
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+    let negotiated = try XCTUnwrap(harness.negotiated.last)
+    XCTAssertEqual(negotiated.0.width, CVPixelBufferGetWidth(image))
+    XCTAssertEqual(negotiated.0.height, CVPixelBufferGetHeight(image))
+    XCTAssertEqual(negotiated.0.untouched ? negotiated.1 : negotiated.0.pixelFormat,
+      CVPixelBufferGetPixelFormatType(image))
+    XCTAssertEqual(negotiated.0.duration, CMSampleBufferGetDuration(sample),
+      "Live mode changes must renegotiate the actual output before camera delivery")
+  }
+
+  private func assertNeutralCode(_ sample: CMSampleBuffer, expected: Int) throws {
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+    CVPixelBufferLockBaseAddress(image, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
+    let base = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(image, 0))
+    let center = CVPixelBufferGetWidth(image) / 2
+    let actual = CVPixelBufferGetPixelFormatType(image) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ?
+      Int(base.assumingMemoryBound(to: UInt8.self)[center]) :
+      Int(base.assumingMemoryBound(to: UInt16.self)[center] >> 6)
+    XCTAssertEqual(Double(actual), Double(expected), accuracy: 1)
+  }
+
+  func testCompleteBypassPreservesSourceAndCadenceThenRestoresAllSavedEffects() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    let saved = PipelineConfiguration(applyLUT: true, downscale: true,
+      convertTo420: true, reduceFrameRate: true, inputFast: false)
+    ready(controller, harness: harness, configuration: saved, pipelineEnabled: false)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    let source = try EndToEndChecks.source()
+    for frame in 0..<2 {
+      harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: Int32(frame)),
+        duration: VideoContract.fastDuration)
+      awaitCondition("Complete bypass must preserve every source frame") { harness.sent == frame + 1 }
+      let raw = try XCTUnwrap(harness.lastSample)
+      XCTAssertTrue(CMSampleBufferGetImageBuffer(raw) === source,
+        "Already shareable input must remain bit-exact without LUT, scaling or conversion")
+      XCTAssertEqual(CMSampleBufferGetDuration(raw), VideoContract.fastDuration,
+        "Global bypass must also bypass the saved 59.94→29.97 reduction")
+      try assertNeutralCode(raw, expected: 283)
+      try assertCameraContract(harness, sample: raw)
+    }
+    awaitCondition("Status must describe the actual bypass output") { statuses.last?.pipelineEnabledApplied == false }
+    XCTAssertTrue(statuses.last?.output.contains("3840") == true)
+    XCTAssertTrue(statuses.last?.output.contains("59.94") == true)
+    // Saved LUT-enabled settings cannot make complete bypass require a LUT.
+    // Load it only when processing is about to be enabled.
+    let loaded = expectation(description: "Saved nonlinear LUT ready")
+    controller.load(try CubeLUT(text: cubeText(size: 17, transform: { $0 * $0 }))) { result in
+      if case .failure(let error) = result { XCTFail(error.localizedDescription) }
+      loaded.fulfill()
+    }
+    wait(for: [loaded], timeout: 5)
+    controller.reconfigure(configuration: saved, pipelineEnabled: true)
+    allowQueueWork()
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 2),
+      duration: VideoContract.fastDuration)
+    awaitCondition("Re-enabling must apply the saved options to live output") { harness.sent == 3 }
+    let graded = try XCTUnwrap(harness.lastSample)
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(graded))
+    XCTAssertEqual(CVPixelBufferGetWidth(image), 1920)
+    XCTAssertEqual(CVPixelBufferGetHeight(image), 1080)
+    XCTAssertEqual(CVPixelBufferGetPixelFormatType(image), kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+    XCTAssertEqual(CMSampleBufferGetDuration(graded), VideoContract.slowDuration)
+    try assertNeutralCode(graded, expected: 30)
+    try assertCameraContract(harness, sample: graded)
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 3),
+      duration: VideoContract.fastDuration)
+    allowQueueWork(0.05)
+    XCTAssertEqual(harness.sent, 3, "The restored rate checkbox must select alternate source frames")
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 4),
+      duration: VideoContract.fastDuration)
+    awaitCondition("Restored cadence must continue") { harness.sent == 4 }
+    awaitCondition("Applied status must follow real processed output") { statuses.last?.pipelineEnabledApplied == true }
+    XCTAssertEqual(harness.starts, 1, "Changing pipeline state must not reopen the physical capture device")
+    XCTAssertEqual(statuses.failures, [])
+  }
+
+  func testPreviewOffLeavesProcessedCameraOutputRunningAndCanReenable() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config, previewEnabled: false)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    let source = try EndToEndChecks.source()
+    harness.emit(source, frame: 0)
+    awaitCondition("Camera must receive processed output with preview disabled") { harness.sent == 1 }
+    XCTAssertEqual(harness.previewed, 0)
+    XCTAssertFalse(statuses.last?.previewDelivered ?? true)
+    let output = try XCTUnwrap(harness.lastSample)
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(output))
+    XCTAssertEqual(CVPixelBufferGetWidth(image), 1920)
+    XCTAssertEqual(CVPixelBufferGetPixelFormatType(image), kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+    try assertNeutralCode(output, expected: 71)
+    XCTAssertGreaterThan(harness.processingTiming.count, 0)
+    controller.setPreviewEnabled(true)
+    allowQueueWork()
+    harness.emit(source, frame: 1)
+    awaitCondition("Preview can resume without altering the camera stream") { harness.sent == 2 && harness.previewed == 1 }
+    XCTAssertTrue(harness.lastSample === harness.lastPreview)
+    controller.setPreviewEnabled(false)
+    allowQueueWork()
+    harness.emit(source, frame: 2)
+    awaitCondition("Camera must continue after preview is disabled again") { harness.sent == 3 }
+    XCTAssertEqual(harness.previewed, 1)
+    XCTAssertEqual(harness.starts, 1)
+  }
+
+  func testAutomaticSourceRateChangesUpdateActualMetadataAndCameraContract() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    var saved = config
+    saved.inputFast = false
+    ready(controller, harness: harness, configuration: saved)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    let source = try EndToEndChecks.source()
+    var pts = CMTime.zero
+    for (index, duration) in [VideoContract.fastDuration, VideoContract.slowDuration, VideoContract.fastDuration].enumerated() {
+      if index > 0 { pts = CMTimeAdd(pts, duration) }
+      harness.emitAutomatic(source, at: pts, duration: duration)
+      awaitCondition("Automatic source mode must deliver the new rate") { harness.sent == index + 1 }
+      awaitCondition("Actual source duration must reach UI metadata") { statuses.last?.sourceDuration == duration }
+      let sample = try XCTUnwrap(harness.lastSample)
+      XCTAssertEqual(CMSampleBufferGetDuration(sample), duration,
+        "Saved inputFast must not override detected source cadence")
+      XCTAssertEqual(statuses.last?.inputFast, duration == VideoContract.fastDuration)
+      let rate = duration == VideoContract.fastDuration ? "59.94" : "29.97"
+      XCTAssertTrue(statuses.last?.input.contains(rate) == true)
+      XCTAssertTrue(statuses.last?.output.contains(rate) == true)
+      try assertCameraContract(harness, sample: sample)
+    }
+    XCTAssertEqual(statuses.last?.sourceDrops, 0, "Valid rate transitions must not count as missing source frames")
+    XCTAssertEqual(harness.starts, 1, "Source detection is automatic within the existing capture lifetime")
+    XCTAssertEqual(statuses.failures, [])
+  }
+
+  func testHotPixelOptionsPreserveExistingReducedCadence() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    var options = config
+    options.reduceFrameRate = true
+    ready(controller, harness: harness, configuration: options)
+    let source = try EndToEndChecks.source()
+    harness.emitAutomatic(source, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Initial reduced output must deliver") { harness.sent == 1 }
+    harness.emitAutomatic(source, at: VideoContract.fastDuration, duration: VideoContract.fastDuration)
+    allowQueueWork()
+    XCTAssertEqual(harness.sent, 1)
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 2),
+      duration: VideoContract.fastDuration)
+    awaitCondition("Second reduced output must deliver") { harness.sent == 2 }
+    let preceding = try XCTUnwrap(harness.lastSample)
+    options.downscale = false
+    options.convertTo420 = false
+    controller.reconfigure(configuration: options, pipelineEnabled: true)
+    allowQueueWork()
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 3),
+      duration: VideoContract.fastDuration)
+    allowQueueWork(0.05)
+    XCTAssertEqual(harness.sent, 2,
+      "A pixel format or resolution change cannot restart the gate and emit adjacent source frames")
+    harness.emitAutomatic(source, at: CMTimeMultiply(VideoContract.fastDuration, multiplier: 4),
+      duration: VideoContract.fastDuration)
+    awaitCondition("New pixel contract must deliver at the existing reduced cadence") { harness.sent == 3 }
+    let updated = try XCTUnwrap(harness.lastSample)
+    let image = try XCTUnwrap(CMSampleBufferGetImageBuffer(updated))
+    XCTAssertEqual(CVPixelBufferGetWidth(image), 3840)
+    XCTAssertEqual(CVPixelBufferGetHeight(image), 2160)
+    XCTAssertEqual(CVPixelBufferGetPixelFormatType(image), kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    XCTAssertEqual(CMSampleBufferGetDuration(updated), VideoContract.slowDuration)
+    XCTAssertEqual(CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp(updated),
+      CMSampleBufferGetPresentationTimeStamp(preceding)).seconds,
+      VideoContract.slowDuration.seconds, accuracy: 0.000000002)
+    try assertNeutralCode(updated, expected: 283)
+    try assertCameraContract(harness, sample: updated)
+    XCTAssertTrue(harness.lastPreview === updated)
+    XCTAssertEqual(harness.starts, 1)
+  }
+
+  func testSameRateSourceClockResetReanchorsToCurrentHostClock() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    var bypass = config
+    bypass.applyLUT = false
+    bypass.downscale = false
+    bypass.convertTo420 = false
+    ready(controller, harness: harness, configuration: bypass, pipelineEnabled: false)
+    let source = try EndToEndChecks.source()
+    let origin = CMTime(value: 100, timescale: 1)
+    harness.emitAutomatic(source, at: origin, duration: VideoContract.fastDuration)
+    awaitCondition("Initial clock anchor must deliver") { harness.sent == 1 }
+    harness.emitAutomatic(source, at: CMTimeAdd(origin, VideoContract.fastDuration), duration: VideoContract.fastDuration)
+    awaitCondition("Source clock must advance normally") { harness.sent == 2 }
+    let beforeReset = try XCTUnwrap(harness.lastSample)
+    allowQueueWork(0.04)
+    let hostBeforeReset = CMClockGetTime(CMClockGetHostTimeClock())
+    // Backwards from the previous PTS, but still later than the original anchor:
+    // comparing only against the first source frame cannot detect this reset.
+    let resetPTS = CMTimeAdd(origin, CMTimeMultiplyByRatio(VideoContract.fastDuration, multiplier: 1, divisor: 2))
+    harness.emitAutomatic(source, at: resetPTS, duration: VideoContract.fastDuration)
+    awaitCondition("Same-rate backwards source PTS must restart delivery") { harness.sent == 3 }
+    let resetSample = try XCTUnwrap(harness.lastSample)
+    let emittedPTS = CMSampleBufferGetPresentationTimeStamp(resetSample)
+    XCTAssertGreaterThanOrEqual(CMTimeCompare(emittedPTS, hostBeforeReset), 0,
+      "Reset output must use the current host clock rather than the stale initial anchor")
+    XCTAssertGreaterThan(CMTimeCompare(emittedPTS, CMSampleBufferGetPresentationTimeStamp(beforeReset)), 0,
+      "A source timestamp reset must not make camera/preview timestamps go backwards")
+    XCTAssertLessThanOrEqual(CMTimeCompare(emittedPTS, CMClockGetTime(CMClockGetHostTimeClock())), 0)
+    XCTAssertEqual(CMSampleBufferGetDuration(resetSample), VideoContract.fastDuration)
+    XCTAssertTrue(harness.lastPreview === resetSample)
+    XCTAssertEqual(harness.starts, 1)
+    try assertCameraContract(harness, sample: resetSample)
+  }
+
+  func testNonzeroSourceTimestampEpochCannotReachCameraOrPreview() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(automatic: true))
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config)
+    let stopped = expectation(description: "Unsupported source clock epoch rejected")
+    controller.onUpdate = { if $0.stopped { stopped.fulfill() } }
+    let foreignClock = CMTime(value: 1001, timescale: 60_000, flags: .valid, epoch: 1)
+    harness.emitAutomatic(try EndToEndChecks.source(), at: foreignClock, duration: VideoContract.fastDuration)
+    wait(for: [stopped], timeout: 3)
+    XCTAssertFalse(harness.active)
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.previewed, 0)
+    XCTAssertEqual(harness.processingTiming.count, 0, "Invalid clock epochs must be rejected before pixel processing")
+  }
+
+  func testNoCameraOrPreviewConsumerSkipsProcessingButStillValidatesSource() throws {
+    let harness = CaptureHarness(failConnecting: true)
+    let controller = CaptureController(services: harness.services(automatic: true, previewConsumer: false))
+    defer { controller.onUpdate = nil; controller.stop() }
+    ready(controller, harness: harness, configuration: config)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    let source = try EndToEndChecks.source()
+    harness.emitAutomatic(source, at: .zero, duration: VideoContract.fastDuration)
+    awaitCondition("Source information must still update with no output consumers") {
+      statuses.last?.sourceDuration == VideoContract.fastDuration
+    }
+    XCTAssertEqual(harness.processingTiming.count, 0, "No visible preview/hook or camera means no pixel processing")
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.previewed, 0)
+    XCTAssertFalse(statuses.last?.previewDelivered ?? true)
+    XCTAssertEqual(statuses.failures, [])
+    let stopped = expectation(description: "Malformed input remains fatal without viewers")
+    controller.onUpdate = { if $0.stopped { stopped.fulfill() } }
+    var malformed: CVPixelBuffer?
+    XCTAssertEqual(CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      nil, &malformed), kCVReturnSuccess)
+    harness.emitAutomatic(try XCTUnwrap(malformed), at: VideoContract.fastDuration, duration: VideoContract.fastDuration)
+    wait(for: [stopped], timeout: 3)
+    XCTAssertEqual(harness.processingTiming.count, 0)
+    XCTAssertFalse(harness.active)
+  }
+
+  func testTwelveFrameAdmissionLimitIsBoundedAndRecoversAfterBurst() throws {
+    let entered = expectation(description: "Capture queue held inside native start")
+    let gate = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(startGate: gate, started: entered)
+    let controller = CaptureController(services: harness.services())
+    let statuses = CaptureStatusRecorder()
+    defer { controller.onUpdate = nil; controller.stop(); gate.signal() }
+    controller.onUpdate = { statuses.record($0) }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [entered], timeout: 5)
+    let source = try EndToEndChecks.source()
+    for frame in 0..<13 { harness.emit(source, frame: frame) }
+    XCTAssertEqual(harness.sent, 0, "The held processing queue cannot consume the admission burst yet")
+    gate.signal()
+    awaitCondition("Exactly twelve admitted frames must drain") { harness.sent == 12 }
+    XCTAssertEqual(harness.previewed, 12)
+    awaitCondition("Overflow must be visible in status") { statuses.last?.captureDrops == 1 }
+    XCTAssertEqual(statuses.drops, 1)
+    XCTAssertEqual(statuses.last?.poolDrops, 0)
+    XCTAssertEqual(statuses.last?.cameraDrops, 0)
+    XCTAssertEqual(statuses.failures, [])
+    // Admission exhaustion is transient: a drained slot accepts a new frame.
+    harness.emit(source, frame: 13)
+    awaitCondition("Capture must resume after its bounded queue drains") { harness.sent == 13 }
+    XCTAssertEqual(harness.previewed, 13)
+    XCTAssertTrue(harness.cameraAndPreviewSamplesMatch)
+    XCTAssertEqual(harness.starts, 1)
+    XCTAssertTrue(harness.active)
+  }
+
+  func testQueuedReconfigureCannotReconnectOrRenderAfterCaptureStop() throws {
+    let entered = expectation(description: "Capture start held")
+    let stopped = expectation(description: "Cancelled reconfigure settled")
+    let gate = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(startGate: gate, started: entered)
+    let controller = CaptureController(services: harness.services())
+    defer { controller.onUpdate = nil; controller.stop(); gate.signal() }
+    controller.onUpdate = { if $0.stopped { stopped.fulfill() } }
+    controller.start(deviceID: "synthetic", configuration: config)
+    wait(for: [entered], timeout: 5)
+    let initialConnections = harness.negotiated.count
+    controller.reconfigure(configuration: config, pipelineEnabled: false)
+    controller.stop()
+    gate.signal()
+    wait(for: [stopped], timeout: 5)
+    harness.emit(try EndToEndChecks.source(), frame: 0)
+    allowQueueWork(0.05)
+    XCTAssertFalse(harness.active)
+    XCTAssertEqual(harness.negotiated.count, initialConnections,
+      "An obsolete config request must not reopen virtual output after Stop")
+    XCTAssertEqual(harness.sent, 0)
+    XCTAssertEqual(harness.previewed, 0)
   }
 
   func testStopDuringBlockedStartCannotPublishLiveOrKeepResources() throws {
@@ -435,7 +820,7 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     defer { controller.onUpdate = nil; controller.stop(); gate.signal() }
     controller.onUpdate = { update in
       if update.stopped {
-        XCTAssertTrue(update.message.contains("Input changed"))
+        XCTAssertTrue(update.message.contains("Expected 4K 10-bit 4:2:2"))
         stopped.fulfill()
       }
       if update.frames > 0 { unexpectedLive.fulfill() }
@@ -583,10 +968,44 @@ private final class PacedDriverMetrics: @unchecked Sendable {
       XCTAssertEqual(mach_timebase_info(&timebase), KERN_SUCCESS)
       let tickInterval = VideoContract.fastDuration.seconds * 1_000_000_000 *
         Double(timebase.denom) / Double(timebase.numer)
-      // An absolute host-clock thread avoids DispatchSource timer coalescing.
-      // Record real callback times to prove the test actually produces 59.94
-      // rather than assigning 59.94 timestamps to a slower producer.
+      // A hardware-clock-like source must not acquire the unrelated ordinary
+      // thread scheduling jitter we retain in the earlier failure receipts.
+      // Only this dedicated, sleeping source thread receives a bounded Mach
+      // time constraint. The production capture/GPU/render queues stay unchanged.
+      // Apple: https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/KernelProgramming/scheduler/scheduler.html
       let producer = Thread {
+        let thread = pthread_mach_thread_np(pthread_self())
+        let words = mach_msg_type_number_t(MemoryLayout<thread_time_constraint_policy_data_t>.size / MemoryLayout<integer_t>.size)
+        func ticks(_ seconds: Double) -> UInt32 {
+          UInt32((seconds * 1_000_000_000 * Double(timebase.denom) / Double(timebase.numer)).rounded())
+        }
+        var policy = thread_time_constraint_policy_data_t(period: UInt32(tickInterval.rounded()),
+          computation: ticks(0.0005), constraint: ticks(0.001), preemptible: 1)
+        let setup = withUnsafeMutablePointer(to: &policy) {
+          $0.withMemoryRebound(to: integer_t.self, capacity: Int(words)) {
+            thread_policy_set(thread, thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, words)
+          }
+        }
+        defer {
+          var standard: integer_t = 0
+          producerMetrics.recordRestore(thread_policy_set(thread,
+            thread_policy_flavor_t(THREAD_STANDARD_POLICY), &standard, 0))
+          produced.fulfill()
+          finished.signal()
+        }
+        var observed = thread_time_constraint_policy_data_t()
+        var count = words
+        var defaults: boolean_t = 0
+        let read = withUnsafeMutablePointer(to: &observed) {
+          $0.withMemoryRebound(to: integer_t.self, capacity: Int(words)) {
+            thread_policy_get(thread, thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, &count, &defaults)
+          }
+        }
+        let active = setup == KERN_SUCCESS && read == KERN_SUCCESS && defaults == 0 &&
+          observed.period == policy.period && observed.computation == policy.computation &&
+          observed.constraint == policy.constraint
+        producerMetrics.recordPolicy(setup == KERN_SUCCESS ? read : setup, active: active)
+        guard active else { return }
         let origin = mach_absolute_time()
         for frame in 0..<frameCount {
           let deadline = origin + UInt64((Double(frame) * tickInterval).rounded())
@@ -594,11 +1013,16 @@ private final class PacedDriverMetrics: @unchecked Sendable {
             mach_wait_until(deadline)
           }
           if producerMetrics.isCancelled { break }
+          var cpuStart = timespec()
+          var cpuEnd = timespec()
+          let startStatus = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpuStart)
           producerMetrics.record()
           harness.emit(source, frame: frame)
+          let endStatus = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpuEnd)
+          let ms = startStatus == 0 && endStatus == 0 ?
+            Double(cpuEnd.tv_sec - cpuStart.tv_sec) * 1000 + Double(cpuEnd.tv_nsec - cpuStart.tv_nsec) / 1_000_000 : .infinity
+          producerMetrics.recordCPU(ms)
         }
-        produced.fulfill()
-        finished.signal()
       }
       producer.qualityOfService = .userInteractive
       producer.start()
@@ -607,6 +1031,12 @@ private final class PacedDriverMetrics: @unchecked Sendable {
       XCTAssertEqual(finished.wait(timeout: .now() + 1), .success)
       allowQueueWork(0.08)
 
+      XCTAssertEqual(producerMetrics.policySetup, KERN_SUCCESS, "Controlled source policy setup/readback must succeed")
+      XCTAssertTrue(producerMetrics.policyActive, "Requested bounded source scheduling policy must be active")
+      XCTAssertEqual(producerMetrics.policyRestore, KERN_SUCCESS, "Source thread must restore ordinary scheduling before exiting")
+      XCTAssertEqual(producerMetrics.cpuTimes.count, frameCount)
+      XCTAssertLessThanOrEqual(producerMetrics.cpuTimes.max() ?? .infinity, 0.5,
+        "Source callback work must stay within its declared 0.5 ms computation budget")
       let emissionTimes = producerMetrics.times
       XCTAssertEqual(emissionTimes.count, frameCount)
       let expectedSpan = Double(frameCount - 1) * VideoContract.fastDuration.seconds
@@ -616,6 +1046,7 @@ private final class PacedDriverMetrics: @unchecked Sendable {
         (time - (emissionTimes.first ?? time) - Double(index) * VideoContract.fastDuration.seconds) * 1000
       }
       let processing = harness.processingTiming
+      print("PACED_SOURCE_POLICY periodMS=\(VideoContract.fastDuration.seconds * 1000) computationMS=0.5 constraintMS=1 setup=\(String(describing: producerMetrics.policySetup)) restore=\(String(describing: producerMetrics.policyRestore)) callbackCPUms{\(distribution(producerMetrics.cpuTimes))}")
       print("PACED_PROFILE emissionIntervalMS{\(distribution(intervalsMS))} emissionLatenessMS{\(distribution(latenessMS))} processingMS{\(distribution(processing.map { $0.0 }))} queueWaitMS{\(distribution(processing.map { $0.1 }))}")
       XCTAssertEqual(actualSpan, expectedSpan, accuracy: 0.025,
         "Paced producer must independently demonstrate physical 59.94 callback cadence")
