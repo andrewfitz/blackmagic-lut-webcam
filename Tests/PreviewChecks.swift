@@ -121,12 +121,23 @@ private final class PreviewTestCounters: @unchecked Sendable {
         }
         timer.resume()
         wait(for: [framesSent], timeout: 2)
+        // A retained FIFO is not a dropped-frame count. Give accepted work its
+        // finite queue budget to complete before measuring native consumption.
+        // Actual overflow/failure remains counted and still fails thresholds.
+        let drainDeadline = Date(timeIntervalSinceNow:
+          duration.seconds * Double(VideoContract.previewPendingLimit) + 0.25)
+        while Date() < drainDeadline {
+          let progress = renderer.diagnosticsSnapshot()
+          if progress.pending == 0 && progress.enqueued + progress.replaced
+            + progress.stagingDrops + progress.failed >= progress.received { break }
+          RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
         let diagnostics = renderer.diagnosticsSnapshot()
         XCTAssertEqual(diagnostics.received, UInt64(count))
         XCTAssertGreaterThanOrEqual(diagnostics.enqueued, UInt64(count - 3), "Native preview must not remain at 4 Hz")
         XCTAssertEqual(diagnostics.failed, 0, diagnostics.lastError ?? "Renderer must support selected format")
-        XCTAssertLessThanOrEqual(diagnostics.pending, 12, "Preview scheduling stalls must stay within its fixed FIFO budget")
+        XCTAssertLessThanOrEqual(diagnostics.pending, VideoContract.previewPendingLimit, "Preview scheduling stalls must stay within its fixed FIFO budget")
         XCTAssertEqual(sent.originalSamples.count, count)
         for sample in sent.originalSamples {
           XCTAssertNil(CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false),
@@ -162,7 +173,7 @@ private final class PreviewTestCounters: @unchecked Sendable {
     defer { renderer.flush(); window.close() }
     let image = try source(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
     let sample = try VideoContract.sample(image, at: .zero, duration: VideoContract.fastDuration)
-    for _ in 0..<2000 { renderer.enqueue(sample); XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, 12) }
+    for _ in 0..<2000 { renderer.enqueue(sample); XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, VideoContract.previewPendingLimit) }
     renderer.flush()
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
     XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0)
@@ -214,19 +225,19 @@ private final class PreviewTestCounters: @unchecked Sendable {
       format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
     let factory = VideoSampleFactory()
     let duration = VideoContract.fastDuration
-    let times = (0..<12).map { CMTimeMultiply(duration, multiplier: Int32($0 + 100)) }
+    let times = (0..<VideoContract.previewPendingLimit).map { CMTimeMultiply(duration, multiplier: Int32($0 + 100)) }
     for time in times { renderer.enqueue(try factory.sample(image, at: time, duration: duration)) }
     let deadline = Date(timeIntervalSinceNow: 2)
-    while renderer.diagnosticsSnapshot().enqueued < 12 && Date() < deadline {
+    while renderer.diagnosticsSnapshot().enqueued < UInt64(times.count) && Date() < deadline {
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
     }
-    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, 12, "The finite burst must survive native readiness stalls")
+    XCTAssertEqual(renderer.diagnosticsSnapshot().enqueued, UInt64(times.count), "The finite burst must survive native readiness stalls")
     XCTAssertEqual(renderer.diagnosticsSnapshot().replaced, 0)
     XCTAssertEqual(renderer.enqueuedTimesForTesting(), times, "FIFO must retain source presentation order")
 
     for index in 0..<2000 {
       renderer.enqueue(try factory.sample(image, at: CMTimeMultiply(duration, multiplier: Int32(index + 1000)), duration: duration))
-      XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, 12)
+      XCTAssertLessThanOrEqual(renderer.diagnosticsSnapshot().pending, VideoContract.previewPendingLimit)
     }
     XCTAssertGreaterThan(renderer.diagnosticsSnapshot().replaced, 0, "Overload must be counted rather than growing the queue")
     renderer.flush()
@@ -240,6 +251,32 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertEqual(renderer.enqueuedTimesForTesting(), [finalTime], "Old queued samples must not cross flush generation")
     renderer.setVisibilityForTesting(false)
     XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0, "Hidden preview must release every FIFO slot")
+  }
+
+  func testQueuedOldDrainCannotRenderNewSampleBeforeNativeFlush() throws {
+    let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
+    let window = attach(renderer)
+    defer { renderer.flush(); window.close() }
+    let image = try source(width: 640, height: 360,
+      format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, shareable: true)
+    let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    renderer.blockQueueForTesting(entered: entered, release: release)
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    defer { release.signal() }
+    let oldTime = CMTime(value: 1001, timescale: 60_000)
+    let newTime = CMTime(value: 100_100, timescale: 60_000)
+    renderer.enqueue(try VideoContract.sample(image, at: oldTime, duration: VideoContract.fastDuration))
+    renderer.flush()
+    renderer.enqueue(try VideoContract.sample(image, at: newTime, duration: VideoContract.fastDuration))
+    release.signal()
+    let deadline = Date(timeIntervalSinceNow: 2)
+    while renderer.diagnosticsSnapshot().enqueued < 1 && Date() < deadline {
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }
+    XCTAssertEqual(renderer.enqueuedTimesForTesting(), [newTime])
+    XCTAssertEqual(renderer.enqueuedFlushNumbersForTesting(), [1],
+      "The new frame must enqueue after native flush, never before it")
+    XCTAssertEqual(renderer.diagnosticsSnapshot().pending, 0)
   }
 
   func testMainAndMiniPreviewHaveIndependentVisibilityAndLayers() throws {

@@ -54,7 +54,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   private var pending = [QueuedSample?](repeating: nil, count: pendingCapacity)
   private var pendingHead = 0
   private var pendingCount = 0
-  private var scheduled = false
+  private var scheduledGeneration: UInt64?
   private var visible = false
   private var metricsPending = false
   private var metricsRequestedAt = -Double.infinity
@@ -64,9 +64,11 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   private var renderWhenUnattached = false
   private var readinessStartedAt = 0.0
   private var enqueuedTimes: [CMTime] = []
+  private var nativeFlushNumber: UInt64 = 0
+  private var enqueuedFlushNumbers: [UInt64] = []
 #endif
   // Owned only by the preview queue; at most one readiness callback is armed.
-  private var requesting = false
+  private var requestingGeneration: UInt64?
   private var diagnostics = Diagnostics()
 
   @MainActor init() {
@@ -86,6 +88,13 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 
   func setVisibilityForTesting(_ value: Bool) { setVisible(value) }
   func enqueuedTimesForTesting() -> [CMTime] { lock.withLock { enqueuedTimes } }
+  func enqueuedFlushNumbersForTesting() -> [UInt64] { lock.withLock { enqueuedFlushNumbers } }
+  func blockQueueForTesting(entered: DispatchSemaphore, release: DispatchSemaphore) {
+    queue.async {
+      entered.signal()
+      _ = release.wait(timeout: .now() + 2)
+    }
+  }
 #endif
 
   deinit {
@@ -112,9 +121,8 @@ final class VideoPreviewRenderer: @unchecked Sendable {
       let index = (pendingHead + pendingCount) % Self.pendingCapacity
       pending[index] = QueuedSample(sample: sample, generation: generation)
       pendingCount += 1
-      guard !scheduled else { return }
-      scheduled = true
-      queue.async { [weak self] in self?.drainOne() }
+      guard scheduledGeneration != generation else { return }
+      scheduleDrainLocked(generation: generation)
     }
   }
 
@@ -146,11 +154,14 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     for index in pending.indices { pending[index] = nil }
     pendingHead = 0
     pendingCount = 0
+    scheduledGeneration = nil
+    let token = generation
     if resetDiagnostics {
       let lifetime = (diagnostics.rendererFrames, diagnostics.rendererDropped, diagnostics.rendererCorrupted)
       diagnostics = Diagnostics()
 #if CAPTURE_LIFECYCLE_TESTS
       enqueuedTimes.removeAll(keepingCapacity: true)
+      enqueuedFlushNumbers.removeAll(keepingCapacity: true)
 #endif
       (diagnostics.rendererFrames, diagnostics.rendererDropped, diagnostics.rendererCorrupted) = lifetime
     }
@@ -158,18 +169,19 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     // generation's enqueue. Stale work cannot redisplay a stopped frame.
     queue.async { [weak self] in
       guard let self else { return }
-      let wasRequesting = self.requesting
-      if self.requesting {
+      if self.requestingGeneration != nil {
         self.videoRenderer.stopRequestingMediaData()
-        self.requesting = false
+        self.requestingGeneration = nil
       }
       self.videoRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
+#if CAPTURE_LIFECYCLE_TESTS
+      self.lock.withLock { self.nativeFlushNumber &+= 1 }
+#endif
       self.stager = CameraFrameStager()
-      if wasRequesting {
-        self.lock.withLock {
-          if self.pendingCount == 0 { self.scheduled = false }
-          else { self.queue.async { [weak self] in self?.drainOne() } }
-        }
+      self.lock.withLock {
+        guard token == self.generation, self.pendingCount > 0,
+          self.scheduledGeneration != token else { return }
+        self.scheduleDrainLocked(generation: token)
       }
     }
   }
@@ -239,8 +251,16 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     return next
   }
 
-  private func drainOne() {
+  private func scheduleDrainLocked(generation token: UInt64) {
+    scheduledGeneration = token
+    queue.async { [weak self] in self?.drainOne(generation: token) }
+  }
+
+  private func drainOne(generation token: UInt64) {
     let next = lock.withLock { () -> QueuedSample? in
+      // A queued drain from before flush must never steal the new generation's
+      // samples and enqueue them ahead of the queued native flush operation.
+      guard token == generation, scheduledGeneration == token else { return nil }
       let next = popPendingLocked()
 #if CAPTURE_LIFECYCLE_TESTS
       if let next {
@@ -252,8 +272,9 @@ final class VideoPreviewRenderer: @unchecked Sendable {
     }
     if let next, !render(next) { return }
     lock.withLock {
-      if pendingCount == 0 { scheduled = false }
-      else { queue.async { [weak self] in self?.drainOne() } }
+      guard token == generation, scheduledGeneration == token else { return }
+      if pendingCount == 0 { scheduledGeneration = nil }
+      else { scheduleDrainLocked(generation: token) }
     }
   }
 
@@ -280,13 +301,14 @@ final class VideoPreviewRenderer: @unchecked Sendable {
         return true
       }
       guard current else { return true }
-      if !requesting {
-        requesting = true
+      if requestingGeneration != token {
+        if requestingGeneration != nil { videoRenderer.stopRequestingMediaData() }
+        requestingGeneration = token
 #if CAPTURE_LIFECYCLE_TESTS
         readinessStartedAt = ProcessInfo.processInfo.systemUptime
 #endif
         videoRenderer.requestMediaDataWhenReady(on: queue) { [weak self] in
-          guard let self, self.requesting else { return }
+          guard let self, self.requestingGeneration == token else { return }
 #if CAPTURE_LIFECYCLE_TESTS
           self.lock.withLock {
             self.diagnostics.maxReadinessWaitMS = max(self.diagnostics.maxReadinessWaitMS,
@@ -294,8 +316,8 @@ final class VideoPreviewRenderer: @unchecked Sendable {
           }
 #endif
           self.videoRenderer.stopRequestingMediaData()
-          self.requesting = false
-          self.drainOne()
+          self.requestingGeneration = nil
+          self.drainOne(generation: token)
         }
       }
       return false
@@ -348,8 +370,12 @@ final class VideoPreviewRenderer: @unchecked Sendable {
         videoRenderer.enqueue(preview)
         diagnostics.enqueued &+= 1
 #if CAPTURE_LIFECYCLE_TESTS
-        if enqueuedTimes.count == 64 { enqueuedTimes.removeFirst() }
+        if enqueuedTimes.count == 64 {
+          enqueuedTimes.removeFirst()
+          enqueuedFlushNumbers.removeFirst()
+        }
         enqueuedTimes.append(CMSampleBufferGetPresentationTimeStamp(preview))
+        enqueuedFlushNumbers.append(nativeFlushNumber)
 #endif
       }
     } catch {
