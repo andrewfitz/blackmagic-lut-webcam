@@ -276,6 +276,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   private var generation: UInt64 = 0
   private var timer: DispatchSourceTimer?
   private var request: CameraSampleRequest?
+  private var authorizationRejections = 0
 
   init(owner: CameraProvider, isSink: Bool) {
     self.owner = owner
@@ -309,11 +310,23 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   }
   func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
     if isSink {
-      guard client.signingID == "org.ultrastudiolut.app" else { return false }
-      guard self.client == nil || self.client == client else { return false }
+      guard client.signingID == "org.ultrastudiolut.app" else {
+        logAuthorizationRejection(client, reason: "producer signing identifier does not match")
+        return false
+      }
+      guard self.client == nil || self.client == client else {
+        logAuthorizationRejection(client, reason: "another producer owns the sink")
+        return false
+      }
       self.client = client
     }
     return true
+  }
+  private func logAuthorizationRejection(_ client: CMIOExtensionClient, reason: String) {
+    // A failed host may retry; bound diagnostics for the extension's lifetime.
+    guard authorizationRejections < 8 else { return }
+    authorizationRejections += 1
+    owner.logger.error("Camera producer rejected: pid=\(client.pid, privacy: .public), signingID=\(client.signingID ?? "<nil>", privacy: .public), reason=\(reason, privacy: .public)")
   }
   func startStream() throws {
     if isSink {
