@@ -177,9 +177,15 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   }
 
   func stopRecording(feedID: FeedID) throws {
-    guard let session = sessions.removeValue(forKey: feedID) else { return }
+    guard let session = sessions[feedID] else { return }
     capture?.setRecordingCallbacks(feedID: feedID, callbacks: nil)
-    try session.adapter.stop()
+    do {
+      try session.adapter.stop()
+      sessions.removeValue(forKey: feedID)
+    } catch {
+      capture?.setRecordingCallbacks(feedID: feedID, callbacks: session.adapter.callbacks)
+      throw error
+    }
   }
 
   /// Callers must not fabricate an audio sample when a backend has no raw PCM
