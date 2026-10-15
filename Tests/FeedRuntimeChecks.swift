@@ -77,9 +77,35 @@ import XCTest
     XCTAssertEqual(coordinator.descriptors.map(\.id), [disabled.id])
   }
 
+  func testCaptureOwnersAreStableAndIndependentPerFeed() {
+    let first = FeedID(rawValue: "feed-a")
+    let second = FeedID(rawValue: "feed-b")
+    let pool = FeedCapturePool(factory: { _ in
+      CaptureController(services: CaptureServices(
+        start: { _, _, _, _ in }, stop: {}, connect: { _, _ in }, disconnect: {}, send: { _ in true }))
+    })
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(feeds: [
+      FeedDescriptor(id: first, name: "Wide"), FeedDescriptor(id: second, name: "Tight")
+    ]), capturePool: pool)
+
+    XCTAssertTrue(pool.feedIDs.isEmpty)
+    let left = coordinator.capture(for: first)
+    let right = coordinator.capture(for: second)
+    XCTAssertFalse(left === right)
+    XCTAssertTrue(left === coordinator.capture(for: first))
+    XCTAssertTrue(right === coordinator.capture(for: second))
+    XCTAssertEqual(Set(pool.feedIDs), Set([first, second]))
+
+    // Removing one configured feed releases only that feed's backend owner.
+    XCTAssertTrue(coordinator.remove(first))
+    XCTAssertNil(pool.existingController(for: first))
+    XCTAssertNotNil(pool.existingController(for: second))
+  }
+
   static let allTests = [
     ("stable order and lazy sessions", testCoordinatorKeepsStableOrderAndLazilyCreatesSessions),
     ("independent session lifecycle", testSessionsHaveIndependentLifecycleAndRouteQueues),
     ("disabled and running guards", testDisabledOrRunningFeedsCannotBeStartedOrRemoved),
+    ("independent native capture owners", testCaptureOwnersAreStableAndIndependentPerFeed),
   ]
 }

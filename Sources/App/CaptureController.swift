@@ -895,6 +895,70 @@ private struct InputFormat: Equatable {
   }
 }
 
+/// Owns one capture controller per configured feed.  A controller is created
+/// lazily, so idle feeds allocate no Metal, CMIO, or DeckLink resources.  The
+/// default factory calls `CaptureController()` for each feed; that in turn
+/// creates an independent `CaptureServices.live()` value and therefore an
+/// independent UDLBackend control queue, DeckLink input lease, and camera
+/// sink.  The initial map lets the legacy primary UI keep its existing
+/// preview-renderer-backed controller while joining the same ownership model.
+final class FeedCapturePool: @unchecked Sendable {
+  typealias Factory = (FeedID) -> CaptureController
+
+  private let lock = NSLock()
+  private let factory: Factory
+  private var controllers: [FeedID: CaptureController]
+
+  init(initial: [FeedID: CaptureController] = [:], factory: @escaping Factory = { _ in
+    CaptureController()
+  }) {
+    controllers = initial
+    self.factory = factory
+  }
+
+  /// Returns the stable controller for a feed, creating it once on demand.
+  func controller(for feedID: FeedID) -> CaptureController {
+    lock.withLock {
+      if let existing = controllers[feedID] { return existing }
+      let created = factory(feedID)
+      controllers[feedID] = created
+      return created
+    }
+  }
+
+  /// Returns an existing controller without warming a new capture pipeline.
+  func existingController(for feedID: FeedID) -> CaptureController? {
+    lock.withLock { controllers[feedID] }
+  }
+
+  var feedIDs: [FeedID] {
+    lock.withLock { Array(controllers.keys) }
+  }
+
+  /// Stops and releases an idle feed controller.  An active controller stays
+  /// owned until its caller stops it, preventing a late callback from being
+  /// routed into a replacement backend for the same feed ID.
+  @discardableResult
+  func remove(_ feedID: FeedID) -> Bool {
+    lock.withLock {
+      guard let controller = controllers[feedID] else { return true }
+      guard !controller.hasActiveFeed else { return false }
+      controller.stop()
+      controllers.removeValue(forKey: feedID)
+      return true
+    }
+  }
+
+  func stop(_ feedID: FeedID) {
+    existingController(for: feedID)?.stop()
+  }
+
+  func stopAll() {
+    let active = lock.withLock { Array(controllers.values) }
+    active.forEach { $0.stop() }
+  }
+}
+
 struct CaptureServices: @unchecked Sendable {
   var start: (String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void, @escaping (String) -> Void) throws -> Void
   var startWithMedia: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,

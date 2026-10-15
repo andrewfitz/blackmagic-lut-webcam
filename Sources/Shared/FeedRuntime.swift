@@ -85,9 +85,10 @@ final class FeedSession: Identifiable {
   }
 }
 
-/// Main-actor collection of stable feed descriptors and lazily-created
-/// runtime sessions. Persisted ordering remains the source of truth for the
-/// collection; sessions are created only for descriptors that are accessed.
+/// Main-actor collection of stable feed descriptors, runtime sessions, and
+/// capture owners. Persisted ordering remains the source of truth for the
+/// collection; sessions and controllers are created only for descriptors that
+/// are accessed. Each controller owns an independent DeckLink backend.
 @MainActor
 final class FeedCoordinator {
   private(set) var descriptors: [FeedDescriptor]
@@ -96,14 +97,17 @@ final class FeedCoordinator {
   private(set) var switcher: SwitcherSettings
   private(set) var virtualCameraRegistryVersion: Int
   private var sessions: [FeedID: FeedSession] = [:]
+  let capturePool: FeedCapturePool
 
-  init(snapshot: AppSettingsSnapshot = AppSettingsSnapshot()) {
+  init(snapshot: AppSettingsSnapshot = AppSettingsSnapshot(),
+       capturePool: FeedCapturePool = FeedCapturePool()) {
     let safe = snapshot.validated() ?? AppSettingsSnapshot()
     descriptors = safe.feeds
     selectedFeedID = safe.selectedFeedID
     outputMode = safe.outputMode
     switcher = safe.switcher
     virtualCameraRegistryVersion = safe.virtualCameraRegistryVersion
+    self.capturePool = capturePool
   }
 
   var selectedDescriptor: FeedDescriptor {
@@ -115,6 +119,12 @@ final class FeedCoordinator {
   }
 
   var selectedSession: FeedSession { session(for: selectedFeedID) }
+
+  /// Stable capture owner for one feed.  Calling this for one feed never
+  /// changes or reuses another feed's UDLBackend.
+  func capture(for id: FeedID) -> CaptureController {
+    capturePool.controller(for: id)
+  }
 
   /// Lazily creates a session while preserving descriptor ordering.
   func session(for id: FeedID) -> FeedSession {
@@ -160,6 +170,7 @@ final class FeedCoordinator {
       return false
     }
     guard sessions[id]?.isRunning != true else { return false }
+    guard capturePool.remove(id) else { return false }
     sessions.removeValue(forKey: id)?.stop()
     descriptors.remove(at: index)
     if selectedFeedID == id { selectedFeedID = descriptors[0].id }
@@ -170,7 +181,42 @@ final class FeedCoordinator {
   @discardableResult
   func start(_ id: FeedID) -> Bool { session(for: id).start() }
 
-  func stop(_ id: FeedID) { session(for: id).stop() }
+  func stop(_ id: FeedID) {
+    capturePool.stop(id)
+    session(for: id).stop()
+  }
+
+  /// Starts the session and its independent native capture owner as one
+  /// operation. The native controller reports asynchronous signal failures in
+  /// its update stream, matching the established single-feed behavior.
+  @discardableResult
+  func startCapture(feedID: FeedID, deviceID: String, configuration: PipelineConfiguration,
+                    pipelineEnabled: Bool = true, previewEnabled: Bool = true) -> Bool {
+    guard start(feedID) else { return false }
+    capture(for: feedID).start(feedID: feedID, deviceID: deviceID,
+      configuration: configuration, pipelineEnabled: pipelineEnabled,
+      previewEnabled: previewEnabled)
+    return true
+  }
+
+  func stopCapture(feedID: FeedID) {
+    capturePool.stop(feedID)
+    session(for: feedID).stop()
+  }
+
+  func reconfigureCapture(feedID: FeedID, configuration: PipelineConfiguration,
+                          pipelineEnabled: Bool) {
+    capture(for: feedID).reconfigure(configuration: configuration, pipelineEnabled: pipelineEnabled)
+  }
+
+  func setPreviewEnabled(feedID: FeedID, enabled: Bool) {
+    capture(for: feedID).setPreviewEnabled(enabled)
+  }
+
+  func setRecordingCallbacks(feedID: FeedID,
+                             callbacks: SourceRecordingCallbackAdapter.Callbacks?) {
+    capture(for: feedID).setRecordingCallbacks(feedID: feedID, callbacks: callbacks)
+  }
 
   func addOutputRoute(feedID: FeedID, routeID: String, capacity: Int,
                       policy: FrameQueueOverflowPolicy) throws -> FrameRoute<CVPixelBuffer> {

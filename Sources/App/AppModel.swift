@@ -87,7 +87,8 @@ final class AppModel {
     let renderer = VideoPreviewRenderer()
     let miniRenderer = VideoPreviewRenderer()
     let primaryCapture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
-    feedCoordinator = FeedCoordinator(snapshot: snapshot)
+    let capturePool = FeedCapturePool(initial: [snapshot.selectedFeedID: primaryCapture])
+    feedCoordinator = FeedCoordinator(snapshot: snapshot, capturePool: capturePool)
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
     capture = primaryCapture
