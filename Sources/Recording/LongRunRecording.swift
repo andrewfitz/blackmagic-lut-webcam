@@ -583,7 +583,10 @@ public final class LongRunRecordingSession: @unchecked Sendable {
 
   private func mapToOutputTimeline(_ packet: NormalizedRecordingPacket) -> NormalizedRecordingPacket {
     guard let resumeSourceOrigin else {
-      let outputOrigin = resumeOutputOrigin ?? packet.presentationTime
+      // Every recording starts at zero even when the capture device's source
+      // clock began before admission. A resumed segment intentionally starts
+      // at the prior output end, preserving a gap-free paused timeline.
+      let outputOrigin = resumeOutputOrigin ?? .zero
       self.resumeSourceOrigin = packet.presentationTime
       self.resumeOutputOrigin = outputOrigin
       let mapped = RecordingPacket(mediaKind: packet.packet.mediaKind,
