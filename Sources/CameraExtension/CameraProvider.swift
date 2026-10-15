@@ -553,7 +553,11 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   // client ID to associate with that start, allowing provider disconnect to
   // release only the departed source client's demand.
   private var pendingSourceClientIDs: [UUID] = []
-  private var activeSourceClientIDs: Set<UUID> = []
+  // CMIO does not pass a client to stopStream(). Keep start order so an
+  // unqualified stop removes the oldest outstanding lease deterministically.
+  // A Set made this choice random, which could release the wrong client's
+  // demand and leave a different client pinned until provider teardown.
+  private var activeSourceClientIDs: [UUID] = []
   private var anonymousSourceStarts = 0
 
   init(owner: CameraDeviceRuntime, isSink: Bool, descriptor: VirtualCameraDescriptor) {
@@ -641,7 +645,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     } else {
       if let clientID = pendingSourceClientIDs.first {
         pendingSourceClientIDs.removeFirst()
-        activeSourceClientIDs.insert(clientID)
+        activeSourceClientIDs.append(clientID)
       } else {
         // Keep direct in-process test/control calls balanced even though
         // native CMIO starts are normally preceded by authorization.
@@ -665,8 +669,8 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
       }
       if anonymousSourceStarts > 0 {
         anonymousSourceStarts -= 1
-      } else if let clientID = activeSourceClientIDs.first {
-        activeSourceClientIDs.remove(clientID)
+      } else if !activeSourceClientIDs.isEmpty {
+        activeSourceClientIDs.removeFirst()
       }
       owner.consumers = max(0, owner.consumers - 1)
       if owner.consumers == 0 { owner.restartTimer(); publishDemand() }
@@ -685,8 +689,12 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
       return
     }
     pendingSourceClientIDs.removeAll { $0 == clientID }
-    guard activeSourceClientIDs.remove(clientID) != nil else { return }
-    owner.consumers = max(0, owner.consumers - 1)
+    let removed = activeSourceClientIDs.reduce(into: 0) { count, activeID in
+      if activeID == clientID { count += 1 }
+    }
+    guard removed > 0 else { return }
+    activeSourceClientIDs.removeAll { $0 == clientID }
+    owner.consumers = max(0, owner.consumers - removed)
     if owner.consumers == 0 { owner.restartTimer(); publishDemand() }
     owner.onDemandChange?()
   }
