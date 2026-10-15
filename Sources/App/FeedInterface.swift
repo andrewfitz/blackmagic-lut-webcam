@@ -148,7 +148,10 @@ struct FeedControls: View {
       ControlPanel {
         VStack(alignment: .leading, spacing: 12) {
           HStack {
-            FeedStateLabel(model: model)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(model.selectedFeedName).font(.caption2).foregroundStyle(.secondary)
+              FeedStateLabel(model: model)
+            }
             Spacer()
             StartStopButton(model: model)
           }

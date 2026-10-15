@@ -29,6 +29,71 @@ import XCTest
     XCTAssertFalse(migrated.automaticFeed ?? false)
   }
 
+  func testV1PreferencesMigrateToStablePrimaryFeedAndRetainLegacyRecord() throws {
+    let suiteName = "org.ultrastudiolut.tests.settings.migration.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let legacy = AppSettings(selectedDevice: "legacy-input", applyLUT: true,
+      downscale: false, convertTo420: false, reduceFrameRate: true,
+      gamut: "S-Gamut3 / S-Log3", pipelineEnabled: false, previewEnabled: false,
+      lutBookmark: Data([4, 5, 6]), automaticFeed: true)
+    let legacyData = try JSONEncoder().encode(legacy)
+    defaults.set(legacyData, forKey: AppSettingsStore.key)
+
+    let snapshot = AppSettingsStore(defaults: defaults).loadSnapshot()
+    XCTAssertEqual(snapshot.version, AppSettingsSnapshot.currentVersion)
+    XCTAssertEqual(snapshot.selectedFeedID, .primary)
+    XCTAssertEqual(snapshot.feeds.count, 1)
+    XCTAssertEqual(snapshot.feeds[0].selectedDevice, legacy.selectedDevice)
+    XCTAssertEqual(snapshot.feeds[0].lutBookmark, legacy.lutBookmark)
+    XCTAssertTrue(snapshot.feeds[0].automaticFeed)
+    XCTAssertEqual(defaults.data(forKey: AppSettingsStore.key), legacyData,
+      "Migration must retain v1 until a complete v2 snapshot is stored")
+    XCTAssertNotNil(defaults.data(forKey: AppSettingsStore.snapshotKey))
+  }
+
+  func testV2SnapshotPreservesStableIDsOrderingAndGlobalSettings() throws {
+    let suiteName = "org.ultrastudiolut.tests.settings.v2.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let first = FeedDescriptor(id: FeedID(rawValue: "feed-a"), name: "Wide", selectedDevice: "a")
+    let second = FeedDescriptor(id: FeedID(rawValue: "feed-b"), name: "Tight", selectedDevice: "b", enabled: false)
+    let snapshot = AppSettingsSnapshot(feeds: [first, second], selectedFeedID: second.id,
+      outputMode: .program,
+      switcher: SwitcherSettings(selectedFeedID: second.id, automatic: true,
+        intervalSeconds: 8, strategy: .fixedInterval), virtualCameraRegistryVersion: 3)
+    let store = AppSettingsStore(defaults: defaults)
+    store.saveSnapshot(snapshot)
+    let encoded = String(decoding: try XCTUnwrap(defaults.data(forKey: AppSettingsStore.snapshotKey)), as: UTF8.self)
+    XCTAssertTrue(encoded.contains("\"id\":\"feed-a\""), "Feed IDs must remain stable string values on disk")
+    XCTAssertFalse(encoded.contains("rawValue"), "Feed IDs must not depend on synthesized wrapper encoding")
+    let loaded = store.loadSnapshot()
+    XCTAssertEqual(loaded.feeds.map(\.id), [first.id, second.id])
+    XCTAssertEqual(loaded.selectedFeedID, second.id)
+    XCTAssertEqual(loaded.outputMode, .program)
+    XCTAssertEqual(loaded.switcher, snapshot.switcher)
+    XCTAssertEqual(loaded.virtualCameraRegistryVersion, 3)
+    XCTAssertFalse(loaded.feeds[1].enabled)
+  }
+
+  func testInvalidV2SnapshotFallsBackToV1Migration() throws {
+    let suiteName = "org.ultrastudiolut.tests.settings.v2-fallback.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let legacy = AppSettings(selectedDevice: "fallback-input", lutBookmark: Data([9]))
+    defaults.set(try JSONEncoder().encode(legacy), forKey: AppSettingsStore.key)
+    let invalid = AppSettingsSnapshot(feeds: [
+      FeedDescriptor(id: FeedID(rawValue: "duplicate")),
+      FeedDescriptor(id: FeedID(rawValue: "duplicate"))
+    ])
+    defaults.set(try JSONEncoder().encode(invalid), forKey: AppSettingsStore.snapshotKey)
+
+    let migrated = AppSettingsStore(defaults: defaults).loadSnapshot()
+    XCTAssertEqual(migrated.feeds.count, 1)
+    XCTAssertEqual(migrated.feeds[0].selectedDevice, legacy.selectedDevice)
+    XCTAssertEqual(migrated.feeds[0].lutBookmark, legacy.lutBookmark)
+  }
+
   func testCorruptOrUnsupportedPreferencesUseSafeDefaults() throws {
     let suiteName = "org.ultrastudiolut.tests.settings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

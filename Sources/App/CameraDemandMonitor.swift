@@ -55,7 +55,16 @@ final class CameraDemandMonitor {
     remove(&topology)
   }
 
-  func refresh() { if enabled { discover() } }
+  func refresh() {
+    if enabled {
+      discover()
+    } else if onChange != nil {
+      // `start()` can fail before it installs the topology listener. Retry
+      // must be able to rebuild that registration; avoid doing so during
+      // AppModel initialization, before its callback is wired.
+      start()
+    }
+  }
 
   private func discover() {
     guard enabled else { return }

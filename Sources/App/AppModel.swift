@@ -10,6 +10,15 @@ struct InputDevice: Identifiable {
 @MainActor @Observable
 final class AppModel {
   var devices: [InputDevice] = []
+  /// The runtime still drives one feed, but its persisted identity is already
+  /// stable so adding more sessions does not require another settings format.
+  private(set) var feedDescriptors: [FeedDescriptor] = []
+  private(set) var selectedFeedID: FeedID = .primary
+
+  var selectedFeedName: String {
+    feedDescriptors.first(where: { $0.id == selectedFeedID })?.name ?? "Feed 1"
+  }
+
   var selectedDevice = "" { didSet { if selectedDevice != oldValue { saveSettings() } } }
   var configuration = PipelineConfiguration() {
     didSet {
@@ -65,6 +74,7 @@ final class AppModel {
   private var rememberedLUTEnabled = false
   private let demandMonitor = CameraDemandMonitor()
   private var automaticPolicy = AutomaticFeedPolicy()
+  private var persistedSnapshot = AppSettingsSnapshot()
 
   init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader()) {
     let renderer = VideoPreviewRenderer()
@@ -74,17 +84,21 @@ final class AppModel {
     capture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
     self.settingsStore = settingsStore ?? AppSettingsStore()
     self.lutLoader = lutLoader
-    let saved = self.settingsStore.load()
-    selectedDevice = saved.selectedDevice
-    configuration = saved.configuration
-    rememberedLUTEnabled = saved.applyLUT
+    let snapshot = self.settingsStore.loadSnapshot()
+    persistedSnapshot = snapshot
+    feedDescriptors = snapshot.feeds
+    let savedFeed = snapshot.selectedFeed ?? FeedDescriptor()
+    selectedFeedID = savedFeed.id
+    selectedDevice = savedFeed.selectedDevice
+    configuration = savedFeed.configuration
+    rememberedLUTEnabled = savedFeed.applyLUT
     // Saved intent is restored only after the file and GPU upload succeed.
     configuration.applyLUT = false
-    gamut = saved.gamut
-    pipelineEnabled = saved.pipelineEnabled
-    previewEnabled = saved.previewEnabled
-    automaticFeedEnabled = saved.automaticFeed ?? false
-    lutBookmark = saved.lutBookmark
+    gamut = savedFeed.gamut
+    pipelineEnabled = savedFeed.pipelineEnabled
+    previewEnabled = savedFeed.previewEnabled
+    automaticFeedEnabled = savedFeed.automaticFeed
+    lutBookmark = savedFeed.lutBookmark
     restoringSettings = false
     capture.setPreviewEnabled(previewEnabled)
     capture.onUpdate = { [weak self] update in
@@ -191,12 +205,21 @@ final class AppModel {
 
   func saveSettings() {
     guard !restoringSettings else { return }
-    settingsStore.save(AppSettings(selectedDevice: selectedDevice,
+    let oldName = feedDescriptors.first(where: { $0.id == selectedFeedID })?.name ?? "Feed 1"
+    let descriptor = FeedDescriptor(id: selectedFeedID, name: oldName, selectedDevice: selectedDevice,
       applyLUT: lutLoaded ? configuration.applyLUT : rememberedLUTEnabled,
       downscale: configuration.downscale, convertTo420: configuration.convertTo420,
       reduceFrameRate: configuration.reduceFrameRate, gamut: gamut,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled, lutBookmark: lutBookmark,
-      automaticFeed: automaticFeedEnabled))
+      automaticFeed: automaticFeedEnabled)
+    if let index = feedDescriptors.firstIndex(where: { $0.id == selectedFeedID }) {
+      feedDescriptors[index] = descriptor
+    } else {
+      feedDescriptors.append(descriptor)
+    }
+    persistedSnapshot.feeds = feedDescriptors
+    persistedSnapshot.selectedFeedID = selectedFeedID
+    settingsStore.saveSnapshot(persistedSnapshot)
   }
 
   private var effectiveConfiguration: PipelineConfiguration {
@@ -244,6 +267,10 @@ final class AppModel {
 
   func retryAutomaticFeed() {
     automaticPolicy.retry()
+    // `start()` is idempotent while the monitor is healthy, and retries the
+    // listener registration after an initial setup failure. `refresh()` alone
+    // is a no-op in that failed state because the monitor is disabled there.
+    demandMonitor.start()
     demandMonitor.refresh()
     reconcileAutomaticFeed()
   }
