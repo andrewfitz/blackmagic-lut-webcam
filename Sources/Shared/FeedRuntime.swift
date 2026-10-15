@@ -72,10 +72,20 @@ final class ProgramOutputRoute {
     let decision = switcher.ingest(source)
     let report: FrameFanOutReport
     switch decision {
-    case let .accepted(mapped), let .cutApplied(mapped, _):
+    case let .accepted(mapped):
       // The scheduler maps each source clock onto one monotonic Program clock.
       // Wrap the existing pixel buffer with mapped metadata; this intentionally
       // performs no pixel copy or colour conversion before the CMIO bridge.
+      let mappedMetadata = ProcessedFrameMetadata(
+        presentationTime: mapped.programTime,
+        duration: mapped.programDuration,
+        width: metadata.width,
+        height: metadata.height,
+        pixelFormat: metadata.pixelFormat)
+      let programFrame = ProcessedFrame(payload: frame.payload, metadata: mappedMetadata)
+      report = fanOut.publish(programFrame)
+    case let .cutApplied(mapped, flushStaleFrames):
+      if flushStaleFrames { fanOut.drain() }
       let mappedMetadata = ProcessedFrameMetadata(
         presentationTime: mapped.programTime,
         duration: mapped.programDuration,

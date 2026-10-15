@@ -35,15 +35,14 @@ import XCTest
     guard case .cutApplied = route.ingest(feedID: b, frame: try frame(b, at: 0)).decision else {
       return XCTFail("Target feed should apply at its next valid frame")
     }
-    XCTAssertEqual(consumer.pendingCount, 2)
+    XCTAssertEqual(consumer.pendingCount, 1,
+      "A frame-boundary cut must flush stale frames queued before the cut")
     let first = try XCTUnwrap(consumer.dequeue())
     let firstTime = try XCTUnwrap(first.metadata?.presentationTime)
     first.release()
-    let second = try XCTUnwrap(consumer.dequeue())
-    let secondTime = try XCTUnwrap(second.metadata?.presentationTime)
-    second.release()
-    XCTAssertGreaterThan(CMTimeCompare(secondTime, firstTime), 0,
-      "Program output must expose mapped monotonic timestamps across a cut")
+    XCTAssertEqual(consumer.pendingCount, 0)
+    XCTAssertEqual(CMTimeCompare(firstTime, VideoContract.fastDuration), 0,
+      "The first frame after a cut starts at the next Program timeline boundary")
   }
 
   func testFeedCoordinatorMutatesTheLiveProgramScheduler() throws {
@@ -102,8 +101,8 @@ import XCTest
     XCTAssertEqual(coordinator.programOutput.selectedFeedID, a.id)
     coordinator.setSwitcher(SwitcherSettings(selectedFeedID: b.id))
     coordinator.setOutputMode(.program)
-    XCTAssertEqual(coordinator.programOutput.selectedFeedID, b.id)
-    XCTAssertNil(coordinator.programOutput.pendingFeedID)
+    XCTAssertEqual(coordinator.programOutput.selectedFeedID, a.id)
+    XCTAssertEqual(coordinator.programOutput.pendingFeedID, b.id)
   }
 
   func testProgramBridgePreservesImageAndTimingAndOwnsDemandLifecycle() throws {
