@@ -120,6 +120,18 @@ static NSArray<UDLMode *> *supportedModes(IDeckLinkInput *input) {
 
 static bool sameIID(REFIID a, CFUUIDBytes b) { return std::memcmp(&a, &b, sizeof(a)) == 0; }
 
+// DeckLink's stream clock is requested at either 30 kHz or 60 kHz, but a
+// malformed driver can still return an arbitrary positive duration. Keep the
+// native boundary strict so invalid cadence never reaches media metadata or
+// the asynchronous Swift pipeline. CMTimeCompare preserves the exact 1001
+// based NTSC rationals across either requested time scale.
+static bool supportedFrameDuration(BMDTimeValue duration, BMDTimeScale scale) {
+  if (duration <= 0 || scale <= 0 || scale > INT32_MAX) return false;
+  CMTime value = CMTimeMake(duration, static_cast<int32_t>(scale));
+  return CMTimeCompare(value, CMTimeMake(1001, 30000)) == 0 ||
+    CMTimeCompare(value, CMTimeMake(1001, 60000)) == 0;
+}
+
 struct DetectedInput {
   BMDDisplayMode mode = bmdModeUnknown;
   CMTime duration = kCMTimeInvalid;
@@ -147,6 +159,7 @@ static DetectedInput describeInput(IDeckLinkDisplayMode *mode, BMDDetectedVideoI
   result.supported = mode->GetWidth() == 3840 && mode->GetHeight() == 2160 &&
     CMTIME_IS_NUMERIC(result.duration) &&
     (result.mode == bmdMode4K2160p2997 || result.mode == bmdMode4K2160p5994) &&
+    supportedFrameDuration(duration, scale) &&
     !(flags & (bmdDetectedVideoInputRGB444 | bmdDetectedVideoInput8BitDepth | bmdDetectedVideoInputDualStream3D));
   return result;
 }
@@ -207,10 +220,12 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
   ComRef<IDeckLinkTimecode> timecode;
   if (frame && frame->GetTimecode(bmdTimecodeRP188Any, timecode.out()) == S_OK && timecode) {
     CFStringRef raw = nullptr;
-    if (timecode->GetString(&raw) == S_OK && raw) {
+    if (timecode->GetString(&raw) == S_OK && raw && CFStringGetLength(raw) > 0) {
       // Transfer the SDK-owned CFString retain into ARC exactly once. This
       // avoids mixing Objective-C copy semantics with the SDK's CF ownership.
       timecodeString = CFBridgingRelease(raw);
+    } else if (raw) {
+      CFRelease(raw);
     }
   }
 
@@ -228,7 +243,7 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
     // prevents overflow or pathological work on malformed driver data.
     if (count > 0 && static_cast<uint64_t>(count) <= 96000) {
       BMDTimeValue timestamp = 0;
-      if (audio->GetPacketTime(&timestamp, bmdAudioSampleRate48kHz) == S_OK)
+      if (audio->GetPacketTime(&timestamp, bmdAudioSampleRate48kHz) == S_OK && timestamp >= 0)
         packetTime = CMTimeMake(timestamp, bmdAudioSampleRate48kHz);
       void *raw = nullptr;
       const NSUInteger frameCount = static_cast<NSUInteger>(count);
@@ -260,7 +275,7 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
     }
   }
   (void)videoScale;
-  handler(timecodeString, packetTime, sampleFrames, channels, leftPeak, rightPeak,
+  handler(timecodeString, packetTime, sampleFrames, present ? channels : 0, leftPeak, rightPeak,
     leftRMS, rightRMS, bytes, present);
 }
 
@@ -333,7 +348,8 @@ class CaptureCallback final : public IDeckLinkInputCallback {
           frame->GetWidth(), frame->GetHeight(), (unsigned)frame->GetPixelFormat()]); return S_OK;
       }
       BMDTimeValue timestamp = 0, duration = 0;
-      if (frame->GetStreamTime(&timestamp, &duration, timeScale) != S_OK || duration <= 0) {
+      if (frame->GetStreamTime(&timestamp, &duration, timeScale) != S_OK || timestamp < 0 ||
+          !supportedFrameDuration(duration, timeScale)) {
         reportFatal(@"UltraStudio supplied an invalid frame timestamp."); return S_OK;
       }
       CVPixelBufferRef buffer = nullptr;

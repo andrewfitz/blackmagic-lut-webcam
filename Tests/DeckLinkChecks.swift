@@ -33,11 +33,35 @@ final class DeckLinkChecks: XCTestCase {
     backend.stop()
   }
 
+  func testVideoContractCarriesRangeAndTimingMetadata() throws {
+    XCTAssertEqual(VideoContract.fastDuration, CMTime(value: 1001, timescale: 60_000))
+    XCTAssertEqual(VideoContract.slowDuration, CMTime(value: 1001, timescale: 30_000))
+    XCTAssertThrowsError(try VideoContract.formatDescription(width: 0, height: 1080,
+      pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange))
+    XCTAssertThrowsError(try VideoContract.formatDescription(width: Int.max, height: 1080,
+      pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange))
+    XCTAssertThrowsError(try VideoContract.formatDescription(width: 1920, height: 1080,
+      pixelFormat: kCVPixelFormatType_32BGRA))
+
+    let videoRange = try VideoContract.formatDescription(width: 1920, height: 1080,
+      pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    let fullRange = try VideoContract.formatDescription(width: 1920, height: 1080,
+      pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarFullRange)
+    XCTAssertEqual(CMFormatDescriptionGetExtension(videoRange,
+      extensionKey: kCMFormatDescriptionExtension_YCbCrMatrix) as? String,
+      kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String)
+    XCTAssertTrue(CFEqual(CMFormatDescriptionGetExtension(videoRange,
+      extensionKey: kCMFormatDescriptionExtension_FullRangeVideo), kCFBooleanFalse))
+    XCTAssertTrue(CFEqual(CMFormatDescriptionGetExtension(fullRange,
+      extensionKey: kCMFormatDescriptionExtension_FullRangeVideo), kCFBooleanTrue))
+  }
+
   static let allTests = [
     ("automatic HDMI detection and live transitions", testAutomaticInputDetectionAndTransitions),
     ("missing automatic device fails cleanly", testMissingAutoDeviceFailsCleanly),
     ("native SDK callbacks, frame ownership, lifecycle and HDMI restore", testNativeSDKCallbacksAndLifecycle),
     ("native stop before start is idempotent", testStopBeforeStartIsIdempotent),
     ("native missing-device startup cleans up", testMissingDeviceFailsCleanlyAndCanStop),
+    ("video contract preserves range and timing metadata", testVideoContractCarriesRangeAndTimingMetadata),
   ]
 }

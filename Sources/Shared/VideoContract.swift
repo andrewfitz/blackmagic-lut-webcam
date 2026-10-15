@@ -33,6 +33,13 @@ enum VideoContract {
   }
 
   static func formatDescription(width: Int, height: Int, pixelFormat: OSType) throws -> CMVideoFormatDescription {
+    guard width > 0, height > 0, width <= Int(Int32.max), height <= Int(Int32.max) else {
+      throw VideoError.message("Invalid video dimensions.")
+    }
+    guard tenBit422.contains(pixelFormat) || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else {
+      throw VideoError.message("Unsupported video pixel format.")
+    }
+    let fullRange = pixelFormat == kCVPixelFormatType_422YpCbCr10BiPlanarFullRange
     var format: CMVideoFormatDescription?
     let status = CMVideoFormatDescriptionCreate(
       allocator: kCFAllocatorDefault, codecType: pixelFormat,
@@ -40,6 +47,8 @@ enum VideoContract {
       extensions: [
         kCMFormatDescriptionExtension_ColorPrimaries: kCVImageBufferColorPrimaries_ITU_R_709_2,
         kCMFormatDescriptionExtension_TransferFunction: kCVImageBufferTransferFunction_ITU_R_709_2,
+        kCMFormatDescriptionExtension_YCbCrMatrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
+        kCMFormatDescriptionExtension_FullRangeVideo: fullRange as CFBoolean,
       ] as CFDictionary, formatDescriptionOut: &format)
     guard status == noErr, let format else { throw VideoError.message("Could not create video format (\(status)).") }
     return format

@@ -39,7 +39,7 @@ class FakeFrame final : public IDeckLinkVideoInputFrame {
   std::atomic<ULONG> references{1};
   bool *destroyed;
   std::vector<uint8_t> bytes = std::vector<uint8_t>(10240 * 2160, 0);
-  bool noSignal = false, invalidTime = false, badBytes = false;
+  bool noSignal = false, invalidTime = false, negativeTime = false, badBytes = false;
   FakeTimecode *timecode = nullptr;
   BMDTimeValue frameDuration = 1001;
   long width = 3840;
@@ -60,7 +60,7 @@ class FakeFrame final : public IDeckLinkVideoInputFrame {
   }
   HRESULT GetAncillaryData(IDeckLinkVideoFrameAncillary **) override { return E_NOTIMPL; }
   HRESULT GetStreamTime(BMDTimeValue *pts, BMDTimeValue *duration, BMDTimeScale) override {
-    *pts = 123123; *duration = frameDuration; return invalidTime ? E_FAIL : S_OK;
+    *pts = negativeTime ? -1 : 123123; *duration = frameDuration; return invalidTime ? E_FAIL : S_OK;
   }
   HRESULT GetHardwareReferenceTimestamp(BMDTimeScale, BMDTimeValue *, BMDTimeValue *) override { return E_NOTIMPL; }
 };
@@ -163,19 +163,42 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
   @autoreleasepool {
     __block CVPixelBufferRef retained = nullptr;
     __block int frames = 0, events = 0;
+    __block int mediaCallbacks = 0;
+    __block BOOL mediaTimecodeMatches = NO;
+    __block BOOL mediaTimecodeAbsent = NO;
+    __block CMTime mediaPacketTime = kCMTimeInvalid;
+    __block NSUInteger mediaFrames = 0, mediaChannels = 0, mediaBytes = 0;
+    __block float mediaLeftPeak = 0, mediaRightPeak = 0, mediaLeftRMS = 0, mediaRightRMS = 0;
+    __block BOOL mediaPresent = NO;
     __block NSString *lastMessage = nil;
     __block CMTime timestamp = kCMTimeInvalid;
     auto framesBlock = ^(CVPixelBufferRef buffer, CMTime pts, BOOL valid) {
       if (valid) { ++frames; timestamp = pts; retained = CVPixelBufferRetain(buffer); }
     };
     auto eventsBlock = ^(NSString *message) { ++events; lastMessage = message; };
-    auto callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock);
+    auto mediaBlock = ^(NSString *timecode, CMTime packetTime, NSUInteger sampleFrames,
+      NSUInteger channels, float leftPeak, float rightPeak, float leftRMS, float rightRMS,
+      NSUInteger bytes, BOOL present) {
+      ++mediaCallbacks; mediaTimecodeMatches = [timecode isEqualToString:@"01:02:03:04"]; mediaTimecodeAbsent = timecode == nil; mediaPacketTime = packetTime;
+      mediaFrames = sampleFrames; mediaChannels = channels; mediaBytes = bytes;
+      mediaLeftPeak = leftPeak; mediaRightPeak = rightPeak; mediaLeftRMS = leftRMS;
+      mediaRightRMS = rightRMS; mediaPresent = present;
+    };
+    auto callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock, mediaBlock);
     bool destroyed = false;
     auto frame = new FakeFrame(&destroyed);
-    callback->VideoInputFrameArrived(frame, nullptr);
+    auto timecode = new FakeTimecode(); frame->timecode = timecode;
+    auto audio = new FakeAudioPacket({INT16_MIN, 16384, 8192, -16384});
+    callback->VideoInputFrameArrived(frame, audio);
     if (frames != 1 || !retained || CMTimeCompare(timestamp, CMTimeMake(123123, 60000)) != 0 ||
-      CVPixelBufferGetPixelFormatType(retained) != kCVPixelFormatType_422YpCbCr10 || frame->references != 2)
-      return fail(error, @"Native frame format/timing/reference test failed.");
+      CVPixelBufferGetPixelFormatType(retained) != kCVPixelFormatType_422YpCbCr10 || frame->references != 2 ||
+      mediaCallbacks != 1 || !mediaTimecodeMatches ||
+      CMTimeCompare(mediaPacketTime, CMTimeMake(960, 48000)) != 0 || mediaFrames != 2 ||
+      mediaChannels != 2 || mediaBytes != 8 || !mediaPresent || mediaLeftPeak != 1.0f ||
+      mediaRightPeak != 0.5f || std::abs(mediaLeftRMS - 0.728868f) > 0.0001f ||
+      std::abs(mediaRightRMS - 0.5f) > 0.0001f)
+      return fail(error, @"Native frame/media format, timing, metadata or reference test failed.");
+    audio->Release(); frame->timecode = nullptr; timecode->Release();
     frame->Release();
     if (destroyed) return fail(error, @"Native frame was freed while Swift retained its pixel buffer.");
     callback->accepting = false;
@@ -193,16 +216,31 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
     if (frames != 1) return fail(error, @"Stopped callback delivered a late frame.");
     frame->Release(); callback->Release();
 
-    for (int scenario = 0; scenario != 3; ++scenario) {
+    // A media callback without a valid packet must not fabricate channel
+    // metadata. The callback still runs so consumers can clear stale meters.
+    mediaCallbacks = 0; mediaChannels = 99; mediaPresent = YES; mediaTimecodeAbsent = NO;
+    destroyed = false; frame = new FakeFrame(&destroyed);
+    auto emptyTimecode = new FakeTimecode(); emptyTimecode->value = CFSTR(""); frame->timecode = emptyTimecode;
+    callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock, mediaBlock);
+    callback->VideoInputFrameArrived(frame, nullptr);
+    if (mediaCallbacks != 1 || !mediaTimecodeAbsent || mediaChannels != 0 || mediaPresent || mediaFrames != 0 || mediaBytes != 0)
+      return fail(error, @"Missing embedded audio fabricated packet metadata.");
+    frame->timecode = nullptr; emptyTimecode->Release();
+    callback->accepting = false; if (retained) { CVPixelBufferRelease(retained); retained = nullptr; }
+    frame->Release(); callback->Release();
+    for (int scenario = 0; scenario != 5; ++scenario) {
       destroyed = false; frame = new FakeFrame(&destroyed);
       if (scenario == 0) frame->width = 1920;
       if (scenario == 1) frame->invalidTime = true;
       if (scenario == 2) frame->badBytes = true;
+      if (scenario == 3) frame->frameDuration = 1000;
+      if (scenario == 4) frame->negativeTime = true;
       events = 0;
       callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock);
       callback->VideoInputFrameArrived(frame, nullptr); callback->VideoInputFrameArrived(frame, nullptr);
-      if (events != 1 || callback->accepting || frames != 1 || ![lastMessage hasPrefix:@"Capture error: "])
+      if (events != 1 || callback->accepting || frames != 2 || ![lastMessage hasPrefix:@"Capture error: "])
         return fail(error, @"Invalid native frame did not stop with one permanent capture error.");
+      if (retained) { CVPixelBufferRelease(retained); retained = nullptr; }
       frame->Release(); callback->Release();
       if (!destroyed) return fail(error, @"Rejected native frame leaked.");
     }
