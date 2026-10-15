@@ -335,7 +335,15 @@ class CaptureCallback final : public IDeckLinkInputCallback {
     void (^frames)(CVPixelBufferRef, CMTime, BOOL), void (^events)(NSString *),
     UDLMediaStatsHandler media = nil, UDLRawAudioHandler rawAudio = nil)
     : requestedMode(mode), timeScale(scale), frameHandler([frames copy]), mediaHandler([media copy]),
-      rawAudioHandler([rawAudio copy]), eventHandler([events copy]) {}
+      rawAudioHandler([rawAudio copy]), eventHandler([events copy]) {
+    // The automatic-format path intentionally leaves the ordinary frame
+    // handler nil and installs autoFrameHandler immediately afterwards. Keep
+    // the callback object safe if a late driver callback arrives during a
+    // failed/partial start, or if a test/future caller omits an event block.
+    // Blocks are copied so these fallbacks never refer to stack storage.
+    if (!frameHandler) frameHandler = [^(CVPixelBufferRef, CMTime, BOOL) {} copy];
+    if (!eventHandler) eventHandler = [^(NSString *) {} copy];
+  }
   HRESULT QueryInterface(REFIID iid, LPVOID *object) override {
     if (!object) return E_INVALIDARG;
     *object = nullptr;

@@ -350,6 +350,15 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
     }
     if (configuration.connection != bmdVideoConnectionOpticalSDI || configuration.writes != 1 || configuration.persistentWrites != 0)
       return fail(error, @"HDMI lease clobbered a later owner or persisted settings.");
+
+    // Automatic-format startup supplies no ordinary frame handler. Verify the
+    // callback adapter also remains safe when an event block is absent, as can
+    // happen on a failed/partial startup callback or a future API caller.
+    callback = new CaptureCallback(bmdMode4K2160p5994, 60000, nil, nil);
+    if (!callback->frameHandler || !callback->eventHandler)
+      return fail(error, @"Capture callback did not install safe no-op handlers.");
+    callback->accepting = false;
+    callback->Release();
     return YES;
   }
 }
