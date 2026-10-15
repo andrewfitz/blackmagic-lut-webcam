@@ -118,15 +118,7 @@ final class AppModel {
     capture.setPreviewEnabled(previewEnabled)
     feedCoordinator.setCameraOutputEnabled(feedID: snapshot.selectedFeedID,
       enabled: snapshot.outputMode != .program)
-    let primaryFeedID = snapshot.selectedFeedID
-    feedCoordinator.setProcessedFrameHandler(feedID: primaryFeedID) { [weak self] frame in
-      guard let self else { return }
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        _ = self.feedCoordinator.publish(frame, to: primaryFeedID)
-        self.feedCoordinator.pumpProgramOutput()
-      }
-    }
+    installProcessedFrameHandler(for: snapshot.selectedFeedID)
     capture.onUpdate = { [weak self] update in
       MainActor.assumeIsolated {
         guard let self else { return }
@@ -285,6 +277,19 @@ final class AppModel {
 
   private func startFeed() {
     guard canStartFeed else { return }
+    if feedCoordinator.outputMode == .program {
+      // Start every configured source that has a device assignment. The
+      // selected feed keeps the existing preview controller; additional
+      // sources run headless and publish only into the Program route.
+      for descriptor in feedCoordinator.descriptors where descriptor.enabled &&
+        descriptor.id != selectedFeedID && !descriptor.selectedDevice.isEmpty {
+        installProcessedFrameHandler(for: descriptor.id)
+        feedCoordinator.setCameraOutputEnabled(feedID: descriptor.id, enabled: false)
+        _ = feedCoordinator.startCapture(feedID: descriptor.id,
+          deviceID: descriptor.selectedDevice, configuration: descriptor.configuration,
+          pipelineEnabled: descriptor.pipelineEnabled, previewEnabled: false)
+      }
+    }
     guard feedCoordinator.start(selectedFeedID) else { return }
     running = true
     previewReady = false
@@ -310,9 +315,22 @@ final class AppModel {
       try? feedCoordinator.setProgramOutputDemand(false, configuration: effectiveConfiguration,
         passthroughFormat: kCVPixelFormatType_422YpCbCr10)
     }
+    for descriptor in feedCoordinator.descriptors where descriptor.id != selectedFeedID {
+      feedCoordinator.stopCapture(feedID: descriptor.id)
+    }
     feedCoordinator.stop(selectedFeedID)
     recordingModel.stopAll()
     capture.stop()
+  }
+
+  private func installProcessedFrameHandler(for feedID: FeedID) {
+    feedCoordinator.setProcessedFrameHandler(feedID: feedID) { [weak self] frame in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        _ = self.feedCoordinator.publish(frame, to: feedID)
+        self.feedCoordinator.pumpProgramOutput()
+      }
+    }
   }
 
   var cameraRequested: Bool { automaticPolicy.requested }
