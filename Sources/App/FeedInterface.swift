@@ -279,7 +279,7 @@ struct MultiCameraControls: View {
         .disabled(!model.switcherSettings.automatic)
         if model.switcherSettings.automatic && model.switcherSettings.strategy == .fixedInterval {
           HStack {
-            Text("Every \(model.switcherSettings.intervalSeconds, specifier: \"%.1f\")s")
+            Text("Every \(String(format: "%.1f", model.switcherSettings.intervalSeconds))s")
               .font(.caption2).foregroundStyle(.secondary)
             Slider(value: intervalBinding, in: 1...30, step: 0.5)
           }
