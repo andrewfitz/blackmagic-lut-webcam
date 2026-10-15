@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreMedia
 import Foundation
 
@@ -51,6 +52,11 @@ public enum RecordingTimecodePolicy: Equatable, Sendable {
   /// time.  This keeps separately started feeds independent while preserving
   /// source cadence and avoids sampling `Date()` on every frame.
   case wallClock
+
+  /// Start at 00:00:00:00 and advance with the source media clock. This is
+  /// useful when the operator wants a deterministic record-start timecode
+  /// while still writing a real QuickTime `tmcd` track.
+  case recordStart
 
   /// Use the source's embedded timecode.  No timecode is fabricated when a
   /// source value is absent; callers can then omit the tmcd sample.
@@ -199,7 +205,13 @@ public struct RecordingTimecodeSession: Sendable {
     for sourceTime: CMTime,
     sourceTimecode: RecordingTimecode? = nil
   ) -> RecordingTimecode? {
-    guard policy == .wallClock else { return sourceTimecode }
+    if policy == .source { return sourceTimecode }
+    if policy == .recordStart {
+      guard let offset = frameOffset(from: sourceTime, to: frameRate, origin: sourceStartTime) else {
+        return nil
+      }
+      return RecordingTimecode(frameNumber: offset, frameRate: frameRate, dropFrame: dropFrame)
+    }
     guard let offset = frameOffset(from: sourceTime, to: frameRate, origin: sourceStartTime) else {
       return nil
     }
@@ -210,7 +222,10 @@ public struct RecordingTimecodeSession: Sendable {
   /// The anchor's wall-clock timecode.  This is useful for recorders that write
   /// the first tmcd sample before their first source PTS is available.
   public var startTimecode: RecordingTimecode {
-    RecordingTimecode(frameNumber: wallClockFrame, frameRate: frameRate, dropFrame: dropFrame)
+    RecordingTimecode(
+      frameNumber: policy == .wallClock ? wallClockFrame : 0,
+      frameRate: frameRate,
+      dropFrame: dropFrame)
   }
 
   private static func wallClockFrameNumber(
@@ -299,6 +314,12 @@ public final class QuickTimeTimecodeTrack {
       formatDescriptionOut: &description)
     guard status == noErr, let description else { throw RecordingTimecodeError.coreMedia(status) }
     self.formatDescription = description
+  }
+
+  /// Creates the AVAssetWriter input for this `tmcd` media track.
+  public func makeInput() -> AVAssetWriterInput {
+    AVAssetWriterInput(mediaType: .timecode, outputSettings: nil,
+      sourceFormatHint: formatDescription)
   }
 
   public func sample(
