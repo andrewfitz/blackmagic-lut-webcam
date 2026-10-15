@@ -116,10 +116,10 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   func appendEmbeddedAudio(sourcePCM32: Data, sampleFrameCount: Int,
     presentationTime: CMTime,
     channelCount: Int = EmbeddedAudioFormat.channelCount) -> Bool {
-    guard let packet = try? EmbeddedAudioPacket(sourcePCM32: sourcePCM32,
+    guard let sample = try? EmbeddedAudioRecording.makeSampleBuffer(sourcePCM32: sourcePCM32,
       sampleFrameCount: sampleFrameCount, presentationTime: presentationTime,
       channelCount: channelCount) else { return reject() }
-    return appendEmbeddedAudio(packet: packet)
+    return recorder.appendAudio(sample)
   }
 
   /// Returns the adapter's raw callback closures. They capture this adapter,
