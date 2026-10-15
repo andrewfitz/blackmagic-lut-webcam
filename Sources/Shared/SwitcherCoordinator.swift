@@ -108,7 +108,7 @@ struct SwitcherCoordinator {
   /// The UI can use this message without presenting dynamic analysis as an
   /// active mode. The strategy remains persisted for a future implementation.
   var statusMessage: String {
-    settings.strategy == .dynamicAnalysis ? "Coming later" : "Ready"
+    settings.strategy == .dynamicAnalysis ? "Coming later." : "Ready"
   }
 
   var anchorID: FeedID? { anchorFeedID }

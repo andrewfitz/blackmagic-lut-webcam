@@ -55,7 +55,7 @@ import XCTest
     let settings = SwitcherSettings(selectedFeedID: a, automatic: true,
       intervalSeconds: 1, strategy: .dynamicAnalysis)
     var coordinator = SwitcherCoordinator(settings: settings, feedIDs: [a, feed("B")])
-    XCTAssertEqual(coordinator.statusMessage, "Coming later")
+    XCTAssertEqual(coordinator.statusMessage, "Coming later.")
     XCTAssertEqual(coordinator.evaluate(at: time(10)), .dynamicAnalysisUnavailable)
     XCTAssertNil(coordinator.pendingCut)
   }
