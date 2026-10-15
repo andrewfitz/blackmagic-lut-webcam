@@ -182,6 +182,18 @@ func syntheticRamp() throws -> CVPixelBuffer {
     XCTAssertEqual(delivered, 3000)
     XCTAssertFalse(gate.shouldDeliver(.invalid, duration: VideoContract.slowDuration))
     XCTAssertTrue(gate.shouldDeliver(.zero, duration: VideoContract.slowDuration), "Clock reset should restart cadence")
+
+    gate.reset()
+    XCTAssertTrue(gate.shouldDeliver(CMTime(value: 6_000, timescale: 60_000),
+      duration: VideoContract.slowDuration))
+    XCTAssertTrue(gate.shouldDeliver(CMTime(value: 3_000, timescale: 60_000),
+      duration: VideoContract.slowDuration), "A backwards source clock must restart cadence")
+    XCTAssertFalse(gate.shouldDeliver(CMTime(value: 4_001, timescale: 60_000),
+      duration: VideoContract.slowDuration))
+    XCTAssertFalse(gate.shouldDeliver(CMTime(value: 5_002, timescale: 60_000),
+      duration: .invalid), "Invalid durations must never pass the gate")
+    XCTAssertFalse(gate.shouldDeliver(CMTime(value: 5_002, timescale: 60_000, flags: .valid, epoch: 1),
+      duration: VideoContract.slowDuration), "Foreign source epochs must be rejected")
   }
   static let allTests = [
     ("10-bit GPU precision", testTenBitPrecision),

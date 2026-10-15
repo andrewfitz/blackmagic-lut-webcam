@@ -11,12 +11,19 @@ let cameraSinkQueueAltered: CMIODeviceStreamQueueAlteredProc = { _, _, _ in }
 // drain if the sample was never consumed.
 final class CameraBufferQueue {
   let queue: CMSimpleQueue
+  private let lock = NSLock()
+  private var closed = false
 
   init(_ queue: CMSimpleQueue) { self.queue = queue }
   deinit { drain() }
 
   func send(_ sample: CMSampleBuffer) throws -> Bool {
-    guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue) else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    guard !closed else { throw VideoError.message("Virtual camera queue is closed.") }
+    // Do not use a count-then-enqueue check. CMIO can dequeue concurrently,
+    // so the count is only a hint and creates a race at the capacity edge.
+    // CMSimpleQueueEnqueue is the ownership and backpressure boundary.
     let retained = Unmanaged.passRetained(sample)
     let status = CMSimpleQueueEnqueue(queue, element: retained.toOpaque())
     if status != noErr { retained.release() }
@@ -28,9 +35,22 @@ final class CameraBufferQueue {
   // Call only after stopping the CMIO consumer. CMSimpleQueue permits one
   // producer and one consumer; draining a live consumer would violate that.
   func drain() {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !closed || CMSimpleQueueGetCount(queue) > 0 else { return }
+    closed = true
     while let token = CMSimpleQueueDequeue(queue) {
       Unmanaged<CMSampleBuffer>.fromOpaque(token).release()
     }
+  }
+
+  // Prevent a callback racing teardown from enqueuing after the stream has
+  // been stopped. Draining remains a separate operation so CameraSink can
+  // close admission before asking CMIO to quiesce its consumer.
+  func close() {
+    lock.lock()
+    closed = true
+    lock.unlock()
   }
 }
 
@@ -313,7 +333,8 @@ final class CameraSink {
   }
 
   func disconnect() {
-    if streamID != 0 { CMIODeviceStopStream(deviceID, streamID) }
+    queue?.close()
+    if streamID != 0 { _ = CMIODeviceStopStream(deviceID, streamID) }
     queue?.drain()
     queue = nil
     negotiatedFormat = nil
@@ -337,6 +358,9 @@ final class CameraSink {
       mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
     var size: UInt32 = 0
     try check(CMIOObjectGetPropertyDataSize(object, &address, 0, nil, &size), "Read camera list size")
+    guard size % UInt32(MemoryLayout<UInt32>.size) == 0, size <= 64 * 1024 else {
+      throw VideoError.message("Invalid camera device list.")
+    }
     var values = [UInt32](repeating: 0, count: Int(size) / MemoryLayout<UInt32>.size)
     if values.isEmpty { return [] }
     try values.withUnsafeMutableBytes { bytes in

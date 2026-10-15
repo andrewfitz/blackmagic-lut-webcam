@@ -564,6 +564,35 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     XCTAssertEqual(update.videoDrops, update.dropped)
   }
 
+  func testMediaAdmissionIsBoundedAndCountsDroppedAudioSamples() throws {
+    let entered = expectation(description: "Capture queue held inside native start")
+    let gate = DispatchSemaphore(value: 0)
+    let harness = CaptureHarness(startGate: gate, started: entered)
+    let controller = CaptureController(services: harness.services(), previewRenderer: nil)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    defer {
+      controller.onUpdate = nil
+      controller.stop()
+      gate.signal()
+    }
+    controller.start(deviceID: "synthetic", configuration: config,
+      pipelineEnabled: false, previewEnabled: false)
+    wait(for: [entered], timeout: 5)
+    let packet = CaptureMediaStats(timecode: nil, audioPacketTime: .zero,
+      audioSampleFrames: 160, audioChannels: 2, leftPeak: 0, rightPeak: 0,
+      leftRMS: 0, rightRMS: 0, audioBytes: 640, audioPresent: true)
+    for _ in 0...VideoContract.captureAdmissionLimit { harness.emitMedia(packet) }
+    gate.signal()
+    harness.emit(try EndToEndChecks.source(), frame: 0)
+    awaitCondition("Bounded media updates must drain with the capture queue") {
+      statuses.last?.audioPackets == UInt64(VideoContract.captureAdmissionLimit)
+    }
+    let update = try XCTUnwrap(statuses.last)
+    XCTAssertEqual(update.audioDrops, 160,
+      "The dropped metadata packet must contribute its missing sample count")
+  }
+
   func testPreviewOffLeavesProcessedCameraOutputRunningAndCanReenable() throws {
     let harness = CaptureHarness()
     let controller = CaptureController(services: harness.services())

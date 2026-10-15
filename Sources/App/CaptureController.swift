@@ -65,8 +65,14 @@ final class CaptureController: @unchecked Sendable {
   private let lock = NSLock()
   private var generation: UInt64 = 0
   private var accepting = false
-  private var inFlight = 0
+  // Keep admission counters per generation. A driver callback may pass the
+  // lock just before Stop advances the generation and enqueue stale work just
+  // after the next Start begins; one global counter would underflow when that
+  // stale work completes and could disable backpressure for the new run.
+  private var inFlight: [UInt64: UInt64] = [:]
+  private var mediaInFlight: [UInt64: UInt64] = [:]
   private var callbackDrops: UInt64 = 0
+  private var mediaDropSamples: UInt64 = 0
   private var sourceDrops: UInt64 = 0
   private var sourceDuration = VideoContract.fastDuration
   private var lastSourcePTS: CMTime?
@@ -242,6 +248,7 @@ final class CaptureController: @unchecked Sendable {
           self.accepting = true
           self.callbackDrops = 0
           self.sourceDrops = 0
+          self.mediaDropSamples = 0
           self.lastSourcePTS = nil
           self.sourceDuration = configuration.inputFast ? VideoContract.fastDuration : VideoContract.slowDuration
           self.lastReceived = ProcessInfo.processInfo.systemUptime
@@ -479,24 +486,58 @@ final class CaptureController: @unchecked Sendable {
         }
         lastSourcePTS = pts
       }
-      if inFlight >= VideoContract.captureAdmissionLimit { callbackDrops &+= 1; return nil }
-      inFlight += 1
+      let pending = inFlight[token, default: 0]
+      if pending >= UInt64(VideoContract.captureAdmissionLimit) {
+        callbackDrops &+= 1
+        return nil
+      }
+      inFlight[token] = pending + 1
       return frameDuration
     }
     guard let accepted else { return }
     let frame = CapturedFrame(image: image, pts: pts, duration: accepted,
       receivedAt: ProcessInfo.processInfo.systemUptime)
     queue.async {
-      defer { self.lock.withLock { self.inFlight -= 1 } }
+      defer { self.releaseFrame(token) }
       guard self.isAccepting(token) else { return }
       self.process(frame, token: token)
     }
   }
 
   private func receiveMedia(_ stats: CaptureMediaStats, token: UInt64) {
+    let accepted = lock.withLock { () -> Bool in
+      guard generation == token, accepting else { return false }
+      let pending = mediaInFlight[token, default: 0]
+      if pending >= UInt64(VideoContract.captureAdmissionLimit) {
+        // Preserve packet sample counts when a metadata update is dropped so
+        // the resulting audio-gap counter remains useful under video stalls.
+        mediaDropSamples &+= stats.audioSampleFrames
+        return false
+      }
+      mediaInFlight[token] = pending + 1
+      return true
+    }
+    guard accepted else { return }
     queue.async {
+      defer { self.releaseMedia(token) }
       guard self.isAccepting(token) else { return }
       self.recordMedia(stats)
+    }
+  }
+
+  private func releaseFrame(_ token: UInt64) {
+    lock.withLock {
+      guard let pending = inFlight[token] else { return }
+      if pending <= 1 { inFlight.removeValue(forKey: token) }
+      else { inFlight[token] = pending - 1 }
+    }
+  }
+
+  private func releaseMedia(_ token: UInt64) {
+    lock.withLock {
+      guard let pending = mediaInFlight[token] else { return }
+      if pending <= 1 { mediaInFlight.removeValue(forKey: token) }
+      else { mediaInFlight[token] = pending - 1 }
     }
   }
 
@@ -687,14 +728,15 @@ final class CaptureController: @unchecked Sendable {
       if let packed = processor?.packedInputDiagnostics {
         logger.notice("Packed input noCopy=\(packed.noCopyFrames) copiedFallback=\(packed.copiedFrames)")
       }
-      let losses = lock.withLock { (sourceDrops, callbackDrops) }
-      logger.notice("Live fps=\(self.outputFPS) delivered=\(self.frames) sourceDrops=\(losses.0) captureDrops=\(losses.1) poolDrops=\(self.poolDrops)")
+      let losses = lock.withLock { (sourceDrops, callbackDrops, mediaDropSamples) }
+      logger.notice("Live fps=\(self.outputFPS) delivered=\(self.frames) sourceDrops=\(losses.0) captureDrops=\(losses.1) mediaDropSamples=\(losses.2) poolDrops=\(self.poolDrops)")
     }
     publishCurrent(token: token)
   }
 
   private func publishCurrent(token: UInt64, stopped: Bool = false) {
-    let losses = lock.withLock { (sourceDrops, callbackDrops) }
+    let losses = lock.withLock { (sourceDrops, callbackDrops, mediaDropSamples) }
+    let audioLosses = audioDrops &+ losses.2
     let diagnostics = previewRenderers.map { $0.diagnosticsSnapshot() }
     let previewLosses = diagnostics.reduce(UInt64(0)) {
       $0 + $1.stagingDrops + $1.replaced + $1.failed + $1.rendererDropped + $1.rendererCorrupted
@@ -712,7 +754,7 @@ final class CaptureController: @unchecked Sendable {
       timecode: stopped ? nil : timecode,
       audioChannels: stopped ? 0 : audioChannels, audioSampleRate: stopped ? 0 : audioSampleRate,
       audioPackets: stopped ? 0 : audioPackets, audioSamples: stopped ? 0 : audioSamples,
-      audioBytes: stopped ? 0 : audioBytes, audioDrops: stopped ? 0 : audioDrops,
+      audioBytes: stopped ? 0 : audioBytes, audioDrops: stopped ? 0 : audioLosses,
       audioPeakLeft: stopped ? 0 : audioPeakLeft, audioPeakRight: stopped ? 0 : audioPeakRight,
       audioRMSLeft: stopped ? 0 : audioRMSLeft, audioRMSRight: stopped ? 0 : audioRMSRight,
       audioBitrateKbps: stopped ? 0 : audioBitrateKbps, audioPresent: stopped ? false : audioPresent,
