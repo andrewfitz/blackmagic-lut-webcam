@@ -263,7 +263,6 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           return
         }
         guard Self.append(sample, to: videoInput) else {
-          telemetryValue.droppedEncodedVideo &+= 1
           throw Self.writerError(writer, fallback: "Video sample append failed.")
         }
         telemetryValue.encodedVideo &+= 1
