@@ -150,7 +150,9 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
     let summary = try session.finish()
     XCTAssertEqual(summary.finalState, .finalized)
     XCTAssertEqual(summary.packetCount, 8)
-    XCTAssertEqual(writer.segments.last?.packets.first?.presentationTime,
+    // The segment already contains the pre-pause packet at t=1000; the
+    // resumed packet is the final packet and must continue at t=1500.
+    XCTAssertEqual(writer.segments.last?.packets.last?.presentationTime,
       CMTime(value: 1_500, timescale: 1_000))
   }
 
