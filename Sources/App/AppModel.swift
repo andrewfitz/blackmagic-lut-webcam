@@ -89,12 +89,14 @@ final class AppModel {
     let primaryCapture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
     let capturePool = FeedCapturePool(initial: [snapshot.selectedFeedID: primaryCapture])
     feedCoordinator = FeedCoordinator(snapshot: snapshot, capturePool: capturePool)
+    let coordinator = feedCoordinator
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
     capture = primaryCapture
     recordingModel = RecordingModel(
       feeds: feedCoordinator.descriptors.map { RecordingFeedDescriptor(id: $0.id, name: $0.name) },
-      driver: NativeRecordingSessionDriver(capture: primaryCapture, rawAudioCallbackAvailable: true))
+      driver: NativeRecordingSessionDriver(capture: primaryCapture, rawAudioCallbackAvailable: true,
+        captureForFeed: { id in coordinator.capture(for: id) }))
     self.lutLoader = lutLoader
     let savedFeed = snapshot.selectedFeed ?? FeedDescriptor()
     selectedDevice = savedFeed.selectedDevice

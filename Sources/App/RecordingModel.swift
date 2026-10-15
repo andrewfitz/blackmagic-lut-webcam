@@ -132,14 +132,15 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
     let output: RecordingOutputSession
   }
 
-  private weak var capture: CaptureController?
+  private let captureForFeed: (FeedID) -> CaptureController
   private let recorderFactory: RecorderFactory
   private let rawAudioCallbackAvailable: Bool
   private var sessions: [FeedID: Session] = [:]
 
   init(capture: CaptureController, rawAudioCallbackAvailable: Bool = false,
+    captureForFeed: ((FeedID) -> CaptureController)? = nil,
     recorderFactory: @escaping RecorderFactory = { try SourceRecorderCore(configuration: $0) }) {
-    self.capture = capture
+    self.captureForFeed = captureForFeed ?? { _ in capture }
     self.rawAudioCallbackAvailable = rawAudioCallbackAvailable
     self.recorderFactory = recorderFactory
   }
@@ -149,9 +150,7 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   }
 
   func startRecording(feedID: FeedID, configuration: RecordingConfiguration) throws {
-    guard let capture else {
-      throw RecordingUIError.unavailable
-    }
+    let capture = captureForFeed(feedID)
     guard !capture.hasActiveFeed || capture.isAccepting(feedID: feedID) else {
       throw RecordingUIError.feedNotActive
     }
@@ -215,7 +214,7 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
 
   func stopRecording(feedID: FeedID) throws {
     guard let session = sessions[feedID] else { return }
-    capture?.setRecordingCallbacks(feedID: feedID, callbacks: nil)
+    captureForFeed(feedID).setRecordingCallbacks(feedID: feedID, callbacks: nil)
     do {
       try session.adapter.stop()
       let telemetry = session.adapter.telemetry
@@ -232,7 +231,7 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
       sessions.removeValue(forKey: feedID)
     } catch {
       try? session.output.cancel()
-      capture?.setRecordingCallbacks(feedID: feedID, callbacks: session.adapter.callbacks)
+      captureForFeed(feedID).setRecordingCallbacks(feedID: feedID, callbacks: session.adapter.callbacks)
       throw error
     }
   }
