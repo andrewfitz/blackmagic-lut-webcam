@@ -29,11 +29,26 @@ final class ProgramOutputRoute {
   var hasPendingCut: Bool { switcher.hasPendingCut }
 
   func updateFeeds(_ feedIDs: [FeedID]) {
+    // Descriptor edits (name, LUT, format) arrive through the same coordinator
+    // as topology edits. Do not reset the Program clock or drain a live queue
+    // when the ordered feed identity set is unchanged.
+    if switcher.feedIDs == feedIDs { return }
     let valid = Set(feedIDs)
     let selected = switcher.selectedFeedID.flatMap { valid.contains($0) ? $0 : nil }
     var settings = switcher.settings
     settings.selectedFeedID = selected ?? feedIDs.first
+    // A topology change invalidates every queued source frame. Keeping those
+    // leases would let a removed feed leak into the next Program segment and
+    // would retain pixel buffers until the consumer happened to dequeue them.
+    fanOut.drain()
     switcher = SwitcherCoordinator(settings: settings, feedIDs: feedIDs)
+  }
+
+  /// Updates switch policy on the same coordinator that ingests Program
+  /// frames. FeedCoordinator mirrors this value for persistence/UI, but must
+  /// never maintain a second scheduler with independent pending cuts.
+  func updateSettings(_ settings: SwitcherSettings) {
+    switcher.updateSettings(settings)
   }
 
   @discardableResult
@@ -57,8 +72,18 @@ final class ProgramOutputRoute {
     let decision = switcher.ingest(source)
     let report: FrameFanOutReport
     switch decision {
-    case .accepted, .cutApplied:
-      report = fanOut.publish(frame)
+    case let .accepted(mapped), let .cutApplied(mapped, _):
+      // The scheduler maps each source clock onto one monotonic Program clock.
+      // Wrap the existing pixel buffer with mapped metadata; this intentionally
+      // performs no pixel copy or colour conversion before the CMIO bridge.
+      let mappedMetadata = ProcessedFrameMetadata(
+        presentationTime: mapped.programTime,
+        duration: mapped.programDuration,
+        width: metadata.width,
+        height: metadata.height,
+        pixelFormat: metadata.pixelFormat)
+      let programFrame = ProcessedFrame(payload: frame.payload, metadata: mappedMetadata)
+      report = fanOut.publish(programFrame)
     case .skipped:
       report = FrameFanOutReport(outcomes: [:])
     }
@@ -232,24 +257,26 @@ final class FeedCoordinator {
   func select(_ id: FeedID) -> Bool {
     guard descriptors.contains(where: { $0.id == id }) else { return false }
     selectedFeedID = id
-    if switcher.selectedFeedID == nil { switcher.selectedFeedID = id }
-    switcherCoordinator.updateSettings(switcher)
+    if switcher.selectedFeedID == nil {
+      switcher.selectedFeedID = id
+      programOutput.updateSettings(switcher)
+      syncSwitcherMirror()
+    }
     return true
   }
 
   func update(_ descriptor: FeedDescriptor) {
     guard let index = descriptors.firstIndex(where: { $0.id == descriptor.id }) else {
       descriptors.append(descriptor)
-      switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
       programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+      syncSwitcherMirror()
       publishVirtualCameraRegistry()
       return
     }
     descriptors[index] = descriptor
     sessions[descriptor.id]?.update(descriptor: descriptor)
-    switcherCoordinator = SwitcherCoordinator(settings: switcher,
-      feeds: descriptors)
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }
 
@@ -259,8 +286,8 @@ final class FeedCoordinator {
     while descriptors.contains(where: { $0.id == id }) { id = FeedID(uuid: UUID()) }
     let descriptor = FeedDescriptor(id: id, name: name ?? "Feed \(descriptors.count + 1)")
     descriptors.append(descriptor)
-    switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    syncSwitcherMirror()
     publishVirtualCameraRegistry()
     return id
   }
@@ -278,8 +305,12 @@ final class FeedCoordinator {
     descriptors.remove(at: index)
     if selectedFeedID == id { selectedFeedID = descriptors[0].id }
     if switcher.selectedFeedID == id { switcher.selectedFeedID = selectedFeedID }
-    switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    syncSwitcherMirror()
+    if programConsumerActive {
+      demandCoordinator.selectProgram(feedID: programOutput.selectedFeedID?.rawValue)
+      _ = demandCoordinator.drainTransitions()
+    }
     publishVirtualCameraRegistry()
     return true
   }
@@ -340,18 +371,24 @@ final class FeedCoordinator {
   func setOutputMode(_ mode: FeedOutputMode) {
     guard outputMode != mode else { return }
     outputMode = mode
+    // Rebuild the Program scheduler at the mode boundary so its selected
+    // source and timestamp mapper start from the persisted feed topology.
+    programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }
 
   func setSwitcher(_ settings: SwitcherSettings) {
-    switcher = settings
-    if let selected = settings.selectedFeedID, descriptors.contains(where: { $0.id == selected }) {
-      switcherCoordinator.updateSettings(switcher)
-      publishVirtualCameraRegistry()
-      return
+    var normalized = settings
+    let requested = settings.selectedFeedID.flatMap { candidate in
+      descriptors.contains(where: { $0.id == candidate && $0.enabled }) ? candidate : nil
+    } ?? selectedFeedID
+    normalized.selectedFeedID = requested
+    programOutput.updateSettings(normalized)
+    if outputMode == .program, programOutput.selectedFeedID != requested {
+      _ = programOutput.requestCut(to: requested)
     }
-    switcher.selectedFeedID = selectedFeedID
-    switcherCoordinator.updateSettings(switcher)
+    syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }
 
@@ -359,15 +396,15 @@ final class FeedCoordinator {
   /// after the target frame is acknowledged by `ingestProgramFrame`.
   @discardableResult
   func requestProgramCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
-    let result = switcherCoordinator.requestManualCut(to: feedID)
-    switcher = switcherCoordinator.settings
+    let result = programOutput.requestCut(to: feedID)
+    syncSwitcherMirror()
     return result
   }
 
   @discardableResult
   func evaluateSwitcher(at mediaTime: CMTime) -> SwitcherEvaluation {
-    let result = switcherCoordinator.evaluate(at: mediaTime)
-    switcher = switcherCoordinator.settings
+    let result = programOutput.evaluate(at: mediaTime)
+    syncSwitcherMirror()
     return result
   }
 
@@ -380,12 +417,9 @@ final class FeedCoordinator {
       return nil
     }
     let result = programOutput.ingest(feedID: feedID, frame: frame)
-    switcherCoordinator = programOutput.switcher
-    switcher = switcherCoordinator.settings
+    syncSwitcherMirror()
     if case .cutApplied = result.decision {
       selectedFeedID = feedID
-      switcher.selectedFeedID = feedID
-      switcherCoordinator.updateSettings(switcher)
       if programConsumerActive {
         demandCoordinator.selectProgram(feedID: feedID.rawValue)
       }
@@ -431,6 +465,13 @@ final class FeedCoordinator {
   }
 
   var activeDemandFeedIDs: Set<String> { demandCoordinator.activeFeedIDs }
+
+  /// ProgramOutputRoute owns the live scheduler. Keep the public mirror used
+  /// by persistence and diagnostics synchronized after every route mutation.
+  private func syncSwitcherMirror() {
+    switcherCoordinator = programOutput.switcher
+    switcher = switcherCoordinator.settings
+  }
 
   /// Complete registry state published to the camera extension. Separate
   /// mode exposes one stable device per enabled feed; Program mode exposes one
