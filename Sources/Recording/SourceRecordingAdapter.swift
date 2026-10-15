@@ -132,8 +132,9 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
           duration: duration, signalValid: signalValid) ?? false
       },
       audio: { [weak self] sample in self?.appendEmbeddedAudio(sample: sample) ?? false },
-      rawAudio: { [weak self] sourcePCM32, sampleFrameCount, presentationTime, channelCount in
-        self?.appendEmbeddedAudio(sourcePCM32: sourcePCM32, sampleFrameCount: sampleFrameCount,
+      rawAudio: { [weak self] sourcePCM32, sampleFrameCount, presentationTime, channelCount, bytesPerSample in
+        guard bytesPerSample == EmbeddedAudioFormat.sourceBytesPerSample else { return false }
+        return self?.appendEmbeddedAudio(sourcePCM32: sourcePCM32, sampleFrameCount: sampleFrameCount,
           presentationTime: presentationTime, channelCount: channelCount) ?? false
       })
   }
@@ -141,7 +142,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   struct Callbacks: @unchecked Sendable {
     let video: @Sendable (CVPixelBuffer, CMTime, CMTime, Bool) -> Bool
     let audio: @Sendable (CMSampleBuffer) -> Bool
-    let rawAudio: @Sendable (Data, Int, CMTime, Int) -> Bool
+    let rawAudio: @Sendable (Data, Int, CMTime, Int, Int) -> Bool
   }
 
   private static func makeSample(pixelBuffer: CVPixelBuffer, presentationTime: CMTime,

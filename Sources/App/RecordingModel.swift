@@ -87,6 +87,7 @@ enum RecordingUIError: LocalizedError, Equatable {
   case unavailable
   case outputFolderRequired
   case rawAudioUnavailable
+  case feedNotActive
 
   var errorDescription: String? {
     switch self {
@@ -94,6 +95,8 @@ enum RecordingUIError: LocalizedError, Equatable {
     case .outputFolderRequired: return "Choose an output folder before recording."
     case .rawAudioUnavailable:
       return "Blackmagic raw audio recording is unavailable; video will be recorded without audio."
+    case .feedNotActive:
+      return "Start this feed before recording it. Only an active source feed can produce media."
     }
   }
 }
@@ -142,6 +145,12 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   }
 
   func startRecording(feedID: FeedID, configuration: RecordingConfiguration) throws {
+    guard let capture else {
+      throw RecordingUIError.unavailable
+    }
+    guard !capture.hasActiveFeed || capture.isAccepting(feedID: feedID) else {
+      throw RecordingUIError.feedNotActive
+    }
     guard sessions[feedID] == nil else {
       throw SourceRecordingError.invalidState(.recording, operation: "start recording")
     }
@@ -158,7 +167,7 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
     let recorder = try recorderFactory(sourceConfiguration)
     let adapter = SourceRecordingCallbackAdapter(feedID: sourceConfiguration.feedID, recorder: recorder)
     try adapter.start()
-    capture?.setRecordingCallbacks(feedID: feedID, callbacks: adapter.callbacks)
+    capture.setRecordingCallbacks(feedID: feedID, callbacks: adapter.callbacks)
     sessions[feedID] = Session(adapter: adapter, feedID: feedID)
   }
 

@@ -20,7 +20,8 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var finished = false
   private var lastVideoPTS: CMTime?
   private var lastAudioPTS: CMTime?
-  private var pendingAudio: CMSampleBuffer?
+  private var pendingAudio: [CMSampleBuffer] = []
+  private static let pendingAudioCapacity = 64
 
   init(configuration: SourceRecordingConfiguration) throws {
     self.configuration = configuration
@@ -87,13 +88,13 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         throw SourceRecordingError.unsupportedSample("Audio timestamps moved backwards.")
       }
       // Video establishes the pass-through format hint and therefore must be
-      // admitted before audio starts the file. Keep at most one early packet;
-      // normal DeckLink delivery emits video before its first audio packet.
+      // admitted before audio starts the file. Keep a bounded early packet
+      // queue while VideoToolbox produces its first compressed sample.
       guard let audioInput else {
-        guard pendingAudio == nil else {
+        guard pendingAudio.count < Self.pendingAudioCapacity else {
           throw SourceRecordingError.writerNotReady("Video has not established the pass-through format hint.")
         }
-        pendingAudio = sample
+        pendingAudio.append(sample)
         lastAudioPTS = pts
         return
       }
@@ -117,6 +118,10 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           finished = true
           throw SourceRecordingError.writerFailure("VideoToolbox flush failed (OSStatus \(status)).")
         }
+      }
+      guard pendingAudio.isEmpty else {
+        finished = true
+        throw SourceRecordingError.writerFailure("VideoToolbox finished before the audio input was established.")
       }
       guard let writer else {
         finished = true
@@ -161,7 +166,11 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       throw SourceRecordingError.writerFailure(error.localizedDescription)
     }
     let video = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: videoFormat)
-    let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
+    // Declare the exact packed 48 kHz / 24-bit source format. Passing nil
+    // leaves AVAssetWriter free to choose a converter and can silently reject
+    // the packed 24-bit CMSampleBuffers produced from DeckLink PCM.
+    let audio = AVAssetWriterInput(mediaType: .audio,
+      outputSettings: EmbeddedAudioFormat.assetWriterSettings)
     video.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
     audio.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
     guard writer.canAdd(video), writer.canAdd(audio) else {
@@ -278,10 +287,13 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           throw Self.writerError(writer, fallback: "Video sample append failed.")
         }
         telemetryValue.encodedVideo &+= 1
-        if let pendingAudio, let audioInput {
-          self.pendingAudio = nil
-          guard Self.inputIsReady(audioInput), Self.append(pendingAudio, to: audioInput) else {
-            throw Self.writerError(writer, fallback: "Pending audio sample append failed.")
+        if let audioInput {
+          while let pendingAudio = self.pendingAudio.first {
+            guard Self.inputIsReady(audioInput) else { break }
+            guard Self.append(pendingAudio, to: audioInput) else {
+              throw Self.writerError(writer, fallback: "Pending audio sample append failed.")
+            }
+            self.pendingAudio.removeFirst()
           }
         }
       } catch {

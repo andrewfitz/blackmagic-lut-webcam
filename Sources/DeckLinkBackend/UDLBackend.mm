@@ -374,6 +374,12 @@ class CaptureCallback final : public IDeckLinkInputCallback {
       if (!accepting || !frame) return S_OK;
       bool valid = !(frame->GetFlags() & bmdFrameHasNoInputSource);
       int prior = signalState.exchange(valid ? 1 : 0);
+      // Embedded audio has its own packet clock. Preserve it across video
+      // signal loss and format reconfiguration so recordings do not acquire
+      // an artificial audio hole merely because the paired video frame is
+      // flagged invalid.
+      reportMedia(frame, audioPacket, timeScale, mediaHandler, rawAudioHandler != nil);
+      reportRawAudio(audioPacket, rawAudioHandler);
       if (!valid) {
         if (prior != 0) eventHandler(modeHandler ? @"No HDMI video signal — waiting for the camera to reconnect." :
           @"No video signal. Check the FX3 HDMI output and selected frame rate.");
@@ -420,8 +426,6 @@ class CaptureCallback final : public IDeckLinkInputCallback {
         CVPixelBufferRelease(buffer);
         reportFatal(@"Desktop Video supplied a pixel format incompatible with the native v210 feed."); return S_OK;
       }
-      reportMedia(frame, audioPacket, timeScale, mediaHandler, rawAudioHandler != nil);
-      reportRawAudio(audioPacket, rawAudioHandler);
       // Swift retaining the buffer safely extends the native frame lifetime.
       if (accepting && framesEnabled) {
         if (autoFrameHandler) autoFrameHandler(buffer, CMTimeMake(timestamp, timeScale), CMTimeMake(duration, timeScale), YES);
@@ -455,6 +459,10 @@ static HRESULT startInput(IDeckLinkInput *input, CaptureCallback *callback,
     HRESULT audioStatus = input->EnableAudioInput(bmdAudioSampleRate48kHz,
       rawAudio ? bmdAudioSampleType32bitInteger : bmdAudioSampleType16bitInteger, 2);
     if (audioStatus == S_OK) callback->audioEnabled = true;
+    else if (rawAudio) {
+      stopInput(input, callback);
+      return audioStatus;
+    }
   }
   if (status == S_OK) status = input->StartStreams();
   if (status != S_OK) stopInput(input, callback);

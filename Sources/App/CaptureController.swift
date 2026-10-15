@@ -434,6 +434,14 @@ final class CaptureController: @unchecked Sendable {
     }
   }
 
+  func isAccepting(feedID: FeedID) -> Bool {
+    lock.withLock { accepting && activeFeedID == feedID }
+  }
+
+  var hasActiveFeed: Bool {
+    lock.withLock { accepting && activeFeedID != nil }
+  }
+
   private func stopResources() {
     watchdog?.cancel()
     watchdog = nil
@@ -605,9 +613,10 @@ final class CaptureController: @unchecked Sendable {
       guard generation == token, accepting else { return nil }
       return activeFeedID.flatMap { recordingCallbacks[$0] }
     }
-    if let samples = audio.samples, audio.sampleFrames > 0, audio.channels > 0,
-      audio.bytesPerSample > 0 {
-      _ = recording?.rawAudio(samples, Int(audio.sampleFrames), audio.packetTime, audio.channels)
+    let validRawFormat = audio.bytesPerSample == EmbeddedAudioFormat.sourceBytesPerSample
+    if let samples = audio.samples, audio.sampleFrames > 0, audio.channels > 0, validRawFormat {
+      _ = recording?.rawAudio(samples, Int(audio.sampleFrames), audio.packetTime,
+        audio.channels, audio.bytesPerSample)
     }
     if lock.withLock({ rawAudioProvidesStats }) {
       receiveMedia(CaptureMediaStats(timecode: nil, audioPacketTime: audio.packetTime,
