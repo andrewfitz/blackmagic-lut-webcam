@@ -44,7 +44,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   /// replacing its image buffer, format description, timing, or attachments.
   @discardableResult
   func appendRawVideo(sample: CMSampleBuffer) -> Bool {
-    guard Self.hasValidTiming(sample) else { return false }
+    guard Self.hasValidTiming(sample) else { return reject() }
     return recorder.appendVideo(sample)
   }
 
@@ -60,16 +60,14 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   @discardableResult
   func appendRawVideo(pixelBuffer: CVPixelBuffer, presentationTime: CMTime,
     duration: CMTime, signalValid: Bool = true) -> Bool {
-    guard signalValid else { return false }
+    guard signalValid else { return reject() }
     guard presentationTime.isValid, presentationTime.isNumeric,
       presentationTime.epoch == 0, presentationTime.value >= 0,
       duration.isValid, duration.isNumeric, duration.epoch == 0,
-      duration.value > 0 else {
-      return false
-    }
+      duration.value > 0 else { return reject() }
     guard let sample = Self.makeSample(pixelBuffer: pixelBuffer,
       presentationTime: presentationTime, duration: duration) else {
-      return false
+      return reject()
     }
     return recorder.appendVideo(sample)
   }
@@ -86,7 +84,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   /// timing. The recorder retains the sample until its callback queue drains.
   @discardableResult
   func appendEmbeddedAudio(sample: CMSampleBuffer) -> Bool {
-    guard Self.hasValidTiming(sample) else { return false }
+    guard Self.hasValidTiming(sample) else { return reject() }
     return recorder.appendAudio(sample)
   }
 
@@ -101,7 +99,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   @discardableResult
   func appendEmbeddedAudio(packet: EmbeddedAudioPacket) -> Bool {
     guard let sample = try? EmbeddedAudioRecording.makeSampleBuffer(for: packet) else {
-      return false
+      return reject()
     }
     return recorder.appendAudio(sample)
   }
@@ -120,7 +118,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
     channelCount: Int = EmbeddedAudioFormat.channelCount) -> Bool {
     guard let packet = try? EmbeddedAudioPacket(sourcePCM32: sourcePCM32,
       sampleFrameCount: sampleFrameCount, presentationTime: presentationTime,
-      channelCount: channelCount) else { return false }
+      channelCount: channelCount) else { return reject() }
     return appendEmbeddedAudio(packet: packet)
   }
 
@@ -166,5 +164,10 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
     return presentationTime.isValid && presentationTime.isNumeric &&
       presentationTime.epoch == 0 && presentationTime.value >= 0 &&
       duration.isValid && duration.isNumeric && duration.epoch == 0 && duration.value > 0
+  }
+
+  private func reject() -> Bool {
+    recorder.recordDrop(.invalidSample)
+    return false
   }
 }

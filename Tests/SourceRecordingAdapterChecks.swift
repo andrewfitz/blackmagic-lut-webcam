@@ -69,6 +69,9 @@ private final class AdapterRecordingWriter: SourceRecordingWriter, @unchecked Se
     XCTAssertEqual(adapter.feedID, feedID)
     XCTAssertEqual(adapter.telemetry.enqueuedVideo, 1)
     XCTAssertEqual(adapter.telemetry.appendedVideo, 1)
+    XCTAssertFalse(adapter.appendRawVideo(pixelBuffer: image, presentationTime: pts,
+      duration: duration, signalValid: false))
+    XCTAssertEqual(adapter.telemetry.droppedInvalidSample, 1)
 
     try adapter.stop()
     XCTAssertEqual(adapter.state, .finished)
