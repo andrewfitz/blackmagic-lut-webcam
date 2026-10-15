@@ -44,7 +44,8 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   /// replacing its image buffer, format description, timing, or attachments.
   @discardableResult
   func appendRawVideo(sample: CMSampleBuffer) -> Bool {
-    recorder.appendVideo(sample)
+    guard Self.hasValidTiming(sample) else { return false }
+    return recorder.appendVideo(sample)
   }
 
   /// Convenience spelling for callback code that already owns a sample.
@@ -61,7 +62,9 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
     duration: CMTime, signalValid: Bool = true) -> Bool {
     guard signalValid else { return false }
     guard presentationTime.isValid, presentationTime.isNumeric,
-      duration.isValid, duration.isNumeric, duration.value > 0 else {
+      presentationTime.epoch == 0, presentationTime.value >= 0,
+      duration.isValid, duration.isNumeric, duration.epoch == 0,
+      duration.value > 0 else {
       return false
     }
     guard let sample = Self.makeSample(pixelBuffer: pixelBuffer,
@@ -83,7 +86,8 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   /// timing. The recorder retains the sample until its callback queue drains.
   @discardableResult
   func appendEmbeddedAudio(sample: CMSampleBuffer) -> Bool {
-    recorder.appendAudio(sample)
+    guard Self.hasValidTiming(sample) else { return false }
+    return recorder.appendAudio(sample)
   }
 
   @discardableResult
@@ -154,5 +158,13 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
       sampleBufferOut: &sample)
     guard status == noErr else { return nil }
     return sample
+  }
+
+  private static func hasValidTiming(_ sample: CMSampleBuffer) -> Bool {
+    let presentationTime = CMSampleBufferGetPresentationTimeStamp(sample)
+    let duration = CMSampleBufferGetDuration(sample)
+    return presentationTime.isValid && presentationTime.isNumeric &&
+      presentationTime.epoch == 0 && presentationTime.value >= 0 &&
+      duration.isValid && duration.isNumeric && duration.epoch == 0 && duration.value > 0
   }
 }
