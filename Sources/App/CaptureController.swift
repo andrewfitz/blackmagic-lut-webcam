@@ -24,9 +24,37 @@ struct CaptureUpdate: @unchecked Sendable {
   var displayedFrames: UInt64 = 0
   var rendererDrops: UInt64 = 0
   var previewError: String?
+  var timecode: String?
+  var audioChannels: Int = 0
+  var audioSampleRate: Int = 0
+  var audioPackets: UInt64 = 0
+  var audioSamples: UInt64 = 0
+  var audioBytes: UInt64 = 0
+  var audioDrops: UInt64 = 0
+  var audioPeakLeft: Double = 0
+  var audioPeakRight: Double = 0
+  var audioRMSLeft: Double = 0
+  var audioRMSRight: Double = 0
+  var audioBitrateKbps: Double = 0
+  var audioPresent = false
+  var videoBitrateMbps: Double = 0
+  var videoDrops: UInt64 = 0
   var cameraOutputActive = false
   var cameraMessage = "Virtual camera not connected"
   var stopped = false
+}
+
+struct CaptureMediaStats: @unchecked Sendable {
+  var timecode: String?
+  var audioPacketTime: CMTime
+  var audioSampleFrames: UInt64
+  var audioChannels: Int
+  var leftPeak: Double
+  var rightPeak: Double
+  var leftRMS: Double
+  var rightRMS: Double
+  var audioBytes: UInt64
+  var audioPresent: Bool
 }
 
 // All media resources/configuration are queue-owned. Driver admission is bounded
@@ -70,6 +98,26 @@ final class CaptureController: @unchecked Sendable {
   private var rateFrames: UInt64 = 0
   private var outputFPS: Double = 0
   private var processingMS: Double = 0
+  private var timecode: String?
+  private var audioChannels = 0
+  private var audioSampleRate = 0
+  private var audioPackets: UInt64 = 0
+  private var audioSamples: UInt64 = 0
+  private var audioBytes: UInt64 = 0
+  private var audioDrops: UInt64 = 0
+  private var audioPeakLeft = 0.0
+  private var audioPeakRight = 0.0
+  private var audioRMSLeft = 0.0
+  private var audioRMSRight = 0.0
+  private var audioPresent = false
+  private var lastAudioPacketTime: CMTime?
+  private var lastAudioSampleFrames: UInt64 = 0
+  private var audioRateStart: Double = 0
+  private var audioRateBytes: UInt64 = 0
+  private var audioBitrateKbps = 0.0
+  private var videoRateStart: Double = 0
+  private var videoRateBytes: UInt64 = 0
+  private var videoBitrateMbps = 0.0
   private var lastPublished: Double = 0
   private var cameraConnected = false
   private var reconnectAttempts = 0
@@ -144,6 +192,26 @@ final class CaptureController: @unchecked Sendable {
         self.rateFrames = 0
         self.outputFPS = 0
         self.processingMS = 0
+        self.timecode = nil
+        self.audioChannels = 0
+        self.audioSampleRate = 0
+        self.audioPackets = 0
+        self.audioSamples = 0
+        self.audioBytes = 0
+        self.audioDrops = 0
+        self.audioPeakLeft = 0
+        self.audioPeakRight = 0
+        self.audioRMSLeft = 0
+        self.audioRMSRight = 0
+        self.audioPresent = false
+        self.lastAudioPacketTime = nil
+        self.lastAudioSampleFrames = 0
+        self.audioRateStart = 0
+        self.audioRateBytes = 0
+        self.audioBitrateKbps = 0
+        self.videoRateStart = 0
+        self.videoRateBytes = 0
+        self.videoBitrateMbps = 0
         self.lastPublished = 0
         self.lastLogged = 0
         self.frameRateGate = FrameRateGate()
@@ -196,10 +264,24 @@ final class CaptureController: @unchecked Sendable {
             self.publishCurrent(token: token)
           }
         }
+        let media: (CaptureMediaStats) -> Void = { [weak self] stats in
+            guard let self else { return }
+            self.receiveMedia(stats, token: token)
+          }
         if let automatic = self.services.startAutomatic {
-          try automatic(deviceID, { [weak self] image, pts, duration, valid in
-            self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
-          }, event)
+          if let automaticWithMedia = self.services.startAutomaticWithMedia {
+            try automaticWithMedia(deviceID, { [weak self] image, pts, duration, valid in
+              self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
+            }, media, event)
+          } else {
+            try automatic(deviceID, { [weak self] image, pts, duration, valid in
+              self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
+            }, event)
+          }
+        } else if let startWithMedia = self.services.startWithMedia {
+          try startWithMedia(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
+            self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
+          }, media, event)
         } else {
           try self.services.start(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
             self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
@@ -411,8 +493,50 @@ final class CaptureController: @unchecked Sendable {
     }
   }
 
+  private func receiveMedia(_ stats: CaptureMediaStats, token: UInt64) {
+    queue.async {
+      guard self.isAccepting(token) else { return }
+      self.recordMedia(stats)
+    }
+  }
+
+  private func recordMedia(_ stats: CaptureMediaStats) {
+    timecode = stats.timecode
+    audioChannels = max(0, stats.audioChannels)
+    audioPackets &+= 1
+    audioSamples &+= stats.audioSampleFrames
+    audioBytes &+= stats.audioBytes
+    audioRateBytes &+= stats.audioBytes
+    audioPresent = stats.audioPresent
+    audioPeakLeft = max(0, min(1, stats.leftPeak))
+    audioPeakRight = max(0, min(1, stats.rightPeak))
+    audioRMSLeft = max(0, min(1, stats.leftRMS))
+    audioRMSRight = max(0, min(1, stats.rightRMS))
+    // The DeckLink packet has no explicit sample-rate field. Infer it from
+    // contiguous packet timestamps and use it to account for missing samples.
+    if let prior = lastAudioPacketTime, stats.audioPacketTime.isNumeric,
+      prior.isNumeric, stats.audioSampleFrames > 0 {
+      let elapsed = CMTimeGetSeconds(CMTimeSubtract(stats.audioPacketTime, prior))
+      if elapsed > 0 {
+        let inferred = Double(lastAudioSampleFrames) / elapsed
+        if inferred >= 1_000, inferred <= 384_000 {
+          if audioSampleRate == 0 { audioSampleRate = Int(inferred.rounded()) }
+          if audioSampleRate > 0 {
+            let expected = Int((elapsed * Double(audioSampleRate)).rounded())
+            if expected > Int(lastAudioSampleFrames) {
+              audioDrops &+= UInt64(expected - Int(lastAudioSampleFrames))
+            }
+          }
+        }
+      }
+    }
+    if stats.audioPacketTime.isNumeric { lastAudioPacketTime = stats.audioPacketTime }
+    lastAudioSampleFrames = stats.audioSampleFrames
+  }
+
   private func process(_ frame: CapturedFrame, token: UInt64) {
     let input = frame.image
+    videoRateBytes &+= UInt64(max(0, CVPixelBufferGetDataSize(input)))
     let actual = InputFormat(width: CVPixelBufferGetWidth(input), height: CVPixelBufferGetHeight(input),
       type: CVPixelBufferGetPixelFormatType(input), duration: frame.duration)
     var metadataChanged = detected != actual
@@ -544,6 +668,18 @@ final class CaptureController: @unchecked Sendable {
     outputFPS = rateStart == 0 ? 0 : Double(frames - rateFrames) / elapsed
     rateStart = now
     rateFrames = frames
+    if audioRateStart == 0 { audioRateStart = now }
+    if videoRateStart == 0 { videoRateStart = now }
+    let mediaElapsed = now - audioRateStart
+    if mediaElapsed >= 0.25 {
+      audioBitrateKbps = Double(audioRateBytes) * 8 / mediaElapsed / 1_000
+      audioRateBytes = 0
+      audioRateStart = now
+      let videoElapsed = max(0.001, now - videoRateStart)
+      videoBitrateMbps = Double(videoRateBytes) * 8 / videoElapsed / 1_000_000
+      videoRateBytes = 0
+      videoRateStart = now
+    }
     lastPublished = now
     previewRenderers.filter { previewEnabled && $0.isVisible }.forEach { $0.refreshPerformanceMetrics() }
     if now - lastLogged >= 5 {
@@ -573,6 +709,13 @@ final class CaptureController: @unchecked Sendable {
       outputFPS: outputFPS, displayedFrames: diagnostics.reduce(0) { $0 + $1.rendererFrames },
       rendererDrops: diagnostics.reduce(0) { $0 + $1.rendererDropped },
       previewError: diagnostics.compactMap(\.lastError).first,
+      timecode: timecode, audioChannels: audioChannels, audioSampleRate: audioSampleRate,
+      audioPackets: audioPackets, audioSamples: audioSamples, audioBytes: audioBytes,
+      audioDrops: audioDrops, audioPeakLeft: audioPeakLeft, audioPeakRight: audioPeakRight,
+      audioRMSLeft: audioRMSLeft, audioRMSRight: audioRMSRight,
+      audioBitrateKbps: audioBitrateKbps, audioPresent: audioPresent,
+      videoBitrateMbps: videoBitrateMbps,
+      videoDrops: losses.0 + losses.1 + poolDrops + cameraDrops,
       cameraOutputActive: cameraConnected, cameraMessage: cameraMessage, stopped: stopped)
     DispatchQueue.main.async { [weak self] in
       guard let self, self.isCurrent(token) else { return }
@@ -609,6 +752,9 @@ private struct InputFormat: Equatable {
 
 struct CaptureServices: @unchecked Sendable {
   var start: (String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void, @escaping (String) -> Void) throws -> Void
+  var startWithMedia: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,
+    @escaping (CaptureMediaStats) -> Void,
+    @escaping (String) -> Void) throws -> Void)?
   var stop: () -> Void
   var connect: (PipelineConfiguration, OSType) throws -> Void
   var disconnect: () -> Void
@@ -616,6 +762,9 @@ struct CaptureServices: @unchecked Sendable {
   var preview: ((CMSampleBuffer) -> Void)?
   var didProcess: (Double, Double) -> Void = { _, _ in }
   var startAutomatic: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void, @escaping (String) -> Void) throws -> Void)?
+  var startAutomaticWithMedia: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void,
+    @escaping (CaptureMediaStats) -> Void,
+    @escaping (String) -> Void) throws -> Void)?
   // Known backend storage layout is used only to prepare transport memory;
   // displayed input metadata always comes from received buffers and duration.
   var capturePixelFormat: OSType?
@@ -629,12 +778,30 @@ struct CaptureServices: @unchecked Sendable {
       start: { id, fast, frame, event in
         try backend.start(deviceID: id, inputFast: fast, frameHandler: frame, eventHandler: event)
       },
+      startWithMedia: { id, fast, frame, media, event in
+        try backend.start(deviceID: id, inputFast: fast, frameHandler: frame,
+          mediaHandler: { tc, packetTime, frames, channels, lp, rp, lr, rr, bytes, present in
+            media(CaptureMediaStats(timecode: tc, audioPacketTime: packetTime,
+              audioSampleFrames: UInt64(frames), audioChannels: Int(channels),
+              leftPeak: Double(lp), rightPeak: Double(rp), leftRMS: Double(lr), rightRMS: Double(rr),
+              audioBytes: UInt64(bytes), audioPresent: present))
+          }, eventHandler: event)
+      },
       stop: { backend.stop() },
       connect: { config, format in try sink.connect(configuration: config, passthroughFormat: format) },
       disconnect: { sink.disconnect() },
       send: { try sink.send($0) },
       startAutomatic: { id, frame, event in
         try backend.startAuto(deviceID: id, frameHandler: frame, eventHandler: event)
+      },
+      startAutomaticWithMedia: { id, frame, media, event in
+        try backend.startAuto(deviceID: id, frameHandler: frame,
+          mediaHandler: { tc, packetTime, frames, channels, lp, rp, lr, rr, bytes, present in
+            media(CaptureMediaStats(timecode: tc, audioPacketTime: packetTime,
+              audioSampleFrames: UInt64(frames), audioChannels: Int(channels),
+              leftPeak: Double(lp), rightPeak: Double(rp), leftRMS: Double(lr), rightRMS: Double(rr),
+              audioBytes: UInt64(bytes), audioPresent: present))
+          }, eventHandler: event)
       }, capturePixelFormat: kCVPixelFormatType_422YpCbCr10)
   }
 }
