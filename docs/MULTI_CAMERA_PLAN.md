@@ -280,3 +280,18 @@ Additional verification gates are required for the migration and boundaries:
 - Program cuts during missing signal, pending frames, and rapid coalesced cuts
 - resource-governor refusal/degradation with two active synthetic feeds
 - telemetry reset when a feed stops while another feed continues
+
+## Current implementation status (2026-10-15)
+
+Completed and tested:
+
+- versioned `FeedDescriptor` persistence with deterministic Feed 1 migration
+- Natural Talking Head director with audio/transcript cues, hysteresis, output acknowledgement, and rewind reset handling
+- bounded capture ownership, per-generation backpressure accounting, and frame-rate clock validation
+- DeckLink timing, timecode, embedded-audio metadata, and video-format validation
+- CMIO client-ID ownership and source-client disconnect cleanup
+- versioned feed/program virtual-camera descriptor and registry contracts
+- monotonic Program timestamp mapping, cut coalescing, stale-frame flush signaling, and missing-source handling
+- queue-owned processed-frame fan-out leases with bounded route policies
+
+The native synthetic suite currently passes 142 tests, and the debug app build passes. The remaining integration work is to connect these pure contracts to the runtime multi-feed coordinator, descriptor-driven CMIO device registry, per-route demand leases, Program output route, and per-feed UI. Until those runtime steps land, the existing app still runs one live feed while its persisted model and tested contracts are ready for the refactor.
