@@ -33,6 +33,7 @@ struct ContentView: View {
         ControlPanel {
           RecordingControls(model: recordingModel, feeds: recordingFeeds)
         }
+        ControlPanel { MultiCameraControls(model: model) }
         ControlPanel { PipelineControls(model: model, compact: false) }
         ControlPanel { LUTControls(model: model, compact: false) }
         FeedNotice(model: model)
@@ -185,6 +186,115 @@ struct FeedControls: View {
         FeedDiagnostics(model: model, compact: false).padding(.top, 8)
       }
       .font(.caption).foregroundStyle(.secondary)
+    }
+  }
+}
+
+struct MultiCameraControls: View {
+  let model: AppModel
+
+  private var selectedFeedBinding: Binding<FeedID> {
+    Binding(get: { model.selectedFeedID }, set: { _ = model.selectFeed($0) })
+  }
+
+  private var outputModeBinding: Binding<FeedOutputMode> {
+    Binding(get: { model.outputMode }, set: { model.setOutputMode($0) })
+  }
+
+  private var strategyBinding: Binding<SwitcherStrategy> {
+    Binding(get: { model.switcherSettings.strategy }, set: {
+      var settings = model.switcherSettings
+      settings.strategy = $0
+      model.updateSwitcher(settings)
+    })
+  }
+
+  private var autoSwitchBinding: Binding<Bool> {
+    Binding(get: { model.switcherSettings.automatic }, set: {
+      var settings = model.switcherSettings
+      settings.automatic = $0
+      model.updateSwitcher(settings)
+    })
+  }
+
+  private var intervalBinding: Binding<Double> {
+    Binding(get: { model.switcherSettings.intervalSeconds }, set: {
+      var settings = model.switcherSettings
+      settings.intervalSeconds = $0
+      model.updateSwitcher(settings)
+    })
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text("Cameras").font(.callout.weight(.medium))
+        Spacer()
+        Button(action: { _ = model.addFeed() }) {
+          Label("Add", systemImage: "plus")
+        }
+        .buttonStyle(.borderless).controlSize(.small)
+        .disabled(!model.canEditFeedTopology)
+      }
+
+      HStack(spacing: 6) {
+        Picker("Feed", selection: selectedFeedBinding) {
+          ForEach(model.feedDescriptors) { feed in
+            Text(feed.name).tag(feed.id)
+          }
+        }
+        .labelsHidden().frame(maxWidth: .infinity)
+        Button {
+          _ = model.removeFeed(model.selectedFeedID)
+        } label: {
+          Image(systemName: "trash")
+        }
+        .buttonStyle(.borderless).controlSize(.small)
+        .disabled(!model.canEditFeedTopology || model.feedDescriptors.count < 2)
+        .help("Remove selected feed")
+      }
+
+      TextField("Feed name", text: Binding(
+        get: { model.selectedFeedName },
+        set: { _ = model.renameFeed(model.selectedFeedID, name: $0) }))
+        .textFieldStyle(.roundedBorder).disabled(!model.canEditFeedTopology)
+
+      Picker("Output", selection: outputModeBinding) {
+        Text("Separate cameras").tag(FeedOutputMode.separateCameras)
+        Text("Program / switcher").tag(FeedOutputMode.program)
+      }
+      .disabled(model.running || !model.canEditFeedTopology)
+
+      if model.outputMode == .program {
+        Divider()
+        Text("Program switcher").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+        Toggle("Automatic switching", isOn: autoSwitchBinding)
+          .toggleStyle(.switch).controlSize(.mini)
+        Picker("Strategy", selection: strategyBinding) {
+          Text("Manual").tag(SwitcherStrategy.manual)
+          Text("Fixed interval").tag(SwitcherStrategy.fixedInterval)
+          Text("Dynamic analysis (later)").tag(SwitcherStrategy.dynamicAnalysis)
+        }
+        .disabled(!model.switcherSettings.automatic)
+        if model.switcherSettings.automatic && model.switcherSettings.strategy == .fixedInterval {
+          HStack {
+            Text("Every (model.switcherSettings.intervalSeconds, specifier: "%.1f")s")
+              .font(.caption2).foregroundStyle(.secondary)
+            Slider(value: intervalBinding, in: 1...30, step: 0.5)
+          }
+        }
+        HStack(spacing: 5) {
+          ForEach(model.feedDescriptors.filter(\.enabled)) { feed in
+            Button(feed.name) { _ = model.requestProgramCut(to: feed.id) }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .tint(feed.id == model.switcherSelectedFeedID ? .accentColor : .secondary)
+          }
+        }
+        if model.switcherStatus == "Coming later." {
+          Text(model.switcherStatus).font(.caption2).foregroundStyle(.secondary)
+        }
+      }
     }
   }
 }

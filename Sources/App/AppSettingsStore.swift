@@ -27,12 +27,12 @@ struct FeedID: RawRepresentable, Hashable, Codable, Sendable, Identifiable {
   static let primary = FeedID(rawValue: "00000000-0000-0000-0000-000000000001")
 }
 
-enum FeedOutputMode: String, Codable, Equatable, Sendable {
+enum FeedOutputMode: String, Codable, Equatable, Hashable, Sendable {
   case separateCameras
   case program
 }
 
-enum SwitcherStrategy: String, Codable, Equatable, Sendable {
+enum SwitcherStrategy: String, Codable, Equatable, Hashable, Sendable {
   case manual
   case fixedInterval
   case dynamicAnalysis
