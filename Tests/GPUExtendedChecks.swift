@@ -331,6 +331,10 @@ private final class GPUReleaseCounter: @unchecked Sendable {
       let after = processor.packedInputDiagnostics
       XCTAssertEqual(after.noCopyFrames - before.noCopyFrames, expectsNoCopy ? 1 : 0)
       XCTAssertEqual(after.copiedFrames - before.copiedFrames, expectsNoCopy ? 0 : 1)
+      if stride > 10240 {
+        XCTAssertEqual(processor.workingResourceDiagnostics.packedCopyBytes, 10240 * 2160,
+          "Fallback staging should omit producer row padding")
+      }
       CVPixelBufferLockBaseAddress(output, .readOnly)
       let rowStride = CVPixelBufferGetBytesPerRowOfPlane(output, 0) / 2
       let words = CVPixelBufferGetBaseAddressOfPlane(output, 0)!.assumingMemoryBound(to: UInt16.self)
