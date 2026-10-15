@@ -3,12 +3,44 @@
 #include <string>
 
 #if BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
+class FakeTimecode final : public IDeckLinkTimecode {
+ public:
+  std::atomic<ULONG> references{1};
+  CFStringRef value = CFSTR("01:02:03:04");
+  ~FakeTimecode() override = default;
+  HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
+  ULONG AddRef() override { return ++references; }
+  ULONG Release() override { ULONG n = --references; if (!n) delete this; return n; }
+  BMDTimecodeBCD GetBCD() override { return 0; }
+  HRESULT GetComponents(uint8_t *hours, uint8_t *minutes, uint8_t *seconds, uint8_t *frames) override {
+    if (hours) *hours = 1; if (minutes) *minutes = 2; if (seconds) *seconds = 3; if (frames) *frames = 4; return S_OK;
+  }
+  HRESULT GetString(CFStringRef *result) override { if (!result) return E_INVALIDARG; *result = static_cast<CFStringRef>(CFRetain(value)); return S_OK; }
+  BMDTimecodeFlags GetFlags() override { return bmdTimecodeIsDropFrame; }
+  HRESULT GetTimecodeUserBits(BMDTimecodeUserBits *bits) override { if (bits) *bits = 0; return S_OK; }
+};
+
+class FakeAudioPacket final : public IDeckLinkAudioInputPacket {
+ public:
+  std::atomic<ULONG> references{1};
+  std::vector<int16_t> samples;
+  BMDTimeValue packetTime = 960;
+  explicit FakeAudioPacket(std::initializer_list<int16_t> values) : samples(values) {}
+  HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
+  ULONG AddRef() override { return ++references; }
+  ULONG Release() override { ULONG n = --references; if (!n) delete this; return n; }
+  long GetSampleFrameCount() override { return static_cast<long>(samples.size() / 2); }
+  HRESULT GetBytes(void **result) override { if (!result) return E_INVALIDARG; *result = samples.data(); return S_OK; }
+  HRESULT GetPacketTime(BMDTimeValue *result, BMDTimeScale) override { if (!result) return E_INVALIDARG; *result = packetTime; return S_OK; }
+};
+
 class FakeFrame final : public IDeckLinkVideoInputFrame {
  public:
   std::atomic<ULONG> references{1};
   bool *destroyed;
   std::vector<uint8_t> bytes = std::vector<uint8_t>(10240 * 2160, 0);
   bool noSignal = false, invalidTime = false, badBytes = false;
+  FakeTimecode *timecode = nullptr;
   BMDTimeValue frameDuration = 1001;
   long width = 3840;
   FakeFrame(bool *result) : destroyed(result) {}
@@ -22,7 +54,10 @@ class FakeFrame final : public IDeckLinkVideoInputFrame {
   BMDPixelFormat GetPixelFormat() override { return bmdFormat10BitYUV; }
   BMDFrameFlags GetFlags() override { return noSignal ? bmdFrameHasNoInputSource : bmdFrameFlagDefault; }
   HRESULT GetBytes(void **result) override { *result = bytes.data(); return badBytes ? E_FAIL : S_OK; }
-  HRESULT GetTimecode(BMDTimecodeFormat, IDeckLinkTimecode **) override { return E_NOTIMPL; }
+  HRESULT GetTimecode(BMDTimecodeFormat, IDeckLinkTimecode **result) override {
+    if (!result || !timecode) return E_NOTIMPL;
+    timecode->AddRef(); *result = timecode; return S_OK;
+  }
   HRESULT GetAncillaryData(IDeckLinkVideoFrameAncillary **) override { return E_NOTIMPL; }
   HRESULT GetStreamTime(BMDTimeValue *pts, BMDTimeValue *duration, BMDTimeScale) override {
     *pts = 123123; *duration = frameDuration; return invalidTime ? E_FAIL : S_OK;

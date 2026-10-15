@@ -17,6 +17,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly, copy) NSArray<UDLMode *> *modes;
 @end
 
+typedef void (^UDLMediaStatsHandler)(NSString *_Nullable timecode, CMTime audioPacketTime,
+  NSUInteger audioSampleFrames, NSUInteger audioChannels, float leftPeak, float rightPeak,
+  float leftRMS, float rightRMS, NSUInteger audioBytes, BOOL audioPresent);
+
 // Calls start/stop on one control queue. Frames execute on Blackmagic's
 // callback thread; events may also use the native control queue. Handlers must
 // return promptly: reject a frame while processing is
@@ -29,11 +33,24 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)startWithDeviceID:(NSString *)deviceID
                inputFast:(BOOL)inputFast
             frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
+             mediaHandler:(UDLMediaStatsHandler _Nullable)mediaHandler
+            eventHandler:(void (^)(NSString *message))eventHandler
+                   error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:mediaHandler:eventHandler:));
+- (BOOL)startWithDeviceID:(NSString *)deviceID
+               inputFast:(BOOL)inputFast
+            frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
             eventHandler:(void (^)(NSString *message))eventHandler
                    error:(NSError *_Nullable *_Nullable)error
   NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:eventHandler:));
 // Automatically follows supported HDMI source modes. actualDuration comes
 // from the source frame's stream time, never a user-selected expected rate.
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+                frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
+                 mediaHandler:(UDLMediaStatsHandler _Nullable)mediaHandler
+                eventHandler:(void (^)(NSString *message))eventHandler
+                       error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(startAuto(deviceID:frameHandler:mediaHandler:eventHandler:));
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
                 frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
                 eventHandler:(void (^)(NSString *message))eventHandler
