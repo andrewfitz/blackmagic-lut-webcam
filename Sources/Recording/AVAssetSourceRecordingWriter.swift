@@ -253,8 +253,13 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           "VideoToolbox rejected real-time encoding for \(configuration.videoProfile.displayName).")
       }
     }
-    guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering,
-      value: kCFBooleanFalse) == noErr else {
+    // ProRes encoders on macOS expose a fixed no-reordering policy and reject
+    // this property even though their output is already intra-frame. HEVC
+    // must accept it because the source recorder relies on deterministic PTS.
+    let noReorderingStatus = VTSessionSetProperty(session,
+      key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+    if configuration.videoProfile.codecType == kCMVideoCodecType_HEVC,
+      noReorderingStatus != noErr {
       VTCompressionSessionInvalidate(session)
       throw SourceRecordingError.writerFailure("VideoToolbox rejected the no-reordering source contract.")
     }
