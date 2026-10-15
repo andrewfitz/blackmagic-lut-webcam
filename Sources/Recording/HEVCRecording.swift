@@ -62,7 +62,7 @@ enum HEVCRecordingError: LocalizedError, Equatable {
 
   var errorDescription: String? {
     switch self {
-    case .invalidDimensions: return "HEVC recording dimensions must be positive."
+    case .invalidDimensions: return "HEVC Main 10 4:2:2 recording dimensions must be positive, even, and fit Core Media limits."
     case .invalidFrameRate: return "HEVC recording frame rate must be finite and positive."
     case .unsupportedProfile(let profile):
       return "No VideoToolbox encoder supports the requested \(profile.rawValue) profile."
@@ -146,7 +146,10 @@ protocol HEVCEncoderCatalog {
 /// 10-bit 4:2:2 input format is rejected at session creation time.
 struct VideoToolboxHEVCEncoderCatalog: HEVCEncoderCatalog {
   func candidates(width: Int, height: Int, profile: HEVCRecordingProfile) throws -> [HEVCEncoderCandidate] {
-    guard width > 0, height > 0 else { throw HEVCRecordingError.invalidDimensions }
+    guard width > 0, height > 0, width <= Int(Int32.max), height <= Int(Int32.max),
+      width.isMultiple(of: 2), height.isMultiple(of: 2) else {
+      throw HEVCRecordingError.invalidDimensions
+    }
     var encoderList: CFArray?
     let listStatus = VTCopyVideoEncoderList(nil, &encoderList)
     guard listStatus == noErr else { throw HEVCRecordingError.capabilityProbeFailed(listStatus) }
@@ -230,7 +233,9 @@ struct HEVCRecordingCapabilityProbe {
   }
 
   func selectEncoder(for configuration: HEVCRecordingConfiguration) throws -> HEVCEncoderSelection {
-    guard configuration.width > 0, configuration.height > 0 else {
+    guard configuration.width > 0, configuration.height > 0,
+      configuration.width <= Int(Int32.max), configuration.height <= Int(Int32.max),
+      configuration.width.isMultiple(of: 2), configuration.height.isMultiple(of: 2) else {
       throw HEVCRecordingError.invalidDimensions
     }
     guard configuration.frameRate.isFinite, configuration.frameRate > 0 else {
