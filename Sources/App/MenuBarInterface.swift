@@ -29,6 +29,7 @@ struct MenuBarInterface: View {
         StartStopButton(model: model).controlSize(.small)
       }
       PipelineEnableControl(model: model)
+      AutomaticFeedControl(model: model)
       Divider()
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {

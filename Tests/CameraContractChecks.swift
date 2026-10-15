@@ -4,6 +4,57 @@ import CoreVideo
 import XCTest
 
 @objcMembers final class CameraContractChecks: XCTestCase {
+  func testAuthorizedProducerCanNegotiateAfterConsumerStarts() throws {
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false)
+    try camera.queue.sync {
+      try camera.setProperties(index: 0, frameDuration: VideoContract.slowDuration)
+      try camera.source.startStream()
+      camera.sink.beginConsumption { _ in }
+      let fast = try sample()
+      XCTAssertFalse(camera.receive(fast, discontinuity: []), "Ordinary ingress cannot renegotiate")
+      XCTAssertTrue(camera.receive(fast, discontinuity: [], producerCanNegotiate: true))
+      XCTAssertEqual(camera.duration, VideoContract.fastDuration)
+      let tenBit = try sample(width: 3840, height: 2160,
+        pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+      XCTAssertTrue(camera.receive(tenBit, discontinuity: [], producerCanNegotiate: true))
+      XCTAssertEqual(camera.activeIndex, 5)
+      XCTAssertTrue(camera.receive(tenBit, discontinuity: []), "Contract remains strict after negotiation")
+      let invalidRate = try sample(duration: CMTime(value: 1, timescale: 60))
+      XCTAssertFalse(camera.receive(invalidRate, discontinuity: [], producerCanNegotiate: true))
+      XCTAssertEqual(camera.activeIndex, 5, "Invalid producer request must not partially change the contract")
+      XCTAssertEqual(camera.duration, VideoContract.fastDuration)
+      camera.sink.stopConsumption()
+      try camera.source.stopStream()
+    }
+  }
+
+  func testDemandTracksSourceConsumersAndIgnoresProducer() throws {
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false)
+    let property = CMIOExtensionProperty(rawValue: VideoContract.demandProperty)
+    func demand() throws -> String? {
+      let properties = try camera.source.streamProperties(forProperties: [property])
+      XCTAssertTrue(properties.propertiesDictionary[property]?.attributes?.isReadOnly == true)
+      return properties.propertiesDictionary[property]?.value as? String
+    }
+    try camera.queue.sync {
+      XCTAssertTrue(camera.source.availableProperties.contains(property))
+      XCTAssertFalse(camera.sink.availableProperties.contains(property))
+      XCTAssertEqual(try demand(), "0")
+      camera.sink.beginConsumption { _ in }
+      XCTAssertEqual(try demand(), "0", "Producer must not keep itself awake")
+      try camera.source.startStream()
+      try camera.source.startStream()
+      XCTAssertEqual(try demand(), "1")
+      try camera.source.stopStream()
+      XCTAssertEqual(try demand(), "1", "One remaining viewer keeps capture requested")
+      try camera.source.stopStream()
+      XCTAssertEqual(try demand(), "0")
+      try camera.source.stopStream()
+      XCTAssertEqual(try demand(), "0")
+      camera.sink.stopConsumption()
+    }
+  }
+
   private func sample(width: Int = 1920, height: Int = 1080,
     pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
     time: CMTime = CMTime(value: 60_000, timescale: 60_000),

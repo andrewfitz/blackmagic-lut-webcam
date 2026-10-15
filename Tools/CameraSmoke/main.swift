@@ -1,5 +1,6 @@
-// Synthetic installed-extension IPC check. Never opens a physical camera,
-// displays an image, writes media, or submits a system-extension request.
+// Installed-extension IPC checks. --run uses synthetic pixels; --consumer
+// requests the source only, allowing the host's automatic feed to start.
+// Neither mode displays/records images or submits an extension request.
 import CoreMediaIO
 import Foundation
 import Security
@@ -338,5 +339,42 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   log("CMIO_SMOKE PASS sent=\(sent) received=\(received) size=\(mode.width)x\(mode.height) format=\(VideoContract.fourCC(mode.format)) fps=\(fps) exactPixels=true exactPTS=true retries=\(retries)")
 }
 
-do { try smoke() }
+func consumerRequest(seconds: Double) throws {
+  try require(seconds >= 1 && seconds <= 45, "Consumer duration must be 1…45 seconds.")
+  DispatchQueue.global().asyncAfter(deadline: .now() + 60) { _exit(124) }
+  var visibility = address(kCMIOHardwarePropertyAllowScreenCaptureDevices)
+  var allow: UInt32 = 1
+  try check(CMIOObjectSetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &visibility,
+    0, nil, UInt32(MemoryLayout<UInt32>.size), &allow), "Enumerate virtual cameras")
+  let source = try SourceQueue()
+  defer { source.stop() }
+  let deadline = now() + seconds
+  var count = 0
+  var previous: CMTime?
+  var discontinuities = 0
+  var description = ""
+  while now() < deadline {
+    if let sample = source.next() {
+      let time = CMSampleBufferGetPresentationTimeStamp(sample)
+      try require(time.isNumeric, "Consumer received invalid timestamp.")
+      if let previous, CMTimeCompare(time, previous) <= 0 { discontinuities += 1 }
+      previous = time
+      count += 1
+      if let format = CMSampleBufferGetFormatDescription(sample) {
+        let size = CMVideoFormatDescriptionGetDimensions(format)
+        description = "\(size.width)x\(size.height) \(VideoContract.fourCC(CMFormatDescriptionGetMediaSubType(format)))"
+      }
+    } else { pollPause() }
+  }
+  try check(source.stop(), "Stop requested source")
+  try require(count > 0, "Consumer received no frames.")
+  log("CMIO_CONSUMER PASS frames=\(count) lastFormat=\(description) nonmonotonicPTS=\(discontinuities) duration=\(seconds) imagesRead=false")
+}
+
+do {
+  let args = Array(CommandLine.arguments.dropFirst())
+  if args.count == 2, args[0] == "--consumer", let seconds = Double(args[1]) {
+    try consumerRequest(seconds: seconds)
+  } else { try smoke() }
+}
 catch { fputs("CMIO_SMOKE FAIL \(error.localizedDescription)\n", stderr); exit(1) }

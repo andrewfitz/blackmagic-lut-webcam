@@ -7,6 +7,9 @@ enum VideoContract {
   static let sinkName = "UltraStudio LUT Input"
   static let deviceUID = "org.ultrastudiolut.camera.device"
   static let extensionID = "org.ultrastudiolut.app.camera"
+  // Read-only source demand, independent of the host's producer/sink stream.
+  static let demandProperty = "4cc_udmd_glob_0000"
+  static let demandSelector: UInt32 = 0x75646d64 // 'udmd'
   static let slowDuration = CMTime(value: 1001, timescale: 30_000)
   static let fastDuration = CMTime(value: 1001, timescale: 60_000)
   static let captureAdmissionLimit = 12

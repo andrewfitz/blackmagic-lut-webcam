@@ -122,7 +122,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   }
   func setProviderProperties(_ properties: CMIOExtensionProviderProperties) throws {}
 
-  func setProperties(index: Int?, frameDuration: CMTime?) throws {
+  func setProperties(index: Int?, frameDuration: CMTime?, fromProducer: Bool = false) throws {
     let nextIndex = index ?? activeIndex
     guard formats.indices.contains(nextIndex) else { throw VideoError.message("Unsupported camera format.") }
     let nextDuration: CMTime
@@ -136,7 +136,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     } else { nextDuration = duration }
     // Validate the complete request before modifying either property. The host
     // selects the common source/sink contract before starting the producer.
-    guard !sink.consuming || (nextIndex == activeIndex && nextDuration == duration) else {
+    guard fromProducer || !sink.consuming || (nextIndex == activeIndex && nextDuration == duration) else {
       throw VideoError.message("Stop capture in UltraStudio LUT before changing the output format or frame rate.")
     }
     var changes: [CMIOExtensionProperty: CMIOExtensionPropertyState<AnyObject>] = [:]
@@ -164,6 +164,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     nextStandby = .invalid
     guard consumers > 0 else {
       lastOutput = .invalid
+      black = nil
       return
     }
     guard automaticTimers else { return }
@@ -178,18 +179,31 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   // preserving metadata and timestamps, instead of sampling latest on another
   // free-running clock (which duplicates and drops live frames).
   @discardableResult
-  func receive(_ sample: CMSampleBuffer, discontinuity: CMIOExtensionStream.DiscontinuityFlags) -> Bool {
+  func receive(_ sample: CMSampleBuffer, discontinuity: CMIOExtensionStream.DiscontinuityFlags,
+    producerCanNegotiate: Bool = false) -> Bool {
     guard CMSampleBufferDataIsReady(sample), let image = CMSampleBufferGetImageBuffer(sample) else { return false }
     guard (try? VideoBufferLayout.validate(image)) != nil else { return false }
-    let expected = formats[activeIndex].formatDescription
-    let dimensions = CMVideoFormatDescriptionGetDimensions(expected)
     let time = CMSampleBufferGetPresentationTimeStamp(sample)
     let sampleDuration = CMSampleBufferGetDuration(sample)
-    guard CVPixelBufferGetWidth(image) == dimensions.width,
-      CVPixelBufferGetHeight(image) == dimensions.height,
-      CVPixelBufferGetPixelFormatType(image) == CMFormatDescriptionGetMediaSubType(expected),
-      time.isNumeric, time.epoch == 0, time.seconds >= 0,
-      sampleDuration.isNumeric, abs(sampleDuration.seconds - duration.seconds) < 0.000001 else { return false }
+    guard time.isNumeric, time.epoch == 0, time.seconds >= 0,
+      sampleDuration.isNumeric, sampleDuration.epoch == 0 else { return false }
+    let expected = formats[activeIndex].formatDescription
+    let dimensions = CMVideoFormatDescriptionGetDimensions(expected)
+    if CVPixelBufferGetWidth(image) != dimensions.width || CVPixelBufferGetHeight(image) != dimensions.height ||
+      CVPixelBufferGetPixelFormatType(image) != CMFormatDescriptionGetMediaSubType(expected) ||
+      abs(sampleDuration.seconds - duration.seconds) >= 0.000001 {
+      // Only the signature-authorized sink client can establish its output
+      // contract from a frame. This handles a camera app already holding CMIO
+      // device control when the producer starts. Generic ingress stays strict.
+      guard producerCanNegotiate, let index = formats.firstIndex(where: {
+        let description = $0.formatDescription
+        let size = CMVideoFormatDescriptionGetDimensions(description)
+        return size.width == CVPixelBufferGetWidth(image) && size.height == CVPixelBufferGetHeight(image) &&
+          CMFormatDescriptionGetMediaSubType(description) == CVPixelBufferGetPixelFormatType(image)
+      }) else { return false }
+      do { try setProperties(index: index, frameDuration: sampleDuration, fromProducer: true) }
+      catch { return false }
+    }
     latest = image
     receivedAt = clock()
     nextStandby = .invalid
@@ -334,6 +348,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   var formats: [CMIOExtensionStreamFormat] { owner.formats }
   var availableProperties: Set<CMIOExtensionProperty> {
     var properties: Set<CMIOExtensionProperty> = [.streamActiveFormatIndex, .streamFrameDuration]
+    if !isSink { properties.insert(CMIOExtensionProperty(rawValue: VideoContract.demandProperty)) }
     if isSink { properties.formUnion([.streamSinkBufferQueueSize, .streamSinkBuffersRequiredForStartup, .streamSinkEndOfData]) }
     return properties
   }
@@ -341,12 +356,23 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     let result = CMIOExtensionStreamProperties(dictionary: [:])
     result.activeFormatIndex = owner.activeIndex
     result.frameDuration = owner.duration
+    if !isSink {
+      result.setPropertyState(demandState, forProperty: CMIOExtensionProperty(rawValue: VideoContract.demandProperty))
+    }
     if isSink {
       result.sinkBufferQueueSize = 3
       result.sinkBuffersRequiredForStartup = 1
       result.sinkEndOfData = 0
     }
     return result
+  }
+  private var demandState: CMIOExtensionPropertyState<AnyObject> {
+    CMIOExtensionPropertyState(value: (owner.consumers > 0 ? "1" : "0") as NSString,
+      attributes: CMIOExtensionPropertyAttributes(minValue: nil, maxValue: nil, validValues: nil, readOnly: true))
+  }
+
+  private func publishDemand() {
+    stream.notifyPropertiesChanged([CMIOExtensionProperty(rawValue: VideoContract.demandProperty): demandState])
   }
   func setStreamProperties(_ properties: CMIOExtensionStreamProperties) throws {
     try owner.setProperties(index: properties.activeFormatIndex, frameDuration: properties.frameDuration)
@@ -392,14 +418,15 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     } else {
       owner.consumers += 1
       // An additional viewer does not reset the clock of existing viewers.
-      if owner.consumers == 1 { owner.restartTimer() }
+      if owner.consumers == 1 { owner.restartTimer(); publishDemand() }
     }
   }
   func stopStream() throws {
     if isSink { stopConsumption() }
     else {
+      guard owner.consumers > 0 else { return }
       owner.consumers = max(0, owner.consumers - 1)
-      if owner.consumers == 0 { owner.restartTimer() }
+      if owner.consumers == 0 { owner.restartTimer(); publishDemand() }
     }
   }
 
@@ -441,7 +468,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
         guard self.consuming, self.generation == requestedGeneration else { return }
         self.consumePending = false
         if let sample = received.sample {
-          if !self.owner.receive(sample, discontinuity: discontinuity) {
+          if !self.owner.receive(sample, discontinuity: discontinuity, producerCanNegotiate: self.client != nil) {
             self.owner.logger.error("Camera input did not match the negotiated format, frame rate or timestamp.")
           }
           self.stream.notifyScheduledOutputChanged(CMIOExtensionScheduledOutput(sequenceNumber: sequence,

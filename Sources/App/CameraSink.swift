@@ -257,16 +257,27 @@ final class CameraSink {
         let sourceStream = namedStreams.first(where: { $0.1 == VideoContract.cameraName })?.0 else {
         throw VideoError.message("The virtual camera does not publish its source and input streams.")
       }
-      for stream in [sinkStream, sourceStream] {
-        var address = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIOStreamPropertyFormatDescription),
-          mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
-        var description = Unmanaged.passUnretained(format).toOpaque()
-        try check(CMIOObjectSetPropertyData(stream, &address, 0, nil,
-          UInt32(MemoryLayout<CMVideoFormatDescription>.size), &description), "Set virtual camera format")
-        address.mSelector = UInt32(kCMIOStreamPropertyFrameRate)
-        var rate = 1 / configuration.duration.seconds
-        try check(CMIOObjectSetPropertyData(stream, &address, 0, nil, UInt32(MemoryLayout<Double>.size), &rate),
-          "Set virtual camera frame rate")
+      // AVFoundation clients such as Zoom claim device control before starting
+      // the source. In automatic mode the producer necessarily arrives later.
+      // The extension can negotiate our authorized producer's sample contract
+      // itself; don't require stealing another client's device-control lease.
+      do {
+        if !controlledByAnotherProcess(id) {
+          for stream in [sinkStream, sourceStream] {
+            var address = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIOStreamPropertyFormatDescription),
+              mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
+            var description = Unmanaged.passUnretained(format).toOpaque()
+            try check(CMIOObjectSetPropertyData(stream, &address, 0, nil,
+              UInt32(MemoryLayout<CMVideoFormatDescription>.size), &description), "Set virtual camera format")
+            address.mSelector = UInt32(kCMIOStreamPropertyFrameRate)
+            var rate = 1 / configuration.duration.seconds
+            try check(CMIOObjectSetPropertyData(stream, &address, 0, nil, UInt32(MemoryLayout<Double>.size), &rate),
+              "Set virtual camera frame rate")
+          }
+        }
+      } catch {
+        // Also handle Zoom acquiring control between the read and setter.
+        guard controlledByAnotherProcess(id) else { throw error }
       }
       var unmanaged: Unmanaged<CMSimpleQueue>?
       try check(CMIOStreamCopyBufferQueue(sinkStream, cameraSinkQueueAltered, nil, &unmanaged), "Open camera queue")
@@ -310,6 +321,15 @@ final class CameraSink {
     stager = CameraFrameStager()
     deviceID = 0
     streamID = 0
+  }
+
+  private func controlledByAnotherProcess(_ device: CMIODeviceID) -> Bool {
+    var property = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIODevicePropertyDeviceControl),
+      mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
+    var pid: pid_t = -1
+    var size = UInt32(MemoryLayout<pid_t>.size)
+    guard CMIOObjectGetPropertyData(device, &property, 0, nil, size, &size, &pid) == noErr else { return false }
+    return pid > 0 && pid != getpid()
   }
 
   private func ids(_ object: CMIOObjectID, selector: Int) throws -> [UInt32] {

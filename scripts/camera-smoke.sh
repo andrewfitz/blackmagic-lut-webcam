@@ -4,8 +4,8 @@
 # authorization requires the explicit local development extension build.
 # This script never installs/activates extensions or opens physical devices.
 set -euo pipefail
-if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --run && "$1" != --full ) ]]; then
-  echo 'Usage: camera-smoke.sh [--run | --full]' >&2
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --run && "$1" != --full && "$1" != --consumer ) ]]; then
+  echo 'Usage: camera-smoke.sh [--run | --full | --consumer]' >&2
   exit 2
 fi
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,10 +28,11 @@ xcrun swiftc -O -swift-version 5 -strict-concurrency=complete -warnings-as-error
 codesign --force --sign - --identifier org.ultrastudiolut.app "$smoke_root/camera-smoke" >> "$compile_log" 2>&1
 codesign --verify --strict "$smoke_root/camera-smoke" >> "$compile_log" 2>&1
 echo "Synthetic camera helper built: $smoke_root/camera-smoke"
-if [[ "${1:-}" == --run || "${1:-}" == --full ]]; then
+if [[ "${1:-}" == --run || "${1:-}" == --full || "${1:-}" == --consumer ]]; then
   run_log="$smoke_root/logs/run-$receipt.log"
   arguments=(--run)
   if [[ "$1" == --full ]]; then arguments+=(--full); fi
+  if [[ "$1" == --consumer ]]; then arguments=(--consumer 20); fi
   "$smoke_root/camera-smoke" "${arguments[@]}" > "$run_log" 2>&1 || { cat "$run_log"; exit 1; }
   cat "$run_log"
 fi

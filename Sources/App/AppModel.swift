@@ -35,6 +35,17 @@ final class AppModel {
       capture.setPreviewEnabled(previewEnabled)
     }
   }
+  var automaticFeedEnabled = false {
+    didSet {
+      guard automaticFeedEnabled != oldValue, !restoringSettings else { return }
+      saveSettings()
+      automaticPolicy = AutomaticFeedPolicy()
+      cameraDemandError = nil
+      if automaticFeedEnabled { demandMonitor.start() }
+      else { demandMonitor.stop() }
+    }
+  }
+  private(set) var cameraDemandError: String?
   var lutTitle = "No LUT loaded"
   private(set) var lutFileName: String?
   private(set) var lutError: String?
@@ -52,6 +63,8 @@ final class AppModel {
   private var restoringSettings = true
   private var lutBookmark: Data?
   private var rememberedLUTEnabled = false
+  private let demandMonitor = CameraDemandMonitor()
+  private var automaticPolicy = AutomaticFeedPolicy()
 
   init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader()) {
     let renderer = VideoPreviewRenderer()
@@ -70,6 +83,7 @@ final class AppModel {
     gamut = saved.gamut
     pipelineEnabled = saved.pipelineEnabled
     previewEnabled = saved.previewEnabled
+    automaticFeedEnabled = saved.automaticFeed ?? false
     lutBookmark = saved.lutBookmark
     restoringSettings = false
     capture.setPreviewEnabled(previewEnabled)
@@ -89,6 +103,13 @@ final class AppModel {
     }
     refresh()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
+    demandMonitor.onChange = { [weak self] requested, error in
+      guard let self, self.automaticFeedEnabled else { return }
+      self.cameraDemandError = error
+      self.automaticPolicy.demand(requested == true)
+      self.reconcileAutomaticFeed()
+    }
+    if automaticFeedEnabled { demandMonitor.start() }
   }
 
   func refresh() {
@@ -97,6 +118,10 @@ final class AppModel {
     } catch { devices = []; update.message = error.localizedDescription }
     if !devices.isEmpty, !devices.contains(where: { $0.id == selectedDevice }) {
       selectedDevice = devices.first!.id
+    }
+    if automaticFeedEnabled, !restoringSettings {
+      demandMonitor.refresh()
+      reconcileAutomaticFeed()
     }
   }
 
@@ -146,6 +171,7 @@ final class AppModel {
           self.lutFileName = loaded.fileName
           self.saveSettings()
           self.update.message = "LUT loaded. Confirm it expects \(self.gamut) and outputs Rec.709."
+          self.reconcileAutomaticFeed()
         case .failure(let error): self.lutLoadFailed(error, restoring: restoring)
         }
       }
@@ -160,6 +186,7 @@ final class AppModel {
     let message = "\(restoring ? "Saved LUT could not be restored" : "LUT was not changed"): \(error.localizedDescription)"
     lutError = message
     update.message = message
+    reconcileAutomaticFeed()
   }
 
   func saveSettings() {
@@ -168,7 +195,8 @@ final class AppModel {
       applyLUT: lutLoaded ? configuration.applyLUT : rememberedLUTEnabled,
       downscale: configuration.downscale, convertTo420: configuration.convertTo420,
       reduceFrameRate: configuration.reduceFrameRate, gamut: gamut,
-      pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled, lutBookmark: lutBookmark))
+      pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled, lutBookmark: lutBookmark,
+      automaticFeed: automaticFeedEnabled))
   }
 
   private var effectiveConfiguration: PipelineConfiguration {
@@ -188,6 +216,11 @@ final class AppModel {
   }
 
   func start() {
+    guard !automaticFeedEnabled else { return }
+    startFeed()
+  }
+
+  private func startFeed() {
     guard canStartFeed else { return }
     running = true
     previewReady = false
@@ -197,6 +230,32 @@ final class AppModel {
   }
 
   func stop() { running = false; capture.stop() }
+
+  var cameraRequested: Bool { automaticPolicy.requested }
+
+  var automaticFeedStatus: String {
+    if let cameraDemandError { return cameraDemandError }
+    if !cameraRequested { return "Waiting for a camera app. Capture and video processing are off." }
+    if loading { return "Camera requested. Restoring your LUT…" }
+    if running { return "Camera in use. Stops when the last camera app closes it." }
+    if !devices.contains(where: { $0.id == selectedDevice }) { return "Camera requested. Connect the UltraStudio and refresh inputs." }
+    return "Camera requested. Feed stopped; retry or reopen the camera in your app."
+  }
+
+  func retryAutomaticFeed() {
+    automaticPolicy.retry()
+    demandMonitor.refresh()
+    reconcileAutomaticFeed()
+  }
+
+  private func reconcileAutomaticFeed() {
+    guard automaticFeedEnabled else { return }
+    switch automaticPolicy.action(ready: canStartFeed, running: running) {
+    case .start: startFeed()
+    case .stop: stop()
+    case nil: break
+    }
+  }
 
   func resetPreview() {
     previewRenderer.flush()

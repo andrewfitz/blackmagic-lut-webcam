@@ -79,13 +79,14 @@ private struct PreviewPlaceholder: View {
       Image(systemName: model.previewEnabled ? "video" : "eye.slash")
         .font(.system(size: compact ? 23 : 30, weight: .light))
         .foregroundStyle(.white.opacity(0.4))
-      Text(!model.previewEnabled ? "Preview hidden" : model.running ? "Waiting for video" : "Feed stopped")
+      Text(!model.previewEnabled ? "Preview hidden" : model.running ? "Waiting for video" : model.automaticFeedEnabled ? "Waiting for a camera app" : "Feed stopped")
         .font(compact ? .caption.weight(.medium) : .callout.weight(.medium))
         .foregroundStyle(.white.opacity(0.8))
       if !compact {
         Text(!model.previewEnabled
           ? (model.running && model.update.cameraOutputActive ? "Camera output continues with your selected settings." : "Show preview to monitor the output.")
-          : model.running ? "The preview appears when a supported HDMI signal arrives." : "Start the feed to view the HDMI input.")
+          : model.running ? "The preview appears when a supported HDMI signal arrives." : model.automaticFeedEnabled
+            ? "Open UltraStudio LUT in Zoom or another camera app to start the feed." : "Start the feed to view the HDMI input.")
           .font(.caption).foregroundStyle(.white.opacity(0.45))
           .multilineTextAlignment(.center).padding(.horizontal, 24)
       }
@@ -153,6 +154,7 @@ struct FeedControls: View {
           }
           Divider()
           PipelineEnableControl(model: model)
+          AutomaticFeedControl(model: model)
         }
       }
       ControlPanel {
@@ -201,7 +203,7 @@ struct FeedStateLabel: View {
   let model: AppModel
 
   private var label: String {
-    guard model.running else { return "Stopped" }
+    guard model.running else { return model.automaticFeedEnabled ? "Automatic · idle" : "Stopped" }
     if model.update.pipelineEnabledApplied != nil { return "Live" }
     if model.update.message.hasPrefix("Opening") { return "Connecting" }
     if model.update.sourceDuration != nil { return "Ready" }
@@ -223,14 +225,37 @@ struct StartStopButton: View {
   let model: AppModel
 
   var body: some View {
-    Button(model.running ? "Stop feed" : "Start feed", systemImage: model.running ? "stop.fill" : "play.fill") {
-      if model.running { model.stop() } else { model.start() }
+    if model.automaticFeedEnabled {
+      if model.cameraRequested && !model.running {
+        Button("Retry feed", action: model.retryAutomaticFeed)
+          .disabled(model.loading || !model.canStartFeed)
+      }
+    } else {
+      Button(model.running ? "Stop feed" : "Start feed", systemImage: model.running ? "stop.fill" : "play.fill") {
+        if model.running { model.stop() } else { model.start() }
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(model.running ? .secondary : .accentColor)
+      .controlSize(.regular)
+      .disabled(!model.running && !model.canStartFeed)
+      .help(model.running ? "Stop capture and camera output. ⌘↩" : model.loading ? "Waiting for the saved LUT to finish loading." : "Start capture using your selected settings. ⌘↩")
     }
-    .buttonStyle(.borderedProminent)
-    .tint(model.running ? .secondary : .accentColor)
-    .controlSize(.regular)
-    .disabled(!model.running && !model.canStartFeed)
-    .help(model.running ? "Stop capture and camera output. ⌘↩" : model.loading ? "Waiting for the saved LUT to finish loading." : "Start capture using your selected settings. ⌘↩")
+  }
+}
+
+struct AutomaticFeedControl: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Toggle("Start when camera is in use", isOn: $model.automaticFeedEnabled)
+        .toggleStyle(.switch).controlSize(.mini).font(.caption)
+        .help("Automatically start for Zoom or another camera app, then stop capture and GPU work when the last app closes the camera. Keep UltraStudio LUT open in the menu bar. Turn off to manage the feed manually.")
+      if model.automaticFeedEnabled {
+        Text(model.automaticFeedStatus).font(.caption2).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
   }
 }
 

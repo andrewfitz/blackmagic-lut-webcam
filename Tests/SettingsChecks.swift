@@ -9,13 +9,24 @@ import XCTest
     let saved = AppSettings(selectedDevice: "synthetic-device", applyLUT: true,
       downscale: false, convertTo420: false, reduceFrameRate: true,
       gamut: "S-Gamut3 / S-Log3", pipelineEnabled: false, previewEnabled: false,
-      lutBookmark: Data([1, 2, 3]))
+      lutBookmark: Data([1, 2, 3]), automaticFeed: true)
     AppSettingsStore(defaults: defaults).save(saved)
     XCTAssertEqual(AppSettingsStore(defaults: defaults).load(), saved)
     let text = String(data: try XCTUnwrap(defaults.data(forKey: AppSettingsStore.key)), encoding: .utf8)!
     XCTAssertFalse(text.contains("inputFast"), "Source rate must be detected each run")
-    XCTAssertFalse(text.contains("running"), "Capture must not start automatically")
+    XCTAssertFalse(text.contains("running"), "Transient running state must not be persisted")
     XCTAssertFalse(text.contains("rgba"), "LUT payload must not become a preference")
+  }
+
+  func testExistingPreferencesKeepLUTAndDefaultToManualFeed() throws {
+    let original = AppSettings(selectedDevice: "saved-input", applyLUT: true,
+      downscale: false, convertTo420: false, reduceFrameRate: true,
+      pipelineEnabled: false, previewEnabled: false, lutBookmark: Data([7, 8, 9]))
+    let data = try JSONEncoder().encode(original)
+    XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("automaticFeed"))
+    let migrated = try JSONDecoder().decode(AppSettings.self, from: data)
+    XCTAssertEqual(migrated, original)
+    XCTAssertFalse(migrated.automaticFeed ?? false)
   }
 
   func testCorruptOrUnsupportedPreferencesUseSafeDefaults() throws {

@@ -40,6 +40,8 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
   "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/App/AppSettingsStore.swift" \
+  "$task_root/Sources/App/AutomaticFeedPolicy.swift" \
+  "$task_root/Sources/App/CameraDemandMonitor.swift" \
   "$task_root/Sources/App/ExtensionInstaller.swift" \
   "$task_root/Sources/CameraExtension/CameraProvider.swift" \
   "$task_root"/Tests/*.swift "$test_root/UDLBackend.o" "$test_root/DeckLinkAPIDispatch.o" -lc++ \

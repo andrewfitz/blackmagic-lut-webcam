@@ -19,8 +19,9 @@ struct UltraStudioLUTApp: App {
           if model.running { model.stop() } else { model.start() }
         }
         .keyboardShortcut(.return, modifiers: .command)
-        .disabled(!model.running && !model.canStartFeed)
+        .disabled(model.automaticFeedEnabled || (!model.running && !model.canStartFeed))
         Divider()
+        Toggle("Start when camera is in use", isOn: $model.automaticFeedEnabled)
         Toggle("Processing enabled", isOn: $model.pipelineEnabled)
           .keyboardShortcut("b", modifiers: [.command, .shift])
         Toggle("Video preview", isOn: $model.previewEnabled)

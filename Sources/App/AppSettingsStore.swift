@@ -11,6 +11,8 @@ struct AppSettings: Codable, Equatable, Sendable {
   var pipelineEnabled = true
   var previewEnabled = true
   var lutBookmark: Data?
+  // Optional on disk to migrate v1 preferences without losing the saved LUT.
+  var automaticFeed: Bool?
 
   var configuration: PipelineConfiguration {
     PipelineConfiguration(applyLUT: applyLUT, downscale: downscale,
