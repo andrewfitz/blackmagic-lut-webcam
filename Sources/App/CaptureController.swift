@@ -151,8 +151,15 @@ final class CaptureController: @unchecked Sendable {
   private var realtimeActivity: NSObjectProtocol?
   private let logger = Logger(subsystem: "org.ultrastudiolut.app", category: "capture")
   private var lastLogged: Double = 0
+  // Program output consumes processed frames through FeedCoordinator. When it
+  // is enabled, this controller keeps capture and GPU work alive without
+  // opening a per-feed CMIO sink; the Program bridge owns that sink.
+  private var cameraOutputEnabled = true
 
   var onUpdate: (@Sendable (CaptureUpdate) -> Void)?
+  var onProcessedFrame: ((ProcessedFrame<CVPixelBuffer>) -> Void)?
+
+  var activeFeed: FeedID? { lock.withLock { activeFeedID } }
 
   init(services: CaptureServices = .live(), previewRenderer: VideoPreviewRenderer? = nil,
     additionalPreviewRenderers: [VideoPreviewRenderer] = []) {
@@ -164,6 +171,19 @@ final class CaptureController: @unchecked Sendable {
     // Every executing controller operation retains self. Final release has
     // exclusive resource access, even if its owner omitted an explicit Stop.
     stopResources()
+  }
+
+  func setCameraOutputEnabled(_ enabled: Bool) {
+    queue.sync {
+      cameraOutputEnabled = enabled
+      if enabled {
+        reconnectRequested = true
+        reconnectAfter = 0
+        return
+      }
+      services.disconnect()
+      cameraConnected = false
+    }
   }
 
   func load(_ cube: CubeLUT, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
@@ -522,6 +542,13 @@ final class CaptureController: @unchecked Sendable {
     // A retry of the same contract must preserve prepared transport resources
     // and the existing source cadence used by the surviving local preview.
     if prior != nil && !sameContract { deliveryStager = CameraFrameStager() }
+    guard cameraOutputEnabled else {
+      activeConfiguration = next
+      activeInputType = inputType
+      if prior?.duration != next.duration { frameRateGate = FrameRateGate() }
+      if !sameContract { sampleFactory.reset() }
+      return
+    }
     do {
       try services.connect(next, inputType)
       cameraConnected = true
@@ -723,9 +750,10 @@ final class CaptureController: @unchecked Sendable {
       guard isAccepting(token) else { return }
       let visible = previewEnabled ? previewRenderers.filter { $0.isVisible } : []
       let hasPreview = previewEnabled && (!visible.isEmpty || services.preview != nil)
+      let hasProcessedOutput = onProcessedFrame != nil
       // No downstream demand: keep metadata/detection alive without allocating,
       // submitting GPU work or staging raw buffers that nobody can consume.
-      guard cameraConnected || hasPreview else {
+      guard cameraConnected || hasPreview || hasProcessedOutput else {
         if preparedConfiguration != nil {
           processor?.releaseIdleResources()
           preparedConfiguration = nil
@@ -758,6 +786,15 @@ final class CaptureController: @unchecked Sendable {
       guard isAccepting(token) else { return }
       // Temporal selection remains last; bypass retains the source duration.
       guard frameRateGate.shouldDeliver(frame.pts, duration: effective.duration) else { return }
+      if let onProcessedFrame {
+        let metadata = ProcessedFrameMetadata(
+          presentationTime: frame.pts,
+          duration: effective.duration,
+          width: CVPixelBufferGetWidth(rendered),
+          height: CVPixelBufferGetHeight(rendered),
+          pixelFormat: UInt32(CVPixelBufferGetPixelFormatType(rendered)))
+        onProcessedFrame(ProcessedFrame(payload: rendered, metadata: metadata))
+      }
       let time = hostTime(for: frame.pts, duration: effective.duration)
       let original = try sampleFactory.sample(rendered, at: time, duration: effective.duration)
       let sample: CMSampleBuffer

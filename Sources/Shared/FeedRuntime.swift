@@ -200,6 +200,7 @@ final class FeedCoordinator {
   private var sessions: [FeedID: FeedSession] = [:]
   let capturePool: FeedCapturePool
   let programOutput: ProgramOutputRoute
+  private var programBridge: ProgramOutputBridge?
   private var demandCoordinator: RouteDemandCoordinator
   private var programConsumerActive = false
 
@@ -241,6 +242,38 @@ final class FeedCoordinator {
   /// changes or reuses another feed's UDLBackend.
   func capture(for id: FeedID) -> CaptureController {
     capturePool.controller(for: id)
+  }
+
+  /// Installs the single consumer for the Program CMIO stream. The route is
+  /// persistent across demand transitions so queued leases can be drained and
+  /// reused without recreating a fan-out while a source callback is active.
+  func prepareProgramOutputBridge() throws {
+    guard programBridge == nil else { return }
+    let route = try programOutput.addConsumerRoute(id: "program-camera", capacity: 12,
+      policy: .dropOldest)
+    programBridge = ProgramOutputBridge(route: route)
+  }
+
+  func setProgramOutputDemand(_ active: Bool, configuration: PipelineConfiguration,
+                              passthroughFormat: OSType) throws {
+    try prepareProgramOutputBridge()
+    try programBridge?.setDemand(active, configuration: configuration,
+      passthroughFormat: passthroughFormat)
+  }
+
+  func pumpProgramOutput() { programBridge?.pump() }
+
+  var programOutputStatistics: ProgramOutputBridge.Statistics {
+    programBridge?.currentStatistics ?? .init()
+  }
+
+  func setProcessedFrameHandler(feedID: FeedID,
+                                handler: ((ProcessedFrame<CVPixelBuffer>) -> Void)?) {
+    capture(for: feedID).onProcessedFrame = handler
+  }
+
+  func setCameraOutputEnabled(feedID: FeedID, enabled: Bool) {
+    capture(for: feedID).setCameraOutputEnabled(enabled)
   }
 
   /// Lazily creates a session while preserving descriptor ordering.
@@ -418,6 +451,7 @@ final class FeedCoordinator {
     }
     let result = programOutput.ingest(feedID: feedID, frame: frame)
     syncSwitcherMirror()
+    if programConsumerActive { programBridge?.pump() }
     if case .cutApplied = result.decision {
       selectedFeedID = feedID
       if programConsumerActive {

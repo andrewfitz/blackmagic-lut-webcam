@@ -38,6 +38,7 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   "$task_root"/Sources/Shared/*.swift "$task_root/Sources/App/LUTProcessor.swift" \
   "$task_root"/Sources/Recording/*.swift \
   "$task_root/Sources/App/CameraSink.swift" "$task_root/Sources/App/CaptureController.swift" \
+  "$task_root/Sources/App/ProgramOutputBridge.swift" \
   "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
   "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/App/AppSettingsStore.swift" \
