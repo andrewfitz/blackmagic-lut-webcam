@@ -3,6 +3,52 @@
 Development machine: M4 Max Mac Studio, 48 GB RAM, macOS 27.0.1, Xcode 27.0,
 Blackmagic Desktop Video 16.4. Executed October 14, 2026.
 
+## Automatic feed lifecycle — October 14
+
+- `3987fba` adds persisted, opt-in **Start when camera is in use** in the window,
+  menu bar panel and Feed menu. Old preferences retain their LUT bookmarks and
+  manual default. Manual Start/Stop remains available when the option is off.
+- Release local-development build passes strict concurrency, warnings as errors,
+  bundle validation and signature verification. The installed host and camera
+  extension were updated through the existing local development setup.
+- `bash scripts/test.sh`: **113 tests, zero failures**, 25.315 seconds. New checks
+  cover preference migration, deferred LUT readiness, demand cancellation, bounded
+  start attempts/retry, independent producer/source demand, last-consumer stop,
+  and authorized producer negotiation after a consumer takes device control.
+- Installed native transport regression: **360/360 synthetic frames** across
+  1080p NV12 and 4K x422/v210 at both NTSC rates; exact pixels/PTS, zero queue
+  retries. This runs with automatic mode disabled to isolate the test producer.
+- Real Zoom meeting video on starts the saved LUT pipeline automatically:
+  detected 4K v210 59.94 input, 1080p NV12 59.94 output. Zoom's device-control
+  lease initially prevented producer configuration; the authorized first sample
+  now establishes the extension's supported output contract without taking
+  Zoom's lease. Generic ingress and consumer property writes remain strict.
+- With preview hidden, a second native camera client remained connected while
+  Zoom video was turned off. Capture stayed live until that last client closed,
+  then the host returned to **Automatic · idle**. The client received 1497 frames
+  over 25 seconds with monotonic PTS; image pixels were never inspected or saved.
+  A separate 8-second request verified automatic start with preview already off.
+- Automatic mode and LUT restored after host relaunch, including with a source
+  client already open. Enabling automatic mode during an unused manual feed
+  stopped it; turning preview back on while idle did not start capture.
+- Idle snapshots ten seconds apart showed 0.0% instantaneous CPU for host and
+  extension, stable RSS (about 123 MiB and 12 MiB), unchanged extension CPU time,
+  and 0.04 seconds additional host CPU time. This demonstrates near-idle runtime,
+  not a promise of literally zero OS/app CPU. Capture timers/SDK input, queued
+  previews and working GPU buffers are stopped/released; the activity monitor
+  uses property notifications and schedules no polling or video GPU work.
+- macOS 27 camera replacement hit one launchd registration race and retained a
+  stale device list in an already-running host. Re-activation/reopening the host
+  restored discovery. No security policy, permissions or certificate changes were
+  made. Reopen camera apps after extension updates if discovery remains stale.
+- Private text receipts are under the external workspace's
+  `agent-work/ultrastudio-lut/logs/`: `tests-20261015T000453Z.log`, `auto-transport-full.log`,
+  `auto-overlapping-client.log`, `auto-preview-hidden-start.log`, and
+  `auto-idle-cpu.log`. No live-camera screenshots, recordings or image artifacts
+  were created. Zoom transmission quality and remote A/V sync remain outside
+  this lifecycle check. The host must remain running; automatic app launch is
+  not implemented.
+
 ## Executed checks
 
 - Unsigned arm64 app and embedded camera extension build successfully with

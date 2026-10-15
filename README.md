@@ -46,7 +46,23 @@ must accept the selected format. Installed-service format changes still need
 qualification with a signed extension.
 
 Settings and read-only scoped LUT bookmarks persist between launches. Capture
-starts manually. A missing or invalid saved LUT leaves capture usable and keeps
+starts manually by default. Enable **Start when camera is in use** in the window,
+menu bar panel or Feed menu to let Zoom and other camera apps manage it:
+opening the virtual camera starts capture with your saved effects, and closing
+the last camera client stops capture, video processing and preview rendering.
+This works with preview hidden and with the main window closed. Keep the app
+running in the menu bar; this setting does not launch a fully quit app.
+Zoom's camera settings preview also counts as camera use.
+
+Automatic mode listens for source-stream activity without polling or opening
+its own source stream. Waiting releases working video buffers, cancels capture
+and processing timers, and submits no video GPU work. Normal macOS/app runtime
+memory and event handling remain. A failed start is attempted once per camera
+session, with an explicit Retry action rather than a background retry loop.
+Turn automatic mode off to regain manual Start/Stop controls; an already live
+feed continues under manual control.
+
+A missing or invalid saved LUT leaves capture usable and keeps
 the saved choice for recovery. The menu bar popover shares the window's controls
 and includes its own native mini preview; closing the window does not stop capture.
 
@@ -133,6 +149,10 @@ timestamps in memory; it never opens the physical capture device, records video
 or submits an installation request. Running the script without `--run` only
 builds the helper. Use `--full` instead of `--run` to include 4K 10-bit x422 and
 packed v210 at both rates. Build products and receipts stay on the external drive.
+Use `bash scripts/camera-smoke.sh --consumer` for a bounded 20-second source-only
+client request to test automatic start/stop. That mode may start physical capture
+through the running host app; it inspects frame metadata only and never reads,
+displays or records image pixels.
 
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
 and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the

@@ -2,7 +2,9 @@
 # Build by default. --run explicitly exercises an already approved extension;
 # --full additionally checks 4K ten-bit x422/v210 at both rates. Ad-hoc producer
 # authorization requires the explicit local development extension build.
-# This script never installs/activates extensions or opens physical devices.
+# --consumer requests only the virtual source for 20 seconds; the running host
+# may start physical capture automatically. It inspects metadata, never pixels.
+# This script never installs or activates extensions.
 set -euo pipefail
 if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --run && "$1" != --full && "$1" != --consumer ) ]]; then
   echo 'Usage: camera-smoke.sh [--run | --full | --consumer]' >&2
