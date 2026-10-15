@@ -87,7 +87,9 @@ struct SwitcherCoordinator {
     let ids = Self.unique(feedIDs)
     let initial = settings.selectedFeedID.flatMap { ids.contains($0) ? $0 : nil }
       ?? ids.first
-    self.settings = settings
+    var normalizedSettings = settings
+    normalizedSettings.selectedFeedID = initial
+    self.settings = normalizedSettings
     self.feedIDs = ids
     self.feedHealth = Dictionary(uniqueKeysWithValues: self.feedIDs.map { ($0, true) })
     self.selectedFeedID = initial
