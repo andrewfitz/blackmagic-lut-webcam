@@ -46,7 +46,8 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   "$task_root/Sources/App/CameraDemandMonitor.swift" \
   "$task_root/Sources/App/ExtensionInstaller.swift" \
   "$task_root/Sources/CameraExtension/CameraProvider.swift" \
-  "$task_root"/Tests/*.swift "$test_root/UDLBackend.o" "$test_root/DeckLinkAPIDispatch.o" -lc++ \
+  "$task_root"/Tests/*.swift "$task_root"/Tests/Recording/*.swift \
+  "$test_root/UDLBackend.o" "$test_root/DeckLinkAPIDispatch.o" -lc++ \
   -o "$test_root/lut-tests" >> "$compile_log" 2>&1 || {
   cat "$compile_log"
   exit 1

@@ -87,7 +87,7 @@ import XCTest
       try camera.sink.setStreamProperties(properties)
       XCTAssertEqual(camera.activeIndex, 5)
       XCTAssertEqual(camera.duration, VideoContract.slowDuration, "Normalize floating client rates to exact NTSC")
-      for stream in [camera.source!, camera.sink!] {
+      for stream in [camera.source, camera.sink] {
         let current = try stream.streamProperties(forProperties: [.streamActiveFormatIndex, .streamFrameDuration])
         XCTAssertEqual(current.activeFormatIndex, 5)
         XCTAssertEqual(current.frameDuration, VideoContract.slowDuration)
