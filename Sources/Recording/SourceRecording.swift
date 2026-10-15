@@ -331,7 +331,9 @@ final class SourceRecorderCore: @unchecked Sendable {
     return true
   }
 
-  private func recordDrop(_ reason: SourceRecordingDropReason) {
+  /// Records a rejection made before a CMSampleBuffer exists, such as an invalid
+  /// Blackmagic signal flag or packet metadata.
+  func recordDrop(_ reason: SourceRecordingDropReason) {
     stateLock.withLock {
       switch reason {
       case .invalidSample: telemetryValue.droppedInvalidSample &+= 1
