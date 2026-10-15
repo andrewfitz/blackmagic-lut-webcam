@@ -48,6 +48,41 @@ func log(_ message: String) { print(message); fflush(stdout) }
 func now() -> Double { ProcessInfo.processInfo.systemUptime }
 func pollPause() { Thread.sleep(forTimeInterval: 0.002) }
 
+/// A small, human-readable snapshot of the format CMIO reports for a stream.
+/// Keep this separate from `SyntheticMode`: the latter is the producer's
+/// requested contract, while this is the consumer-facing contract that the
+/// installed extension actually negotiated. Those can differ when another
+/// client (for example Zoom) owns the device-control lease, or when the
+/// installed extension is from an older build.
+struct StreamFormatSummary: CustomStringConvertible, Sendable {
+  let width: Int32
+  let height: Int32
+  let pixelFormat: OSType
+  let frameRate: Double?
+
+  var description: String {
+    let rate = frameRate.map { String(format: "%.6g fps", $0) } ?? "fps unavailable"
+    return "\(width)x\(height) \(VideoContract.fourCC(pixelFormat)) \(rate)"
+  }
+}
+
+func currentStreamFormat(_ stream: CMIOStreamID) -> StreamFormatSummary? {
+  var property = address(kCMIOStreamPropertyFormatDescription)
+  var value: Unmanaged<CMFormatDescription>?
+  var size = UInt32(MemoryLayout<Unmanaged<CMFormatDescription>?>.size)
+  guard CMIOObjectGetPropertyData(stream, &property, 0, nil, size, &size, &value) == noErr,
+    let description = value?.takeRetainedValue() else { return nil }
+  let dimensions = CMVideoFormatDescriptionGetDimensions(description)
+
+  property.mSelector = UInt32(kCMIOStreamPropertyFrameRate)
+  var frameRate: Double = 0
+  var rateSize = UInt32(MemoryLayout<Double>.size)
+  let rateStatus = CMIOObjectGetPropertyData(stream, &property, 0, nil, rateSize, &rateSize, &frameRate)
+  return StreamFormatSummary(width: dimensions.width, height: dimensions.height,
+    pixelFormat: CMFormatDescriptionGetMediaSubType(description),
+    frameRate: rateStatus == noErr ? frameRate : nil)
+}
+
 // One thread owns all dequeues, including cleanup. The notification callback
 // has no state/refCon and never dequeues, avoiding a concurrent-drain race.
 // Apple CMIOHardwareStream.h documents the Copy-owned queue and that a nil
@@ -61,6 +96,7 @@ final class SourceQueue {
   let device: CMIODeviceID
   let stream: CMIOStreamID
   let queue: CMSimpleQueue
+  let negotiatedFormat: StreamFormatSummary?
   private var started = false
   private var closed = false
   private var closeStatus: OSStatus = noErr
@@ -80,7 +116,9 @@ final class SourceQueue {
     queue = copied.takeRetainedValue()
     try check(CMIODeviceStartStream(device, stream), "Start installed camera source")
     started = true
-    log("CMIO_SMOKE sourceStarted device=\(device) stream=\(stream) queueCapacity=\(CMSimpleQueueGetCapacity(queue))")
+    negotiatedFormat = currentStreamFormat(stream)
+    let formatText = negotiatedFormat.map { " negotiated=\($0)" } ?? " negotiated=unavailable"
+    log("CMIO_SMOKE sourceStarted device=\(device) stream=\(stream) queueCapacity=\(CMSimpleQueueGetCapacity(queue))\(formatText)")
   }
 
   func next() -> CMSampleBuffer? {
@@ -119,6 +157,11 @@ struct SyntheticMode {
   let height: Int
   let format: OSType
   var black: UInt16 { format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ? 16 : 64 }
+
+  func summary(duration: CMTime) -> String {
+    let fps = duration.seconds > 0 ? 1 / duration.seconds : 0
+    return "\(width)x\(height) \(VideoContract.fourCC(format)) \(String(format: "%.6g fps", fps)) duration=\(duration.value)/\(duration.timescale)"
+  }
 
   func row(marker: UInt16, plane: Int) -> [UInt8] {
     if format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
@@ -180,10 +223,16 @@ func inspect(_ sample: CMSampleBuffer, duration: CMTime, mode: SyntheticMode) th
   try require(CMSampleBufferDataIsReady(sample), "Received unready sample.")
   guard let image = CMSampleBufferGetImageBuffer(sample) else { throw VideoError.message("Received no image.") }
   try VideoBufferLayout.validate(image)
-  try require(CVPixelBufferGetWidth(image) == mode.width && CVPixelBufferGetHeight(image) == mode.height &&
-    CVPixelBufferGetPixelFormatType(image) == mode.format,
-    "Installed camera changed synthetic dimensions or color format.")
-  try require(CMSampleBufferGetDuration(sample) == duration, "Installed camera changed frame duration.")
+  let actualWidth = CVPixelBufferGetWidth(image)
+  let actualHeight = CVPixelBufferGetHeight(image)
+  let actualFormat = CVPixelBufferGetPixelFormatType(image)
+  let actualDuration = CMSampleBufferGetDuration(sample)
+  let actualSummary = "\(actualWidth)x\(actualHeight) \(VideoContract.fourCC(actualFormat)) duration=\(actualDuration.value)/\(actualDuration.timescale)"
+  try require(actualWidth == mode.width && actualHeight == mode.height && actualFormat == mode.format,
+    "Negotiated camera contract differs: requested \(mode.summary(duration: duration)); received \(actualSummary). " +
+      "Another client may own CMIO device control, or the installed extension may be stale.")
+  try require(actualDuration == duration,
+    "Negotiated camera cadence differs: requested \(mode.summary(duration: duration)); received \(actualSummary).")
   try check(CVPixelBufferLockBaseAddress(image, .readOnly), "Lock received synthetic image")
   defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
   let planar = CVPixelBufferIsPlanar(image)
@@ -250,8 +299,7 @@ func smoke() throws {
 
 func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   let duration = fast ? VideoContract.fastDuration : VideoContract.slowDuration
-  let fps = fast ? "60000/1001" : "30000/1001"
-  log("CMIO_SMOKE case size=\(mode.width)x\(mode.height) format=\(VideoContract.fourCC(mode.format)) fps=\(fps)")
+  log("CMIO_SMOKE case requested=\(mode.summary(duration: duration))")
   let sink = CameraSink()
   defer { sink.disconnect(); log("CMIO_SMOKE producerDisconnected") }
   var configuration = PipelineConfiguration()
@@ -278,6 +326,7 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   log("CMIO_SMOKE producerConnected")
   let source = try SourceQueue()
   defer { source.stop() }
+  log("CMIO_SMOKE contract requested=\(mode.summary(duration: duration)) negotiated=\(source.negotiatedFormat.map { $0.description } ?? "unavailable")")
   let factory = VideoSampleFactory()
   let hostClock = CMClockGetHostTimeClock()
   let warm = try factory.sample(image(marker: 63, pool: pool, mode: mode), at: CMClockGetTime(hostClock), duration: duration)
@@ -336,7 +385,7 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   while received < count && now() < finalDeadline { try consume(); pollPause() }
   try require(received == count, "Consumer deadline: received \(received) of \(count) synthetic frames.")
   try check(source.stop(), "Stop and unregister synthetic consumer")
-  log("CMIO_SMOKE PASS sent=\(sent) received=\(received) size=\(mode.width)x\(mode.height) format=\(VideoContract.fourCC(mode.format)) fps=\(fps) exactPixels=true exactPTS=true retries=\(retries)")
+  log("CMIO_SMOKE PASS sent=\(sent) received=\(received) requested=\(mode.summary(duration: duration)) negotiated=\(source.negotiatedFormat.map { $0.description } ?? "unavailable") exactPixels=true exactPTS=true retries=\(retries)")
 }
 
 func consumerRequest(seconds: Double) throws {
