@@ -1,5 +1,78 @@
+import CoreMedia
 import CoreVideo
 import Foundation
+
+/// The result of routing one processed frame through the Program output.
+/// The scheduler decision remains available to diagnostics while the route
+/// itself owns the bounded queue and retains the frame for its consumers.
+struct ProgramRouteResult: @unchecked Sendable {
+  let decision: ProgramFrameDecision<FeedID>
+  let fanOut: FrameFanOutReport
+}
+
+/// Queue-owned Program output shared by all configured feeds. A source frame
+/// is evaluated by `SwitcherCoordinator` first; only the selected source (or
+/// the target at a valid cut boundary) is published to Program consumers.
+@MainActor
+final class ProgramOutputRoute {
+  private(set) var switcher: SwitcherCoordinator
+  let fanOut: FrameFanOut<CVPixelBuffer>
+
+  init(settings: SwitcherSettings = .init(), feedIDs: [FeedID],
+       routeLabel: String = "org.ultrastudiolut.program-output") {
+    switcher = SwitcherCoordinator(settings: settings, feedIDs: feedIDs)
+    fanOut = FrameFanOut(label: routeLabel)
+  }
+
+  var selectedFeedID: FeedID? { switcher.selectedFeedID }
+  var pendingFeedID: FeedID? { switcher.pendingCut }
+  var hasPendingCut: Bool { switcher.hasPendingCut }
+
+  func updateFeeds(_ feedIDs: [FeedID]) {
+    let valid = Set(feedIDs)
+    let selected = switcher.selectedFeedID.flatMap { valid.contains($0) ? $0 : nil }
+    var settings = switcher.settings
+    settings.selectedFeedID = selected ?? feedIDs.first
+    switcher = SwitcherCoordinator(settings: settings, feedIDs: feedIDs)
+  }
+
+  @discardableResult
+  func requestCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    switcher.requestManualCut(to: feedID)
+  }
+
+  @discardableResult
+  func evaluate(at mediaTime: CMTime) -> SwitcherEvaluation {
+    switcher.evaluate(at: mediaTime)
+  }
+
+  /// Routes a processed frame without copying or re-running effects. The
+  /// caller retains ownership of `frame`; every accepted Program consumer gets
+  /// its own lease from `fanOut`.
+  @discardableResult
+  func ingest(feedID: FeedID, frame: ProcessedFrame<CVPixelBuffer>) -> ProgramRouteResult {
+    let metadata = frame.metadata
+    let source = ProgramSourceFrame(sourceID: feedID,
+      sourceTime: metadata.presentationTime, duration: metadata.duration)
+    let decision = switcher.ingest(source)
+    let report: FrameFanOutReport
+    switch decision {
+    case .accepted, .cutApplied:
+      report = fanOut.publish(frame)
+    case .skipped:
+      report = FrameFanOutReport(outcomes: [:])
+    }
+    return ProgramRouteResult(decision: decision, fanOut: report)
+  }
+
+  func addConsumerRoute(id: String = "program-camera", capacity: Int = 12,
+                        policy: FrameQueueOverflowPolicy = .dropOldest)
+    throws -> FrameRoute<CVPixelBuffer> {
+    try fanOut.addRoute(id: id, capacity: capacity, policy: policy)
+  }
+
+  func reset() { switcher.reset() }
+}
 
 /// The lifecycle owned by one configured feed. Capture and camera transport
 /// are deliberately outside this contract for now; they advance this state
@@ -96,18 +169,37 @@ final class FeedCoordinator {
   private(set) var outputMode: FeedOutputMode
   private(set) var switcher: SwitcherSettings
   private(set) var virtualCameraRegistryVersion: Int
+  private(set) var switcherCoordinator: SwitcherCoordinator
+  private(set) var virtualCameraRegistrySnapshot: VirtualCameraRegistrySnapshot
+  private let registryStore: VirtualCameraRegistryStore?
   private var sessions: [FeedID: FeedSession] = [:]
   let capturePool: FeedCapturePool
+  let programOutput: ProgramOutputRoute
+  private var demandCoordinator: RouteDemandCoordinator
+  private var programConsumerActive = false
 
   init(snapshot: AppSettingsSnapshot = AppSettingsSnapshot(),
-       capturePool: FeedCapturePool = FeedCapturePool()) {
+       capturePool: FeedCapturePool = FeedCapturePool(),
+       registryStore: VirtualCameraRegistryStore? = nil) {
     let safe = snapshot.validated() ?? AppSettingsSnapshot()
     descriptors = safe.feeds
     selectedFeedID = safe.selectedFeedID
     outputMode = safe.outputMode
     switcher = safe.switcher
     virtualCameraRegistryVersion = safe.virtualCameraRegistryVersion
+    switcherCoordinator = SwitcherCoordinator(settings: safe.switcher, feeds: safe.feeds)
+    switcher = switcherCoordinator.settings
+    programOutput = ProgramOutputRoute(settings: safe.switcher,
+      feedIDs: safe.feeds.filter(\.enabled).map(\.id))
+    demandCoordinator = RouteDemandCoordinator()
+    self.registryStore = registryStore
     self.capturePool = capturePool
+    let initialDevices = Self.registryDevices(for: safe.outputMode, feeds: safe.feeds)
+    let stored = registryStore?.load()
+    let generation = max(stored?.generation ?? 0, UInt64(max(1, safe.virtualCameraRegistryVersion)))
+    virtualCameraRegistrySnapshot = VirtualCameraRegistrySnapshot(generation: generation,
+      devices: initialDevices)
+    if registryStore != nil { publishVirtualCameraRegistry() }
   }
 
   var selectedDescriptor: FeedDescriptor {
@@ -141,16 +233,24 @@ final class FeedCoordinator {
     guard descriptors.contains(where: { $0.id == id }) else { return false }
     selectedFeedID = id
     if switcher.selectedFeedID == nil { switcher.selectedFeedID = id }
+    switcherCoordinator.updateSettings(switcher)
     return true
   }
 
   func update(_ descriptor: FeedDescriptor) {
     guard let index = descriptors.firstIndex(where: { $0.id == descriptor.id }) else {
       descriptors.append(descriptor)
+      switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
+      programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+      publishVirtualCameraRegistry()
       return
     }
     descriptors[index] = descriptor
     sessions[descriptor.id]?.update(descriptor: descriptor)
+    switcherCoordinator = SwitcherCoordinator(settings: switcher,
+      feeds: descriptors)
+    programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    publishVirtualCameraRegistry()
   }
 
   @discardableResult
@@ -159,6 +259,9 @@ final class FeedCoordinator {
     while descriptors.contains(where: { $0.id == id }) { id = FeedID(uuid: UUID()) }
     let descriptor = FeedDescriptor(id: id, name: name ?? "Feed \(descriptors.count + 1)")
     descriptors.append(descriptor)
+    switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
+    programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    publishVirtualCameraRegistry()
     return id
   }
 
@@ -175,6 +278,9 @@ final class FeedCoordinator {
     descriptors.remove(at: index)
     if selectedFeedID == id { selectedFeedID = descriptors[0].id }
     if switcher.selectedFeedID == id { switcher.selectedFeedID = selectedFeedID }
+    switcherCoordinator = SwitcherCoordinator(settings: switcher, feeds: descriptors)
+    programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    publishVirtualCameraRegistry()
     return true
   }
 
@@ -225,22 +331,150 @@ final class FeedCoordinator {
 
   func publish(_ frame: ProcessedFrame<CVPixelBuffer>, to feedID: FeedID)
     -> FrameFanOutReport {
-    session(for: feedID).publish(frame)
+    let feedSession = session(for: feedID)
+    let report = feedSession.publish(frame)
+    if feedSession.isRunning { _ = ingestProgramFrame(feedID: feedID, frame: frame) }
+    return report
   }
 
-  func setOutputMode(_ mode: FeedOutputMode) { outputMode = mode }
+  func setOutputMode(_ mode: FeedOutputMode) {
+    guard outputMode != mode else { return }
+    outputMode = mode
+    publishVirtualCameraRegistry()
+  }
 
   func setSwitcher(_ settings: SwitcherSettings) {
     switcher = settings
     if let selected = settings.selectedFeedID, descriptors.contains(where: { $0.id == selected }) {
+      switcherCoordinator.updateSettings(switcher)
+      publishVirtualCameraRegistry()
       return
     }
     switcher.selectedFeedID = selectedFeedID
+    switcherCoordinator.updateSettings(switcher)
+    publishVirtualCameraRegistry()
+  }
+
+  /// Requests a frame-boundary Program cut. The selected feed is persisted
+  /// after the target frame is acknowledged by `ingestProgramFrame`.
+  @discardableResult
+  func requestProgramCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    let result = switcherCoordinator.requestManualCut(to: feedID)
+    switcher = switcherCoordinator.settings
+    return result
+  }
+
+  @discardableResult
+  func evaluateSwitcher(at mediaTime: CMTime) -> SwitcherEvaluation {
+    let result = switcherCoordinator.evaluate(at: mediaTime)
+    switcher = switcherCoordinator.settings
+    return result
+  }
+
+  /// Publishes a processed frame to the Program route when Program mode is
+  /// active. Separate-camera mode leaves the frame on its feed route only.
+  @discardableResult
+  func ingestProgramFrame(feedID: FeedID, frame: ProcessedFrame<CVPixelBuffer>)
+    -> ProgramRouteResult? {
+    guard outputMode == .program, descriptors.contains(where: { $0.id == feedID && $0.enabled }) else {
+      return nil
+    }
+    let result = programOutput.ingest(feedID: feedID, frame: frame)
+    switcherCoordinator = programOutput.switcher
+    switcher = switcherCoordinator.settings
+    if case .cutApplied = result.decision {
+      selectedFeedID = feedID
+      switcher.selectedFeedID = feedID
+      switcherCoordinator.updateSettings(switcher)
+      if programConsumerActive {
+        demandCoordinator.selectProgram(feedID: feedID.rawValue)
+      }
+    }
+    return result
+  }
+
+  @discardableResult
+  func addProgramOutputRoute(id: String = "program-camera", capacity: Int = 12,
+                             policy: FrameQueueOverflowPolicy = .dropOldest)
+    throws -> FrameRoute<CVPixelBuffer> {
+    try programOutput.addConsumerRoute(id: id, capacity: capacity, policy: policy)
+  }
+
+  /// Ties source demand to the Program camera's consumer lifecycle. The
+  /// caller executes returned start/stop transitions against its capture pool.
+  @discardableResult
+  func setProgramConsumer(_ active: Bool, at time: TimeInterval? = nil)
+    -> [SourceDemandTransition] {
+    programConsumerActive = active
+    demandCoordinator.selectProgram(feedID: active ? (switcherCoordinator.selectedFeedID?.rawValue) : nil,
+      at: time)
+    return demandCoordinator.drainTransitions()
+  }
+
+  @discardableResult
+  func setDedicatedCameraConsumer(feedID: FeedID, active: Bool,
+                                  ownerID: String? = nil, at time: TimeInterval? = nil)
+    -> [SourceDemandTransition] {
+    if active {
+      _ = demandCoordinator.acquire(feedID: feedID.rawValue, route: .dedicatedCamera,
+        ownerID: ownerID, at: time)
+    } else {
+      _ = demandCoordinator.release(feedID: feedID.rawValue, route: .dedicatedCamera,
+        ownerID: ownerID, at: time)
+    }
+    return demandCoordinator.drainTransitions()
+  }
+
+  @discardableResult
+  func advanceDemand(to time: TimeInterval) -> [SourceDemandTransition] {
+    demandCoordinator.advance(to: time)
+  }
+
+  var activeDemandFeedIDs: Set<String> { demandCoordinator.activeFeedIDs }
+
+  /// Complete registry state published to the camera extension. Separate
+  /// mode exposes one stable device per enabled feed; Program mode exposes one
+  /// Program device while feed captures remain internal sources.
+  var virtualCameraDescriptors: [VirtualCameraDescriptor] {
+    Self.registryDevices(for: outputMode, feeds: descriptors)
   }
 
   var snapshot: AppSettingsSnapshot {
     AppSettingsSnapshot(feeds: descriptors, selectedFeedID: selectedFeedID,
       outputMode: outputMode, switcher: switcher,
       virtualCameraRegistryVersion: virtualCameraRegistryVersion)
+  }
+
+  @discardableResult
+  private func publishVirtualCameraRegistry() -> Bool {
+    let devices = virtualCameraDescriptors
+    let next: VirtualCameraRegistrySnapshot
+    if let current = registryStore?.load() {
+      next = current.advancing(to: devices)
+    } else {
+      let generation = max(virtualCameraRegistrySnapshot.generation + 1, 1)
+      next = VirtualCameraRegistrySnapshot(generation: generation, devices: devices)
+    }
+    virtualCameraRegistrySnapshot = next
+    virtualCameraRegistryVersion = Int(min(next.generation, UInt64(Int.max)))
+    guard let registryStore else { return true }
+    do {
+      try registryStore.save(next)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private static func registryDevices(for mode: FeedOutputMode,
+                                      feeds: [FeedDescriptor]) -> [VirtualCameraDescriptor] {
+    switch mode {
+    case .separateCameras:
+      return feeds.filter(\.enabled).map { feed in
+        VirtualCameraDescriptor.feed(feedID: feed.id.rawValue, displayName: "UltraStudio LUT · \(feed.name)")
+      }
+    case .program:
+      return [VirtualCameraDescriptor.program()]
+    }
   }
 }
