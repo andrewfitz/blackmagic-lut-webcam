@@ -38,7 +38,15 @@ final class CameraDemandMonitor {
         self?.discover()
       }
       discover()
-    } catch { onChange?(nil, error.localizedDescription) }
+    } catch {
+      // A failed initial registration leaves no topology callback to recover
+      // the monitor. Reset the state and release any partial listeners so a
+      // a later mode toggle can perform a complete registration.
+      enabled = false
+      remove(&demand)
+      remove(&topology)
+      onChange?(nil, error.localizedDescription)
+    }
   }
 
   func stop() {
