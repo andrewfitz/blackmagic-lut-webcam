@@ -415,7 +415,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
         logAuthorizationRejection(client, reason: "producer signing identifier does not match\(detail)")
         return false
       }
-      guard self.client == nil || self.client == client else {
+      guard self.client == nil || self.client?.clientID == client.clientID else {
         logAuthorizationRejection(client, reason: "another producer owns the sink")
         return false
       }
