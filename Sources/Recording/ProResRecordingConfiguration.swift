@@ -276,6 +276,9 @@ public final class ProResTimecodeTrack {
 
 /// Fully validated AVAssetWriter settings for a 10-bit 4:2:2 ProRes recording.
 public struct ProResRecordingConfiguration {
+  public static let bitDepth = 10
+  public static let chromaSubsampling = "4:2:2"
+
   public let source: ProRes422SourceFormat
   public let profile: ProRes422Profile
   public let encoder: ProResEncoderInfo
