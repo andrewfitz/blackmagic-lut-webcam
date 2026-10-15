@@ -56,7 +56,7 @@ typealias CameraSampleRequest = (@escaping CameraSampleCompletion) -> Void
 // Transport injection permits the actual stream lifecycle to run in-process;
 // tests never register or install the unsigned system extension.
 final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @unchecked Sendable {
-  let queue = DispatchQueue(label: "org.ultrastudiolut.camera")
+  let queue: DispatchQueue
   private(set) var descriptor: VirtualCameraDescriptor
   var onDemandChange: (() -> Void)?
   var provider: CMIOExtensionProvider!
@@ -82,11 +82,13 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
   private(set) var formats: [CMIOExtensionStreamFormat] = []
 
   init(automaticTimers: Bool = true, createNativeProvider: Bool = true,
+    queue: DispatchQueue? = nil,
     clock: @escaping () -> CMTime = { CMClockGetTime(CMClockGetHostTimeClock()) },
     output: ((CMSampleBuffer, CMIOExtensionStream.DiscontinuityFlags, UInt64) -> Void)? = nil,
     descriptor: VirtualCameraDescriptor = .feed(feedID: "default")) {
     self.descriptor = descriptor
     self.automaticTimers = automaticTimers
+    self.queue = queue ?? DispatchQueue(label: "org.ultrastudiolut.camera")
     self.clock = clock
     self.output = output
     super.init()
@@ -444,7 +446,13 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
 
   private func publish(_ descriptor: VirtualCameraDescriptor) throws {
     try descriptor.validate()
+    // Keep the legacy first runtime on the provider queue so existing callers
+    // that synchronize through CameraProvider.queue also synchronize its
+    // sample-completion work. Additional registry devices retain independent
+    // queues for feed isolation.
+    let runtimeQueue = runtimes.isEmpty ? queue : nil
     let runtime = CameraDeviceRuntime(automaticTimers: automaticTimers, createNativeProvider: false,
+      queue: runtimeQueue,
       clock: clock, output: output, descriptor: descriptor)
     runtime.onDemandChange = { [weak self, weak runtime] in
       guard let self, let runtime else { return }
