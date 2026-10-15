@@ -49,6 +49,9 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else {
       throw SourceRecordingError.unsupportedSample("A video sample has no image buffer.")
     }
+    guard CVPixelBufferGetPixelFormatType(imageBuffer) == kCVPixelFormatType_422YpCbCr10 else {
+      throw SourceRecordingError.unsupportedSample("The source recorder requires native 10-bit 4:2:2 video.")
+    }
     let pts = CMSampleBufferGetPresentationTimeStamp(sample)
     guard pts.isNumeric else {
       throw SourceRecordingError.unsupportedSample("A video sample has no numeric presentation time.")
@@ -183,9 +186,18 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         "Video dimensions \(width) × \(height) do not match the configured source \(configuration.width) × \(configuration.height).")
     }
     var session: VTCompressionSession?
+    let encoderSpecification: CFDictionary = [
+      kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true,
+    ] as CFDictionary
+    let imageBufferAttributes: CFDictionary = [
+      kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_422YpCbCr10,
+      kCVPixelBufferWidthKey: width,
+      kCVPixelBufferHeightKey: height,
+    ] as CFDictionary
     let status = VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
       width: Int32(width), height: Int32(height), codecType: configuration.videoCodec,
-      encoderSpecification: nil, imageBufferAttributes: nil, compressedDataAllocator: nil,
+      encoderSpecification: encoderSpecification, imageBufferAttributes: imageBufferAttributes,
+      compressedDataAllocator: nil,
       outputCallback: sourceRecordingCompressionCallback,
       refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &session)
     guard status == noErr, let session else {
