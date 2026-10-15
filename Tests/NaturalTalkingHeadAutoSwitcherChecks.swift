@@ -80,7 +80,7 @@ import XCTest
     XCTAssertTrue(returnDecision?.reason.contains("emphasis resolved") == true)
   }
 
-  func testInvalidAndBackwardsClockTimesClearCandidatesWithoutUnsafeCuts() {
+  func testInvalidAndBackwardsClockTimesClearCandidatesWithoutUnsafeCuts() throws {
     var settings = NaturalTalkingHeadDirectorSettings()
     settings.minimumShotDuration = 0
     settings.candidateDwell = 0
@@ -88,11 +88,16 @@ import XCTest
     _ = director.evaluate(input(at: 0))
     let cue = TranscriptCue(timeRange: CMTimeRange(start: time(0.8), end: time(1)),
       kind: .sentenceEnd, confidence: 1, isFinal: true)
-    XCTAssertNotNil(director.evaluate(input(at: 1, emphasis: 1, transcript: [cue])))
+    let firstDecision = try XCTUnwrap(director.evaluate(input(at: 1, emphasis: 1, transcript: [cue])))
+    XCTAssertTrue(director.acknowledgeOutput(firstDecision))
     let backwards = NaturalTalkingHeadDirectorInput(mediaTime: time(0.5), currentCameraID: "A",
       anchorCameraID: "A", emphasisCameraID: "B", audioCues: [], transcriptCues: [])
     XCTAssertNil(director.evaluate(backwards))
     XCTAssertEqual(director.state, .holdAnchor)
+    let restartedCue = TranscriptCue(timeRange: CMTimeRange(start: time(0.8), end: time(1)),
+      kind: .sentenceEnd, confidence: 1, isFinal: true)
+    XCTAssertNotNil(director.evaluate(input(at: 1, emphasis: 1, transcript: [restartedCue])),
+      "A restarted timeline must be able to reuse a previously committed boundary timestamp")
     let invalid = NaturalTalkingHeadDirectorInput(mediaTime: .invalid, currentCameraID: "A",
       anchorCameraID: "A", emphasisCameraID: "B")
     XCTAssertNil(director.evaluate(invalid))

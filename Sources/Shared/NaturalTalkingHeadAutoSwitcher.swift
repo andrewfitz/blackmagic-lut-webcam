@@ -213,10 +213,17 @@ struct NaturalTalkingHeadDirector {
 
     if let previous = lastMediaTime, now + 0.000_001 < previous {
       // A source-clock discontinuity invalidates all candidate timing. Do not
-      // manufacture a cut at the reset point; wait for a fresh safe cue.
+      // manufacture a cut at the reset point; wait for a fresh safe cue. The
+      // transcript/audio stores and boundary tombstones belong to the prior
+      // timeline too: retaining them would suppress a legitimate cue when a
+      // new session reuses timestamps from zero.
       candidate = nil
       pendingOutput = nil
       lastEmittedCutTime = .invalid
+      audioByTime.removeAll(keepingCapacity: true)
+      transcriptByStart.removeAll(keepingCapacity: true)
+      committedBoundaries.removeAll(keepingCapacity: true)
+      committedBoundaryTimes.removeAll(keepingCapacity: true)
       trackedCameraID = input.anchorCameraID
       shotStartedAt = now
       state = .holdAnchor
