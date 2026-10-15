@@ -44,6 +44,8 @@ struct MenuBarInterface: View {
           PipelineControls(model: model, compact: true)
           Divider()
           LUTControls(model: model, compact: true)
+          Divider()
+          MultiCameraControls(model: model)
           DisclosureGroup("Feed details") {
             VStack(alignment: .leading, spacing: 12) {
               InputDeviceControl(model: model)
