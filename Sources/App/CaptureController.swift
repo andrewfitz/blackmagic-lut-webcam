@@ -265,6 +265,7 @@ final class CaptureController: @unchecked Sendable {
         let hasPreview = previewEnabled &&
           (self.previewRenderers.contains { $0.isVisible } || self.services.preview != nil)
         if self.cameraConnected || hasPreview {
+          if !warm.untouched, self.processor == nil { self.processor = try LUTProcessor() }
           try self.ensurePrepared(warm)
           if warm.untouched, let type = self.services.capturePixelFormat {
             try self.deliveryStager.prepare(width: 3840, height: 2160, pixelFormat: type)
