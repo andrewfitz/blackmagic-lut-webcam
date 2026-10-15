@@ -120,6 +120,11 @@ struct NaturalTalkingHeadDirector {
     var returnToAnchor: Bool
   }
 
+  private struct CommittedBoundary {
+    let kind: CueKind
+    let seconds: TimeInterval
+  }
+
   let settings: NaturalTalkingHeadDirectorSettings
   private(set) var state: State = .holdCurrent
   private(set) var lastDecision: CutDecision?
@@ -134,6 +139,7 @@ struct NaturalTalkingHeadDirector {
   private var audioByTime: [TimestampKey: AudioCue] = [:]
   private var transcriptByStart: [TranscriptKey: TranscriptCue] = [:]
   private var committedBoundaries: Set<TranscriptKey> = []
+  private var committedBoundaryTimes: [CommittedBoundary] = []
 
   init(settings: NaturalTalkingHeadDirectorSettings = .init()) {
     self.settings = settings
@@ -152,6 +158,7 @@ struct NaturalTalkingHeadDirector {
     audioByTime.removeAll(keepingCapacity: true)
     transcriptByStart.removeAll(keepingCapacity: true)
     committedBoundaries.removeAll(keepingCapacity: true)
+    committedBoundaryTimes.removeAll(keepingCapacity: true)
   }
 
   /// Manual changes are explicit output acknowledgements and clear volatile
@@ -308,7 +315,8 @@ struct NaturalTalkingHeadDirector {
   private mutating func ingest(transcript cues: [TranscriptCue]) {
     for cue in cues {
       guard cue.timeRange.isValid, let start = timestampKey(cue.timeRange.start),
-        validSeconds(cue.timeRange.start) != nil, validSeconds(cue.timeRange.end) != nil,
+        let startSeconds = validSeconds(cue.timeRange.start),
+        let endSeconds = validSeconds(cue.timeRange.end), endSeconds >= startSeconds,
         cue.confidence.isFinite else { continue }
       let key = TranscriptKey(kind: cue.kind, start: start)
       if let existing = transcriptByStart[key], existing.isFinal && !cue.isFinal { continue }
@@ -332,7 +340,11 @@ struct NaturalTalkingHeadDirector {
       guard cue.confidence >= settings.transcriptConfidenceThreshold,
         settings.mode == .lowLatency ? cue.isFinal : (cue.isFinal || cue.confidence >= 0.9),
         let end = validSeconds(cue.timeRange.end), abs(end - now) <= settings.boundaryWindow,
-        end <= now + upper, !committedBoundaries.contains(key) else { return nil }
+        end <= now + upper,
+        !committedBoundaries.contains(key),
+        !committedBoundaryTimes.contains(where: {
+          $0.kind == cue.kind && abs($0.seconds - end) <= max(settings.boundaryWindow, 0.5)
+        }) else { return nil }
       let label: String
       switch cue.kind {
       case .sentenceEnd: label = "sentence boundary"
@@ -372,7 +384,7 @@ struct NaturalTalkingHeadDirector {
     guard now - candidate.startedAt >= settings.candidateDwell else { return nil }
 
     let cutTime = candidate.boundary.time
-    guard let cutSeconds = validSeconds(cutTime), cutSeconds >= 0,
+    guard let cutSeconds = validSeconds(cutTime), cutSeconds >= (shotStartedAt ?? 0),
       !lastEmittedCutTime.isValid || CMTimeCompare(cutTime, lastEmittedCutTime) > 0 else {
       return nil
     }
@@ -385,7 +397,17 @@ struct NaturalTalkingHeadDirector {
     pendingOutput = decision
     lastDecision = decision
     lastEmittedCutTime = cutTime
-    if let key = candidate.boundary.key { committedBoundaries.insert(key) }
+    if let key = candidate.boundary.key {
+      committedBoundaries.insert(key)
+      if let seconds = validSeconds(candidate.boundary.time) {
+        // Keep a time-based tombstone as well as the volatile range key: a
+        // revised transcript may move the range start while describing the
+        // same already-committed editorial boundary.
+        if let cue = transcriptByStart[key] {
+          committedBoundaryTimes.append(CommittedBoundary(kind: cue.kind, seconds: seconds))
+        }
+      }
+    }
     self.candidate = nil
     state = .cut
     return decision
