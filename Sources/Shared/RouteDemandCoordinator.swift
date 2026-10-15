@@ -216,6 +216,18 @@ struct RouteDemandCoordinator: Sendable {
     return release(lease, at: time)
   }
 
+  /// Releases an owner-specific route without requiring callers to retain the
+  /// lease token. This is useful for CMIO clients whose disconnect callback
+  /// carries a stable owner ID but not the original acquisition value.
+  @discardableResult
+  mutating func release(feedID: String, route: DemandRoute, ownerID: String?,
+                        at time: TimeInterval? = nil) -> Bool {
+    guard let lease = leases[LeaseKey(feedID: feedID, route: route, ownerID: ownerID)] else {
+      return false
+    }
+    return release(lease, at: time)
+  }
+
   /// Keep only one selected Program feed. A replacement releases the previous
   /// selection before acquiring the new one, while preserving debounce timing
   /// for each feed independently.
