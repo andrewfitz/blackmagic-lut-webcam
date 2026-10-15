@@ -64,8 +64,8 @@ public struct ProResFrameRate: Equatable, Sendable {
   public let isDropFrameRate: Bool
 
   public init(frameDuration: CMTime) throws {
-    guard frameDuration.isValid, frameDuration.isNumeric, frameDuration.value > 0,
-      frameDuration.timescale > 0 else {
+    guard frameDuration.isValid, frameDuration.isNumeric, frameDuration.epoch == 0,
+      frameDuration.value > 0, frameDuration.timescale > 0 else {
       throw ProResRecordingError.unsupportedFrameRate(frameDuration)
     }
     let supported: [(CMTime, Int, Bool)] = [
