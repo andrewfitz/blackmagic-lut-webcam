@@ -94,6 +94,7 @@ final class FeedCoordinator {
   private(set) var selectedFeedID: FeedID
   private(set) var outputMode: FeedOutputMode
   private(set) var switcher: SwitcherSettings
+  private(set) var virtualCameraRegistryVersion: Int
   private var sessions: [FeedID: FeedSession] = [:]
 
   init(snapshot: AppSettingsSnapshot = AppSettingsSnapshot()) {
@@ -102,6 +103,7 @@ final class FeedCoordinator {
     selectedFeedID = safe.selectedFeedID
     outputMode = safe.outputMode
     switcher = safe.switcher
+    virtualCameraRegistryVersion = safe.virtualCameraRegistryVersion
   }
 
   var selectedDescriptor: FeedDescriptor {
@@ -182,6 +184,7 @@ final class FeedCoordinator {
 
   var snapshot: AppSettingsSnapshot {
     AppSettingsSnapshot(feeds: descriptors, selectedFeedID: selectedFeedID,
-      outputMode: outputMode, switcher: switcher)
+      outputMode: outputMode, switcher: switcher,
+      virtualCameraRegistryVersion: virtualCameraRegistryVersion)
   }
 }
