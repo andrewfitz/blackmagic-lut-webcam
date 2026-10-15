@@ -21,7 +21,8 @@ import XCTest
     let first = FeedDescriptor(id: FeedID(rawValue: "feed-a"), name: "Wide")
     let second = FeedDescriptor(id: FeedID(rawValue: "feed-b"), name: "Tight")
     let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
-      feeds: [first, second], selectedFeedID: second.id, outputMode: .program))
+      feeds: [first, second], selectedFeedID: second.id, outputMode: .program,
+      virtualCameraRegistryVersion: 7))
 
     XCTAssertEqual(coordinator.descriptors.map(\.id), [first.id, second.id])
     XCTAssertEqual(coordinator.selectedFeedID, second.id)
@@ -31,6 +32,7 @@ import XCTest
     XCTAssertEqual(selected.id, second.id)
     XCTAssertEqual(coordinator.orderedSessions.map(\.id), [second.id])
     XCTAssertEqual(coordinator.snapshot.outputMode, .program)
+    XCTAssertEqual(coordinator.snapshot.virtualCameraRegistryVersion, 7)
   }
 
   func testSessionsHaveIndependentLifecycleAndRouteQueues() throws {
