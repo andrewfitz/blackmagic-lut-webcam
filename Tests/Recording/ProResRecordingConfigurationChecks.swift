@@ -92,11 +92,49 @@ final class ProResRecordingConfigurationChecks: XCTestCase {
     XCTAssertTrue(info.supportedPropertyKeys.contains("ExpectedFrameRate"))
   }
 
+  func testSourceRecorderInfersExactHardwareProfiles() throws {
+    let hevc = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("hevc"),
+      outputURL: URL(fileURLWithPath: "/tmp/hevc.mov"), width: 3_840, height: 2_160,
+      videoCodec: kCMVideoCodecType_HEVC)
+    XCTAssertEqual(hevc.videoProfile, .hevcMain10_422)
+    XCTAssertEqual(hevc.videoProfile.profileLevel,
+      kVTProfileLevel_HEVC_Main42210_AutoLevel as String)
+    XCTAssertEqual(hevc.videoProfile.sourcePixelFormat, kCVPixelFormatType_422YpCbCr10)
+    let specification = hevc.videoProfile.encoderSpecification as NSDictionary
+    XCTAssertEqual((specification.object(
+      forKey: kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder) as? NSNumber)?.boolValue,
+      true)
+
+    let proRes = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("prores"),
+      outputURL: URL(fileURLWithPath: "/tmp/prores.mov"), width: 3_840, height: 2_160,
+      videoCodec: kCMVideoCodecType_AppleProRes422HQ)
+    XCTAssertEqual(proRes.videoProfile, .proRes422(.highQuality))
+    XCTAssertNil(proRes.videoProfile.profileLevel)
+    XCTAssertEqual(proRes.videoProfile.codecType, kCMVideoCodecType_AppleProRes422HQ)
+  }
+
+  func testSourceRecorderRejectsProfileCodecMismatch() {
+    XCTAssertThrowsError(try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("mismatch"),
+      outputURL: URL(fileURLWithPath: "/tmp/mismatch.mov"), width: 16, height: 16,
+      videoCodec: kCMVideoCodecType_HEVC,
+      videoProfile: .proRes422(.standard))) { error in
+      guard case let SourceRecordingError.invalidConfiguration(message) = error else {
+        return XCTFail("Expected an invalid profile configuration, got \(error)")
+      }
+      XCTAssertTrue(message.contains("does not match"))
+    }
+  }
+
   static let allTests = [
     ("settings preserve geometry and ten-bit format", testSettingsPreserveSourceGeometryAndTenBitFormat),
     ("unsupported mode errors name actual mode", testUnsupportedModeErrorsNameTheActualMode),
     ("VideoToolbox unavailable is actionable", testVideoToolboxUnavailableIsActionable),
     ("timecode track carries metadata", testTimecodeTrackCarriesDropFrameMetadataAndBigEndianFrame),
     ("system probe finds ProRes encoder", testSystemProbeFindsProResEncoderOnSupportedHost),
+    ("source recorder profile contract", testSourceRecorderInfersExactHardwareProfiles),
+    ("source recorder profile mismatch", testSourceRecorderRejectsProfileCodecMismatch),
   ]
 }
