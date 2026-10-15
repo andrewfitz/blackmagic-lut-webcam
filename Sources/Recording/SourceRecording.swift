@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import VideoToolbox
 
 /// Identifies one source feed in the recording catalog. A recorder instance owns
 /// exactly one output file for this feed.
@@ -33,6 +34,63 @@ enum SourceRecordingDropReason: String, Equatable, Sendable {
   case appendFailure
 }
 
+/// Exact codec contract for source recording. The capture callback supplies
+/// the original packed 10-bit 4:2:2 buffer; this profile selects the hardware
+/// encoder and, for HEVC Main10 4:2:2, the required profile level.
+enum SourceRecordingVideoProfile: Equatable, Sendable {
+  case hevcMain10_422
+  case proRes422(ProRes422Profile)
+  /// Compatibility escape hatch for callers that provide another codec.
+  /// Custom codecs still receive the native source format and hardware-only
+  /// encoder specification, but do not get a profile-level property.
+  case custom(CMVideoCodecType)
+
+  var codecType: CMVideoCodecType {
+    switch self {
+    case .hevcMain10_422: return kCMVideoCodecType_HEVC
+    case let .proRes422(profile): return profile.codecType
+    case let .custom(codec): return codec
+    }
+  }
+
+  var profileLevel: String? {
+    switch self {
+    case .hevcMain10_422: return kVTProfileLevel_HEVC_Main42210_AutoLevel as String
+    case .proRes422, .custom: return nil
+    }
+  }
+
+  var displayName: String {
+    switch self {
+    case .hevcMain10_422: return "HEVC Main 10 4:2:2"
+    case let .proRes422(profile): return profile.displayName
+    case let .custom(codec): return "Video codec \(codec)"
+    }
+  }
+
+  /// The source buffer remains packed 10-bit 4:2:2 (v210-like) through the
+  /// handoff. No LUT, scaling, or pixel format conversion occurs here.
+  var sourcePixelFormat: OSType { kCVPixelFormatType_422YpCbCr10 }
+
+  /// Require hardware instead of merely preferring it so long-running source
+  /// recording cannot silently fall back to a CPU encoder.
+  var encoderSpecification: CFDictionary {
+    [
+      kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true,
+      kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
+    ] as CFDictionary
+  }
+
+  static func inferred(for codec: CMVideoCodecType) -> Self {
+    switch codec {
+    case kCMVideoCodecType_HEVC: return .hevcMain10_422
+    case kCMVideoCodecType_AppleProRes422: return .proRes422(.standard)
+    case kCMVideoCodecType_AppleProRes422HQ: return .proRes422(.highQuality)
+    default: return .custom(codec)
+    }
+  }
+}
+
 /// The recorder accepts the capture callback's original CMSampleBuffer. No
 /// Core Image, Metal, pixel-buffer conversion, or color transform is performed
 /// by this layer.
@@ -42,15 +100,30 @@ struct SourceRecordingConfiguration {
   let width: Int
   let height: Int
   let videoCodec: CMVideoCodecType
+  let videoProfile: SourceRecordingVideoProfile
   let fileType: AVFileType
   let queueCapacity: Int
   let realTimeEncoding: Bool
   let maxKeyFrameInterval: Int
+  /// Source cadence used to describe a generated QuickTime timecode track.
+  /// The default matches the recorder's historically supported 59.94 mode;
+  /// callers that detect 29.97 must pass `.fps2997`.
+  let frameRate: RecordingFrameRate
+  let timecodePolicy: RecordingTimecodePolicy
+  let timecodeDropFrame: Bool
+  let timecodeStartDate: Date
+  let timecodeSourceStartTime: CMTime
 
   init(feedID: SourceRecordingFeedID, outputURL: URL, width: Int, height: Int,
     videoCodec: CMVideoCodecType = kCMVideoCodecType_HEVC,
+    videoProfile: SourceRecordingVideoProfile? = nil,
     fileType: AVFileType = .mov, queueCapacity: Int = 12,
-    realTimeEncoding: Bool = true, maxKeyFrameInterval: Int = 60) throws {
+    realTimeEncoding: Bool = true, maxKeyFrameInterval: Int = 60,
+    frameRate: RecordingFrameRate = .fps5994,
+    timecodePolicy: RecordingTimecodePolicy = .source,
+    timecodeDropFrame: Bool? = nil,
+    timecodeStartDate: Date = Date(),
+    timecodeSourceStartTime: CMTime = .zero) throws {
     guard !feedID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw SourceRecordingError.invalidConfiguration("A feed ID is required.")
     }
@@ -66,15 +139,30 @@ struct SourceRecordingConfiguration {
     guard outputURL.isFileURL else {
       throw SourceRecordingError.invalidConfiguration("The recording destination must be a file URL.")
     }
+    let selectedProfile = videoProfile ?? SourceRecordingVideoProfile.inferred(for: videoCodec)
+    guard selectedProfile.codecType == videoCodec else {
+      throw SourceRecordingError.invalidConfiguration(
+        "Video profile \(selectedProfile.displayName) does not match codec \(videoCodec).")
+    }
+    guard timecodeSourceStartTime.isValid, timecodeSourceStartTime.isNumeric,
+      timecodeSourceStartTime.epoch == 0, timecodeSourceStartTime.value >= 0 else {
+      throw SourceRecordingError.invalidConfiguration("The timecode source start must be a non-negative CMTime.")
+    }
     self.feedID = feedID
     self.outputURL = outputURL
     self.width = width
     self.height = height
     self.videoCodec = videoCodec
+    self.videoProfile = selectedProfile
     self.fileType = fileType
     self.queueCapacity = queueCapacity
     self.realTimeEncoding = realTimeEncoding
     self.maxKeyFrameInterval = maxKeyFrameInterval
+    self.frameRate = frameRate
+    self.timecodePolicy = timecodePolicy
+    self.timecodeDropFrame = timecodeDropFrame ?? (frameRate == .fps2997 || frameRate == .fps5994)
+    self.timecodeStartDate = timecodeStartDate
+    self.timecodeSourceStartTime = timecodeSourceStartTime
   }
 }
 

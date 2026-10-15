@@ -13,6 +13,9 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var writer: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
   private var audioInput: AVAssetWriterInput?
+  private var timecodeInput: AVAssetWriterInput?
+  private var timecodeTrack: QuickTimeTimecodeTrack?
+  private var timecodeSession: RecordingTimecodeSession?
   private var compressionSession: VTCompressionSession?
   private var telemetryValue = SourceRecordingWriterTelemetry()
   private var started = false
@@ -25,6 +28,16 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
 
   init(configuration: SourceRecordingConfiguration) throws {
     self.configuration = configuration
+  }
+
+  /// Returns the generated track description for modes that do not depend on
+  /// an embedded source timecode. Source mode remains absent until the capture
+  /// boundary supplies a source timecode value.
+  static func makeTimecodeTrack(for configuration: SourceRecordingConfiguration) throws
+    -> QuickTimeTimecodeTrack? {
+    guard configuration.timecodePolicy != .source else { return nil }
+    return try QuickTimeTimecodeTrack(frameRate: configuration.frameRate,
+      dropFrame: configuration.timecodeDropFrame)
   }
 
   var telemetry: SourceRecordingWriterTelemetry { lock.withLock { telemetryValue } }
@@ -50,8 +63,9 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else {
       throw SourceRecordingError.unsupportedSample("A video sample has no image buffer.")
     }
-    guard CVPixelBufferGetPixelFormatType(imageBuffer) == kCVPixelFormatType_422YpCbCr10 else {
-      throw SourceRecordingError.unsupportedSample("The source recorder requires native 10-bit 4:2:2 video.")
+    guard CVPixelBufferGetPixelFormatType(imageBuffer) == configuration.videoProfile.sourcePixelFormat else {
+      throw SourceRecordingError.unsupportedSample(
+        "The source recorder requires native 10-bit 4:2:2 video for \(configuration.videoProfile.displayName).")
     }
     let pts = CMSampleBufferGetPresentationTimeStamp(sample)
     guard pts.isNumeric else {
@@ -129,6 +143,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       }
       videoInput?.markAsFinished()
       audioInput?.markAsFinished()
+      timecodeInput?.markAsFinished()
       finished = true
       let semaphore = DispatchSemaphore(value: 0)
       writer.finishWriting { semaphore.signal() }
@@ -171,19 +186,38 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     // the packed 24-bit CMSampleBuffers produced from DeckLink PCM.
     let audio = AVAssetWriterInput(mediaType: .audio,
       outputSettings: EmbeddedAudioFormat.assetWriterSettings)
+    let generatedTimecodeTrack = try Self.makeTimecodeTrack(for: configuration)
+    let timecode = generatedTimecodeTrack?.makeInput()
     video.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
     audio.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
-    guard writer.canAdd(video), writer.canAdd(audio) else {
+    timecode?.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
+    guard writer.canAdd(video), writer.canAdd(audio),
+      timecode.map({ writer.canAdd($0) }) ?? true else {
       throw SourceRecordingError.writerFailure("The output container cannot add source tracks.")
     }
     Self.invokeAddInput(writer, input: video)
     Self.invokeAddInput(writer, input: audio)
+    if let timecode {
+      Self.invokeAddInput(writer, input: timecode)
+      video.addTrackAssociation(withTrackOf: timecode,
+        type: AVAssetTrack.AssociationType.timecode.rawValue)
+    }
     guard Self.invokeStartWriting(writer) else {
       throw Self.writerError(writer, fallback: "AVAssetWriter could not start writing.")
     }
     self.writer = writer
     self.videoInput = video
     self.audioInput = audio
+    self.timecodeInput = timecode
+    self.timecodeTrack = generatedTimecodeTrack
+    if generatedTimecodeTrack != nil {
+      self.timecodeSession = RecordingTimecodeSession(
+        frameRate: configuration.frameRate,
+        dropFrame: configuration.timecodeDropFrame,
+        policy: configuration.timecodePolicy,
+        startDate: configuration.timecodeStartDate,
+        sourceStartTime: configuration.timecodeSourceStartTime)
+    }
   }
 
   private func ensureCompressionSession(for imageBuffer: CVImageBuffer) throws {
@@ -195,13 +229,12 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         "Video dimensions \(width) × \(height) do not match the configured source \(configuration.width) × \(configuration.height).")
     }
     var session: VTCompressionSession?
-    let encoderSpecification: CFDictionary = [
-      kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true,
-    ] as CFDictionary
+    let encoderSpecification = configuration.videoProfile.encoderSpecification
     let imageBufferAttributes: CFDictionary = [
-      kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_422YpCbCr10,
+      kCVPixelBufferPixelFormatTypeKey: configuration.videoProfile.sourcePixelFormat,
       kCVPixelBufferWidthKey: width,
       kCVPixelBufferHeightKey: height,
+      kCVPixelBufferIOSurfacePropertiesKey: [:],
     ] as CFDictionary
     let status = VTCompressionSessionCreate(allocator: kCFAllocatorDefault,
       width: Int32(width), height: Int32(height), codecType: configuration.videoCodec,
@@ -213,11 +246,32 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       throw SourceRecordingError.writerFailure("VideoToolbox could not create a compression session (OSStatus \(status)).")
     }
     if configuration.realTimeEncoding {
-      _ = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+      guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime,
+        value: kCFBooleanTrue) == noErr else {
+        VTCompressionSessionInvalidate(session)
+        throw SourceRecordingError.writerFailure(
+          "VideoToolbox rejected real-time encoding for \(configuration.videoProfile.displayName).")
+      }
     }
-    _ = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+    guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering,
+      value: kCFBooleanFalse) == noErr else {
+      VTCompressionSessionInvalidate(session)
+      throw SourceRecordingError.writerFailure("VideoToolbox rejected the no-reordering source contract.")
+    }
     let keyFrameInterval = configuration.maxKeyFrameInterval as CFTypeRef
-    _ = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: keyFrameInterval)
+    guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval,
+      value: keyFrameInterval) == noErr else {
+      VTCompressionSessionInvalidate(session)
+      throw SourceRecordingError.writerFailure("VideoToolbox rejected the source key-frame interval.")
+    }
+    if let profileLevel = configuration.videoProfile.profileLevel {
+      guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel,
+        value: profileLevel as CFString) == noErr else {
+        VTCompressionSessionInvalidate(session)
+        throw SourceRecordingError.writerFailure(
+          "VideoToolbox rejected profile \(profileLevel) for \(configuration.videoProfile.displayName).")
+      }
+    }
     let prepareStatus = VTCompressionSessionPrepareToEncodeFrames(session)
     guard prepareStatus == noErr else {
       VTCompressionSessionInvalidate(session)
@@ -287,6 +341,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           throw Self.writerError(writer, fallback: "Video sample append failed.")
         }
         telemetryValue.encodedVideo &+= 1
+        try appendTimecode(for: pts)
         if let audioInput {
           while let pendingAudio = self.pendingAudio.first {
             guard Self.inputIsReady(audioInput) else { break }
@@ -301,6 +356,20 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         telemetryValue.encoderErrors &+= 1
         telemetryValue.lastError = error.localizedDescription
       }
+    }
+  }
+
+  private func appendTimecode(for sourcePTS: CMTime) throws {
+    guard let timecodeInput, let timecodeTrack, let timecodeSession else { return }
+    guard Self.inputIsReady(timecodeInput) else {
+      throw SourceRecordingError.writerNotReady("Timecode writer input is not ready.")
+    }
+    guard let value = timecodeSession.timecode(for: sourcePTS) else {
+      throw SourceRecordingError.unsupportedSample("The source timestamp cannot be mapped to timecode.")
+    }
+    let sample = try timecodeTrack.sample(for: value, at: sourcePTS)
+    guard Self.append(sample, to: timecodeInput) else {
+      throw Self.writerError(writer, fallback: "Timecode sample append failed.")
     }
   }
 }
