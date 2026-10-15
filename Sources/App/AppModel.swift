@@ -249,7 +249,8 @@ final class AppModel {
   /// previous feed are committed before the new descriptor is applied.
   @discardableResult
   func selectFeed(_ id: FeedID) -> Bool {
-    guard feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
+    guard canEditFeedTopology,
+      feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
     saveSettings()
     guard feedCoordinator.select(id) else { return false }
     let descriptor = feedCoordinator.selectedDescriptor
@@ -277,13 +278,10 @@ final class AppModel {
   @discardableResult
   func removeFeed(_ id: FeedID) -> Bool {
     guard canEditFeedTopology else { return false }
+    let wasSelected = id == selectedFeedID
     saveSettings()
     guard feedCoordinator.remove(id) else { return false }
-    if feedCoordinator.selectedFeedID == id {
-      _ = feedCoordinator.select(feedCoordinator.descriptors[0].id)
-    }
-    let descriptor = feedCoordinator.selectedDescriptor
-    applySelectedDescriptor(descriptor)
+    if wasSelected { applySelectedDescriptor(feedCoordinator.selectedDescriptor) }
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
     return true
@@ -298,7 +296,6 @@ final class AppModel {
     var updated = existing
     updated.name = trimmed
     feedCoordinator.update(updated)
-    if id == selectedFeedID { applySelectedDescriptor(updated) }
     saveSettings()
     return true
   }

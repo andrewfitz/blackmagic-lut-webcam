@@ -404,9 +404,15 @@ final class FeedCoordinator {
   func setOutputMode(_ mode: FeedOutputMode) {
     guard outputMode != mode else { return }
     outputMode = mode
-    // Rebuild the Program scheduler at the mode boundary so its selected
-    // source and timestamp mapper start from the persisted feed topology.
+    // Keep the Program scheduler aligned with the persisted selection when the
+    // program route is enabled. A feed can be selected while operating in
+    // separate-camera mode, so the live scheduler may still point at an older
+    // source when the mode changes.
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    if mode == .program, let requested = switcher.selectedFeedID,
+      programOutput.selectedFeedID != requested {
+      _ = programOutput.requestCut(to: requested)
+    }
     syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }

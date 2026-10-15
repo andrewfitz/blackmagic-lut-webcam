@@ -192,6 +192,7 @@ struct FeedControls: View {
 
 struct MultiCameraControls: View {
   let model: AppModel
+  @State private var nameDraft = ""
 
   private var selectedFeedBinding: Binding<FeedID> {
     Binding(get: { model.selectedFeedID }, set: { _ = model.selectFeed($0) })
@@ -255,10 +256,15 @@ struct MultiCameraControls: View {
         .help("Remove selected feed")
       }
 
-      TextField("Feed name", text: Binding(
-        get: { model.selectedFeedName },
-        set: { _ = model.renameFeed(model.selectedFeedID, name: $0) }))
-        .textFieldStyle(.roundedBorder).disabled(!model.canEditFeedTopology)
+      TextField("Feed name", text: $nameDraft)
+        .textFieldStyle(.roundedBorder)
+        .disabled(!model.canEditFeedTopology)
+        .onAppear { nameDraft = model.selectedFeedName }
+        .onChange(of: model.selectedFeedID) { _, _ in nameDraft = model.selectedFeedName }
+        .onSubmit {
+          _ = model.renameFeed(model.selectedFeedID, name: nameDraft)
+          nameDraft = model.selectedFeedName
+        }
 
       Picker("Output", selection: outputModeBinding) {
         Text("Separate cameras").tag(FeedOutputMode.separateCameras)

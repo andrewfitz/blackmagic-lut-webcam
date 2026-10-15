@@ -92,6 +92,18 @@ import XCTest
     XCTAssertTrue(coordinator.activeDemandFeedIDs.isEmpty)
   }
 
+  func testEnteringProgramModeQueuesPersistedSwitcherSelection() {
+    let a = FeedDescriptor(id: feed("alpha"), name: "Wide")
+    let b = FeedDescriptor(id: feed("beta"), name: "Tight")
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
+      feeds: [a, b], outputMode: .separateCameras,
+      switcher: SwitcherSettings(selectedFeedID: b.id)))
+
+    XCTAssertEqual(coordinator.programOutput.selectedFeedID, a.id)
+    coordinator.setOutputMode(.program)
+    XCTAssertEqual(coordinator.programOutput.pendingFeedID, b.id)
+  }
+
   func testProgramBridgePreservesImageAndTimingAndOwnsDemandLifecycle() throws {
     let source = feed("alpha")
     let route = ProgramOutputRoute(feedIDs: [source])
@@ -136,6 +148,7 @@ import XCTest
     ("coordinator uses live Program scheduler", testFeedCoordinatorMutatesTheLiveProgramScheduler),
     ("enabled feed reconfiguration", testProgramRouteReconfigurationKeepsOnlyEnabledFeeds),
     ("registry modes and Program demand", testFeedCoordinatorPublishesSeparateOrProgramRegistryAndProgramDemand),
+    ("program mode honors persisted selection", testEnteringProgramModeQueuesPersistedSwitcherSelection),
     ("Program bridge lifecycle and timing", testProgramBridgePreservesImageAndTimingAndOwnsDemandLifecycle),
   ]
 }

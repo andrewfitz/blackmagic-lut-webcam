@@ -240,6 +240,13 @@ final class SourceRecorderCore: @unchecked Sendable {
     case audio
   }
 
+  // Core Media samples are reference-counted and are intentionally handed to
+  // one serial writer queue. The SDK does not annotate CMSampleBuffer as
+  // Sendable, so keep the cross-queue handoff explicit at this boundary.
+  private struct QueuedSample: @unchecked Sendable {
+    let value: CMSampleBuffer
+  }
+
   private let queue: DispatchQueue
   private let stateLock = NSLock()
   private let configuration: SourceRecordingConfiguration
@@ -387,6 +394,7 @@ final class SourceRecorderCore: @unchecked Sendable {
       return true
     }
     guard admitted else { return false }
+    let queuedSample = QueuedSample(value: sample)
     queue.async { [weak self] in
       guard let self else { return }
       defer { self.stateLock.withLock { self.pending -= 1 } }
@@ -397,10 +405,10 @@ final class SourceRecorderCore: @unchecked Sendable {
       do {
         switch kind {
         case .video:
-          try self.writer.appendVideo(sample)
+          try self.writer.appendVideo(queuedSample.value)
           self.stateLock.withLock { self.telemetryValue.appendedVideo &+= 1 }
         case .audio:
-          try self.writer.appendAudio(sample)
+          try self.writer.appendAudio(queuedSample.value)
           self.stateLock.withLock { self.telemetryValue.appendedAudio &+= 1 }
         }
       } catch {
