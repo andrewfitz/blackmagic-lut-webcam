@@ -36,6 +36,7 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   -F "$frameworks" -Xlinker -rpath -Xlinker "$frameworks" \
   -I "$libraries" -L "$libraries" -lXCTestSwiftSupport -Xlinker -rpath -Xlinker "$libraries" \
   "$task_root"/Sources/Shared/*.swift "$task_root/Sources/App/LUTProcessor.swift" \
+  "$task_root"/Sources/Recording/*.swift \
   "$task_root/Sources/App/CameraSink.swift" "$task_root/Sources/App/CaptureController.swift" \
   "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
   "$task_root/Sources/App/GPURawFrameCopy.swift" \
@@ -55,4 +56,3 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   exit 1
 }
 tail -5 "$test_log"
-  "$task_root"/Sources/Recording/*.swift \
