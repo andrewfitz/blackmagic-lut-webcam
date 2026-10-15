@@ -1,0 +1,111 @@
+import CoreMedia
+import XCTest
+
+@objcMembers final class RecordingTimecodeChecks: XCTestCase {
+  private var utcCalendar: Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar
+  }
+
+  private func utc(_ hour: Int, _ minute: Int = 0, _ second: Int = 0, _ nanosecond: Int = 0) -> Date {
+    let calendar = utcCalendar
+    return calendar.date(
+      from: DateComponents(year: 2026, month: 1, day: 2, hour: hour, minute: minute,
+        second: second, nanosecond: nanosecond))!
+  }
+
+  private func sourceFrame(_ frame: Int64, rate: RecordingFrameRate) -> CMTime {
+    CMTime(value: frame * rate.frameDuration.value, timescale: rate.frameDuration.timescale)
+  }
+
+  func testWallClockNDFUsesNominalFramesAndSeparatelyStartedFeeds() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let first = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: false,
+      startDate: utc(12, 34, 56, 500_000_000), calendar: calendar)
+    let second = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: false,
+      startDate: utc(12, 34, 57, 500_000_000), calendar: calendar)
+
+    XCTAssertEqual(first.startTimecode.stringValue, "12:34:56:15")
+    XCTAssertEqual(first.timecode(for: .zero)?.stringValue, "12:34:56:15")
+    XCTAssertEqual(first.timecode(for: sourceFrame(1, rate: .fps2997))?.stringValue, "12:34:56:16")
+    XCTAssertEqual(second.timecode(for: .zero)?.stringValue, "12:34:57:15")
+    XCTAssertNotEqual(first.timecode(for: .zero), second.timecode(for: .zero))
+  }
+
+  func testDropFrameBoundariesAtTenMinutesAndMidnight() {
+    let session = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: true,
+      startDate: utc(0), calendar: utcCalendar)
+    XCTAssertEqual(session.timecode(for: sourceFrame(1_798, rate: .fps2997))?.stringValue,
+      "00:00:59;28")
+    XCTAssertEqual(session.timecode(for: sourceFrame(1_800, rate: .fps2997))?.stringValue,
+      "00:01:00;02")
+    XCTAssertEqual(session.timecode(for: sourceFrame(17_982, rate: .fps2997))?.stringValue,
+      "00:10:00;00")
+
+    let midnight = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: true,
+      startDate: utc(23, 59, 59, 900_000_000), calendar: utcCalendar)
+    XCTAssertEqual(midnight.startTimecode.stringValue, "23:59:59;29")
+    XCTAssertEqual(midnight.timecode(for: sourceFrame(4, rate: .fps2997))?.stringValue,
+      "00:00:00;03")
+  }
+
+  func test5994DropFrameUsesFourDroppedLabels() {
+    let session = RecordingTimecodeSession(frameRate: .fps5994, dropFrame: true,
+      startDate: utc(0), calendar: utcCalendar)
+    XCTAssertEqual(session.timecode(for: sourceFrame(3_600, rate: .fps5994))?.stringValue,
+      "00:01:00;04")
+    XCTAssertEqual(session.timecode(for: sourceFrame(35_964, rate: .fps5994))?.stringValue,
+      "00:10:00;00")
+  }
+
+  func testSourcePolicyPreservesEmbeddedValueAndRejectsMissingSourceTime() {
+    let wallClock = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: true,
+      startDate: utc(4), calendar: utcCalendar)
+    let embedded = wallClock.startTimecode
+    let source = RecordingTimecodeSession(frameRate: .fps2997, dropFrame: true,
+      policy: .source, startDate: utc(20), calendar: utcCalendar)
+    XCTAssertEqual(source.timecode(for: .zero, sourceTimecode: embedded), embedded)
+    XCTAssertNil(source.timecode(for: .zero))
+    XCTAssertNil(wallClock.timecode(for: .invalid))
+  }
+
+  func testTimecodeParsingAndInvalidDropLabels() {
+    let frame = RecordingTimecode(string: "01:02:03;04", frameRate: .fps2997, dropFrame: true)
+    XCTAssertEqual(frame?.stringValue, "01:02:03;04")
+    XCTAssertNil(RecordingTimecode(string: "00:01:00;00", frameRate: .fps2997, dropFrame: true))
+    XCTAssertNil(RecordingTimecode(string: "00:00:00;00", frameRate: .fps2997, dropFrame: false))
+    XCTAssertEqual(RecordingTimecode(string: "00:01:00:00", frameRate: .fps2997, dropFrame: false)?.stringValue,
+      "00:01:00:00")
+  }
+
+  func testQuickTimeTimecodeTrackWritesBigEndianTimeCode32Sample() throws {
+    let track = try QuickTimeTimecodeTrack(frameRate: .fps2997, dropFrame: true)
+    XCTAssertEqual(CMFormatDescriptionGetMediaSubType(track.formatDescription), kCMTimeCodeFormatType_TimeCode32)
+    XCTAssertEqual(CMTimeCodeFormatDescriptionGetFrameQuanta(track.formatDescription), 30)
+    XCTAssertEqual(CMTimeCodeFormatDescriptionGetFrameDuration(track.formatDescription),
+      RecordingFrameRate.fps2997.frameDuration)
+    XCTAssertEqual(CMTimeCodeFormatDescriptionGetTimeCodeFlags(track.formatDescription),
+      UInt32(kCMTimeCodeFlag_DropFrame | kCMTimeCodeFlag_24HourMax))
+
+    let timecode = RecordingTimecode(frameNumber: 1_800, frameRate: .fps2997, dropFrame: true)
+    let sample = try track.sample(for: timecode, at: CMTime(value: 1_800, timescale: 30_000))
+    XCTAssertEqual(CMSampleBufferGetNumSamples(sample), 1)
+    XCTAssertEqual(CMSampleBufferGetPresentationTimeStamp(sample), CMTime(value: 1_800, timescale: 30_000))
+    let block = try XCTUnwrap(CMSampleBufferGetDataBuffer(sample))
+    var bytes = [UInt8](repeating: 0, count: 4)
+    let status = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: bytes.count, destination: &bytes)
+    XCTAssertEqual(status, kCMBlockBufferNoErr)
+    XCTAssertEqual(bytes, [0, 0, 7, 8])
+  }
+
+  static let allTests = [
+    ("wall clock NDF and independent feeds", testWallClockNDFUsesNominalFramesAndSeparatelyStartedFeeds),
+    ("drop frame boundaries and midnight", testDropFrameBoundariesAtTenMinutesAndMidnight),
+    ("59.94 drop frame", test5994DropFrameUsesFourDroppedLabels),
+    ("source policy", testSourcePolicyPreservesEmbeddedValueAndRejectsMissingSourceTime),
+    ("timecode parsing", testTimecodeParsingAndInvalidDropLabels),
+    ("QuickTime TimeCode32 sample", testQuickTimeTimecodeTrackWritesBigEndianTimeCode32Sample),
+  ]
+}
