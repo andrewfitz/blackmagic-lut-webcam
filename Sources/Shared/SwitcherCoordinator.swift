@@ -204,6 +204,32 @@ struct SwitcherCoordinator {
     return evaluate(at: mediaTime)
   }
 
+  /// Evaluate the natural director with the coordinator's feed IDs and health
+  /// map. Dynamic analysis remains an explicit disabled strategy; this method
+  /// is for callers that opt into the already implemented director directly.
+  mutating func evaluateDirector(at mediaTime: CMTime, currentFeedID: FeedID,
+    audioCues: [AudioCue] = [], transcriptCues: [TranscriptCue] = [])
+    -> SwitcherEvaluation {
+    guard settings.strategy != .dynamicAnalysis else {
+      return .dynamicAnalysisUnavailable
+    }
+    guard let anchorFeedID, let emphasisFeedID else { return .idle }
+    let input = NaturalTalkingHeadDirectorInput(mediaTime: mediaTime,
+      currentCameraID: currentFeedID.rawValue, anchorCameraID: anchorFeedID.rawValue,
+      emphasisCameraID: emphasisFeedID.rawValue,
+      cameraHealth: Dictionary(uniqueKeysWithValues: feedHealth.map { ($0.key.rawValue, $0.value) }),
+      audioCues: audioCues, transcriptCues: transcriptCues)
+    guard let decision = evaluateDirector(input) else { return .idle }
+    return .cutQueued(FeedID(rawValue: decision.targetCameraID))
+  }
+
+  mutating func evaluate(at mediaTime: CMTime, currentFeedID: FeedID,
+    audioCues: [AudioCue] = [], transcriptCues: [TranscriptCue] = [])
+    -> SwitcherEvaluation {
+    evaluateDirector(at: mediaTime, currentFeedID: currentFeedID,
+      audioCues: audioCues, transcriptCues: transcriptCues)
+  }
+
   mutating func tick(at mediaTime: CMTime) -> SwitcherEvaluation {
     evaluate(at: mediaTime)
   }
