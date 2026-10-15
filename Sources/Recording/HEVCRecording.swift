@@ -249,6 +249,14 @@ struct HEVCRecordingCapabilityProbe {
 struct HEVCAssetWriterContract {
   static func outputSettings(configuration: HEVCRecordingConfiguration,
     selection: HEVCEncoderSelection) -> [String: Any] {
+    var encoderSpecification: [String: Any] = [
+      kVTVideoEncoderSpecification_EncoderID as String: selection.encoderID,
+    ]
+    if selection.isHardwareAccelerated {
+      // A selected hardware encoder must not silently become software between
+      // the capability probe and AVAssetWriter session creation.
+      encoderSpecification[kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String] = true
+    }
     var settings: [String: Any] = [
       AVVideoCodecKey: configuration.profile.videoCodec,
       AVVideoWidthKey: configuration.width,
@@ -256,9 +264,7 @@ struct HEVCAssetWriterContract {
       AVVideoProfileLevelKey: configuration.profile.profileLevel,
       AVVideoExpectedSourceFrameRateKey: configuration.frameRate,
       AVVideoAllowFrameReorderingKey: false,
-      AVVideoEncoderSpecificationKey: [
-        kVTVideoEncoderSpecification_EncoderID as String: selection.encoderID,
-      ],
+      AVVideoEncoderSpecificationKey: encoderSpecification,
       AVVideoCompressionPropertiesKey: [
         kVTCompressionPropertyKey_ProfileLevel as String: configuration.profile.profileLevel,
         kVTCompressionPropertyKey_AllowFrameReordering as String: false,
