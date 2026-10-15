@@ -10,13 +10,13 @@ struct InputDevice: Identifiable {
 @MainActor @Observable
 final class AppModel {
   var devices: [InputDevice] = []
-  /// The runtime still drives one feed, but its persisted identity is already
-  /// stable so adding more sessions does not require another settings format.
-  private(set) var feedDescriptors: [FeedDescriptor] = []
-  private(set) var selectedFeedID: FeedID = .primary
+  /// Descriptors and selection are coordinated as a collection. The selected
+  /// session still follows the established one-feed capture path.
+  var feedDescriptors: [FeedDescriptor] { feedCoordinator.descriptors }
+  var selectedFeedID: FeedID { feedCoordinator.selectedFeedID }
 
   var selectedFeedName: String {
-    feedDescriptors.first(where: { $0.id == selectedFeedID })?.name ?? "Feed 1"
+    feedCoordinator.selectedDescriptor.name
   }
 
   var selectedDevice = "" { didSet { if selectedDevice != oldValue { saveSettings() } } }
@@ -67,6 +67,7 @@ final class AppModel {
   let previewRenderer: VideoPreviewRenderer
   let miniPreviewRenderer: VideoPreviewRenderer
   private let capture: CaptureController
+  private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
   private let lutLoader: LUTFileLoader
   private var restoringSettings = true
@@ -77,18 +78,20 @@ final class AppModel {
   private var persistedSnapshot = AppSettingsSnapshot()
 
   init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader()) {
+    let store = settingsStore ?? AppSettingsStore()
+    self.settingsStore = store
+    let snapshot = store.loadSnapshot()
+    persistedSnapshot = snapshot
+
     let renderer = VideoPreviewRenderer()
     let miniRenderer = VideoPreviewRenderer()
+    let primaryCapture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
+    feedCoordinator = FeedCoordinator(snapshot: snapshot)
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
-    capture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
-    self.settingsStore = settingsStore ?? AppSettingsStore()
+    capture = primaryCapture
     self.lutLoader = lutLoader
-    let snapshot = self.settingsStore.loadSnapshot()
-    persistedSnapshot = snapshot
-    feedDescriptors = snapshot.feeds
     let savedFeed = snapshot.selectedFeed ?? FeedDescriptor()
-    selectedFeedID = savedFeed.id
     selectedDevice = savedFeed.selectedDevice
     configuration = savedFeed.configuration
     rememberedLUTEnabled = savedFeed.applyLUT
@@ -112,7 +115,10 @@ final class AppModel {
           self.configuration.inputFast = inputFast
           self.restoringSettings = false
         }
-        if update.stopped { self.running = false }
+        if update.stopped {
+          self.feedCoordinator.selectedSession.stop()
+          self.running = false
+        }
       }
     }
     refresh()
@@ -205,20 +211,15 @@ final class AppModel {
 
   func saveSettings() {
     guard !restoringSettings else { return }
-    let oldName = feedDescriptors.first(where: { $0.id == selectedFeedID })?.name ?? "Feed 1"
+    let oldName = feedCoordinator.selectedDescriptor.name
     let descriptor = FeedDescriptor(id: selectedFeedID, name: oldName, selectedDevice: selectedDevice,
       applyLUT: lutLoaded ? configuration.applyLUT : rememberedLUTEnabled,
       downscale: configuration.downscale, convertTo420: configuration.convertTo420,
       reduceFrameRate: configuration.reduceFrameRate, gamut: gamut,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled, lutBookmark: lutBookmark,
       automaticFeed: automaticFeedEnabled)
-    if let index = feedDescriptors.firstIndex(where: { $0.id == selectedFeedID }) {
-      feedDescriptors[index] = descriptor
-    } else {
-      feedDescriptors.append(descriptor)
-    }
-    persistedSnapshot.feeds = feedDescriptors
-    persistedSnapshot.selectedFeedID = selectedFeedID
+    feedCoordinator.update(descriptor)
+    persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
   }
 
@@ -245,6 +246,7 @@ final class AppModel {
 
   private func startFeed() {
     guard canStartFeed else { return }
+    guard feedCoordinator.start(selectedFeedID) else { return }
     running = true
     previewReady = false
     update = CaptureUpdate(message: "Opening UltraStudio…")
@@ -252,7 +254,11 @@ final class AppModel {
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
   }
 
-  func stop() { running = false; capture.stop() }
+  func stop() {
+    running = false
+    feedCoordinator.stop(selectedFeedID)
+    capture.stop()
+  }
 
   var cameraRequested: Bool { automaticPolicy.requested }
 

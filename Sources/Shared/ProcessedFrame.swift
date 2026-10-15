@@ -252,6 +252,15 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
     }
   }
 
+  /// Releases all queued leases while keeping routes registered for a later
+  /// session generation. Dequeued leases remain owned by their consumers.
+  public func drain() {
+    sync {
+      guard !closed else { return }
+      for route in routes.values { route.drain() }
+    }
+  }
+
   public var isClosed: Bool { sync { closed } }
 
   deinit { close() }

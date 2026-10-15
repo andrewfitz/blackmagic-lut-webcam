@@ -23,11 +23,13 @@ def file(path, type):
 
 
 shared = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/Shared").glob("*.swift"))
-app = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/App").iterdir() if p.suffix in (".swift", ".metal")) + shared
+recording = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/Recording").glob("*.swift"))
+app = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/App").iterdir() if p.suffix in (".swift", ".metal")) + shared + recording
 native = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/DeckLinkBackend").iterdir() if p.suffix in (".h", ".mm", ".inc"))
 app += native
 camera = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/CameraExtension").glob("*.swift")) + [
     "Sources/Shared/VideoContract.swift", "Sources/Shared/VideoBufferLayout.swift",
+    "Sources/Shared/VirtualCameraRegistry.swift",
 ]
 def source_type(path):
     if path.endswith(".metal"): return "sourcecode.metal"
