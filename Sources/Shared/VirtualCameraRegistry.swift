@@ -54,7 +54,11 @@ struct VirtualCameraDescriptor: Codable, Equatable, Sendable, Identifiable {
   }
 
   static func deviceUID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {
-    "org.ultrastudiolut.camera.device.\(encodedIdentity(for: kind, feedID: feedID))"
+    // Keep the migrated single-feed route discoverable by legacy CMIO clients.
+    if kind == .feed && normalizedFeedID(feedID) == "default" {
+      return "org.ultrastudiolut.camera.device"
+    }
+    return "org.ultrastudiolut.camera.device.\(encodedIdentity(for: kind, feedID: feedID))"
   }
 
   static func sourceStreamID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {

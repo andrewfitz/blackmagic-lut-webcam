@@ -550,7 +550,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     self.owner = owner
     self.isSink = isSink
     super.init()
-    stream = CMIOExtensionStream(localizedName: isSink ? "\(descriptor.displayName) · Sink" : descriptor.displayName,
+    stream = CMIOExtensionStream(localizedName: isSink ? (descriptor.feedID == "default" ? VideoContract.sinkName : "\(descriptor.displayName) Input") : descriptor.displayName,
       streamID: CameraDeviceRuntime.streamUUID(for: isSink ? descriptor.sinkStreamID : descriptor.sourceStreamID),
       direction: isSink ? .sink : .source, clockType: .hostTime, source: self)
   }
