@@ -116,6 +116,7 @@ final class AppModel {
     restoringSettings = false
     publishVirtualCameraRegistry(snapshot)
     capture.setPreviewEnabled(previewEnabled)
+    demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors.map(CameraDemandMonitor.Route.init))
     feedCoordinator.setCameraOutputEnabled(feedID: snapshot.selectedFeedID,
       enabled: snapshot.outputMode != .program)
     installProcessedFrameHandler(for: snapshot.selectedFeedID)
@@ -237,6 +238,7 @@ final class AppModel {
     feedCoordinator.update(descriptor)
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
+    demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors.map(CameraDemandMonitor.Route.init))
     publishVirtualCameraRegistry(persistedSnapshot)
   }
 

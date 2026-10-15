@@ -1,6 +1,43 @@
 import CoreMediaIO
 import Foundation
 
+/// The CMIO route whose source demand should keep one capture pipeline alive.
+/// A route is keyed by the registry descriptor ID because CMIO object IDs are
+/// process-local and can change when the extension reconciles its registry.
+struct CameraDemandRoute: Equatable, Hashable, Identifiable, Sendable {
+  let id: String
+  let deviceUID: String
+  let sourceStreamName: String
+  let displayName: String
+
+  init(id: String, deviceUID: String, sourceStreamName: String, displayName: String) {
+    self.id = id
+    self.deviceUID = deviceUID
+    self.sourceStreamName = sourceStreamName
+    self.displayName = displayName
+  }
+
+  init(descriptor: VirtualCameraDescriptor) {
+    id = descriptor.id
+    deviceUID = descriptor.deviceUID
+    sourceStreamName = descriptor.displayName
+    displayName = descriptor.displayName
+  }
+
+  /// The migrated route remains the default when callers have not published
+  /// a registry yet, preserving existing single-camera behavior.
+  static let legacy = CameraDemandRoute(
+    descriptor: .feed(feedID: "default", displayName: VideoContract.cameraName))
+}
+
+/// One route-scoped demand update. `requested == nil` means the route could
+/// not be discovered or read; `error` explains that condition.
+struct CameraDemandChange: Equatable, Sendable {
+  let route: CameraDemandRoute
+  let requested: Bool?
+  let error: String?
+}
+
 // Registers notifications only; it never starts a stream, allocates images,
 // schedules a timer or polls the camera. All state and callbacks use main.
 @MainActor
@@ -18,10 +55,46 @@ final class CameraDemandMonitor {
 
     deinit { _ = CMIOObjectRemovePropertyListenerBlock(object, &address, .main, block) }
   }
+
+  private struct State: Equatable {
+    let requested: Bool?
+    let error: String?
+  }
+
   private var topology: Listener?
-  private var demand: Listener?
+  private var demand: [String: Listener] = [:]
+  private var routesByID: [String: CameraDemandRoute] = [CameraDemandRoute.legacy.id: .legacy]
+  private var states: [String: State] = [:]
   private var enabled = false
+
+  /// Compatibility callback for the original single-route monitor. It is
+  /// emitted only for the legacy/default route; new code should use
+  /// `onRouteChange` so each feed and Program route stays independent.
   var onChange: ((Bool?, String?) -> Void)?
+  var onRouteChange: ((CameraDemandChange) -> Void)?
+
+  var routes: [CameraDemandRoute] { Array(routesByID.values).sorted { $0.id < $1.id } }
+
+  init(routes: [CameraDemandRoute] = [.legacy]) { setRoutes(routes) }
+
+  /// Replaces monitored topology without toggling the monitor. Duplicate route
+  /// IDs collapse deterministically, and removed listeners are released first.
+  func setRoutes(_ routes: [CameraDemandRoute]) {
+    var next: [String: CameraDemandRoute] = [:]
+    for route in routes where next[route.id] == nil { next[route.id] = route }
+    if next.isEmpty { next[CameraDemandRoute.legacy.id] = .legacy }
+    let removed = Set(routesByID.keys).subtracting(next.keys)
+    for id in removed {
+      demand[id] = nil
+      states[id] = nil
+    }
+    routesByID = next
+    if enabled { discover() }
+  }
+
+  func setRoutes(_ descriptors: [VirtualCameraDescriptor]) {
+    setRoutes(descriptors.filter(\.enabled).map(CameraDemandRoute.init(descriptor:)))
+  }
 
   func start() {
     guard !enabled else { return }
@@ -39,13 +112,11 @@ final class CameraDemandMonitor {
       }
       discover()
     } catch {
-      // A failed initial registration leaves no topology callback to recover
-      // the monitor. Reset the state and release any partial listeners so a
-      // a later mode toggle can perform a complete registration.
+      // A failed registration can be retried after a mode or device change.
       enabled = false
       remove(&demand)
       remove(&topology)
-      onChange?(nil, error.localizedDescription)
+      emitError(error.localizedDescription, for: routes)
     }
   }
 
@@ -53,15 +124,15 @@ final class CameraDemandMonitor {
     enabled = false
     remove(&demand)
     remove(&topology)
+    states.removeAll(keepingCapacity: true)
   }
 
   func refresh() {
     if enabled {
       discover()
-    } else if onChange != nil {
+    } else if onChange != nil || onRouteChange != nil {
       // `start()` can fail before it installs the topology listener. Retry
-      // must be able to rebuild that registration; avoid doing so during
-      // AppModel initialization, before its callback is wired.
+      // must be able to rebuild that registration.
       start()
     }
   }
@@ -69,36 +140,62 @@ final class CameraDemandMonitor {
   private func discover() {
     guard enabled else { return }
     do {
-      guard let device = try ids(CMIOObjectID(kCMIOObjectSystemObject), kCMIOHardwarePropertyDevices)
-        .first(where: { try string($0, kCMIODevicePropertyDeviceUID) == VideoContract.deviceUID }),
-        let source = try ids(device, kCMIODevicePropertyStreams)
-        .first(where: { try string($0, kCMIOObjectPropertyName) == VideoContract.cameraName }) else {
-        throw VideoError.message("Install and enable the virtual camera to use automatic feed.")
+      let devices = try ids(CMIOObjectID(kCMIOObjectSystemObject), kCMIOHardwarePropertyDevices)
+      for route in routes { discover(route, devices: devices) }
+    } catch { emitError(error.localizedDescription, for: routes) }
+  }
+
+  private func discover(_ route: CameraDemandRoute, devices: [UInt32]) {
+    do {
+      guard let device = try devices.first(where: { try string($0, kCMIODevicePropertyDeviceUID) == route.deviceUID }) else {
+        throw VideoError.message("Install and enable the \(route.displayName) virtual camera to use automatic feed.")
       }
-      if demand?.object != source {
-        remove(&demand)
+      guard let source = try ids(device, kCMIODevicePropertyStreams)
+        .first(where: { try string($0, kCMIOObjectPropertyName) == route.sourceStreamName }) else {
+        throw VideoError.message("The \(route.displayName) virtual camera does not publish its source stream.")
+      }
+      if demand[route.id]?.object != source {
+        demand[route.id] = nil
         var property = address(Int(VideoContract.demandSelector))
         guard CMIOObjectHasProperty(source, &property) else {
-          throw VideoError.message("Update the installed camera extension to use automatic feed.")
+          throw VideoError.message("Update the installed \(route.displayName) camera extension to use automatic feed.")
         }
         // Subscribe before reading the initial state, including when enabled
         // after Zoom has already opened the camera.
-        demand = try listen(source, Int(VideoContract.demandSelector)) { [weak self] in self?.readDemand() }
+        demand[route.id] = try listen(source, Int(VideoContract.demandSelector)) { [weak self] in
+          self?.readDemand(routeID: route.id)
+        }
       }
-      readDemand()
+      readDemand(routeID: route.id)
     } catch {
-      remove(&demand)
-      onChange?(nil, error.localizedDescription)
+      demand[route.id] = nil
+      emitError(error.localizedDescription, for: route)
     }
   }
 
-  private func readDemand() {
-    guard enabled, let source = demand?.object else { return }
+  private func readDemand(routeID: String) {
+    guard enabled, let source = demand[routeID]?.object, let route = routesByID[routeID] else { return }
     do {
       let value = try string(source, Int(VideoContract.demandSelector))
       guard value == "0" || value == "1" else { throw VideoError.message("Invalid virtual camera activity state.") }
-      onChange?(value == "1", nil)
-    } catch { onChange?(nil, error.localizedDescription) }
+      emit(CameraDemandChange(route: route, requested: value == "1", error: nil))
+    } catch { emitError(error.localizedDescription, for: route) }
+  }
+
+  private func emitError(_ message: String, for routes: [CameraDemandRoute]) {
+    for route in routes { emitError(message, for: route) }
+  }
+
+  private func emitError(_ message: String, for route: CameraDemandRoute) {
+    emit(CameraDemandChange(route: route, requested: nil, error: message))
+  }
+
+  private func emit(_ change: CameraDemandChange) {
+    let next = State(requested: change.requested, error: change.error)
+    guard states[change.route.id] != next else { return }
+    states[change.route.id] = next
+    onRouteChange?(change)
+    if change.route.id == CameraDemandRoute.legacy.id { onChange?(change.requested, change.error) }
   }
 
   private func listen(_ object: CMIOObjectID, _ selector: Int, changed: @escaping () -> Void) throws -> Listener {
@@ -108,9 +205,8 @@ final class CameraDemandMonitor {
     return Listener(object: object, address: property, block: block)
   }
 
-  private func remove(_ listener: inout Listener?) {
-    listener = nil
-  }
+  private func remove(_ listener: inout Listener?) { listener = nil }
+  private func remove(_ listeners: inout [String: Listener]) { listeners.removeAll() }
 
   private func address(_ selector: Int) -> CMIOObjectPropertyAddress {
     CMIOObjectPropertyAddress(mSelector: UInt32(selector), mScope: UInt32(kCMIOObjectPropertyScopeGlobal),
