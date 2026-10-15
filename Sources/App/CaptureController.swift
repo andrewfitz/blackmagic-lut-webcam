@@ -57,6 +57,14 @@ struct CaptureMediaStats: @unchecked Sendable {
   var audioPresent: Bool
 }
 
+struct CaptureRawAudio: @unchecked Sendable {
+  var samples: Data?
+  var packetTime: CMTime
+  var sampleFrames: UInt64
+  var channels: Int
+  var bytesPerSample: Int
+}
+
 // All media resources/configuration are queue-owned. Driver admission is bounded
 // to twelve retained frames, covering measured source bursts plus queue delay.
 // Preview visibility never controls camera processing.
@@ -65,6 +73,8 @@ final class CaptureController: @unchecked Sendable {
   private let lock = NSLock()
   private var generation: UInt64 = 0
   private var accepting = false
+  private var activeFeedID: FeedID?
+  private var recordingCallbacks: [FeedID: SourceRecordingCallbackAdapter.Callbacks] = [:]
   // Keep admission counters per generation. A driver callback may pass the
   // lock just before Stop advances the generation and enqueue stale work just
   // after the next Start begins; one global counter would underflow when that
@@ -167,9 +177,22 @@ final class CaptureController: @unchecked Sendable {
 
   func start(deviceID: String, configuration: PipelineConfiguration,
     pipelineEnabled: Bool = true, previewEnabled: Bool = true) {
+    start(feedID: nil, deviceID: deviceID, configuration: configuration,
+      pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
+  }
+
+  func start(feedID: FeedID, deviceID: String, configuration: PipelineConfiguration,
+    pipelineEnabled: Bool = true, previewEnabled: Bool = true) {
+    start(feedID: Optional(feedID), deviceID: deviceID, configuration: configuration,
+      pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
+  }
+
+  private func start(feedID: FeedID?, deviceID: String, configuration: PipelineConfiguration,
+    pipelineEnabled: Bool, previewEnabled: Bool) {
     let token = lock.withLock {
       generation &+= 1
       accepting = false
+      activeFeedID = feedID
       return generation
     }
     queue.async { [self] in
@@ -276,7 +299,13 @@ final class CaptureController: @unchecked Sendable {
             self.receiveMedia(stats, token: token)
           }
         if let automatic = self.services.startAutomatic {
-          if let automaticWithMedia = self.services.startAutomaticWithMedia {
+          if let automaticWithRawAudio = self.services.startAutomaticWithRawAudio {
+            try automaticWithRawAudio(deviceID, { [weak self] image, pts, duration, valid in
+              self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
+            }, { [weak self] audio in
+              self?.receiveRawAudio(audio, token: token)
+            }, event)
+          } else if let automaticWithMedia = self.services.startAutomaticWithMedia {
             try automaticWithMedia(deviceID, { [weak self] image, pts, duration, valid in
               self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
             }, media, event)
@@ -285,6 +314,12 @@ final class CaptureController: @unchecked Sendable {
               self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
             }, event)
           }
+        } else if let startWithRawAudio = self.services.startWithRawAudio {
+          try startWithRawAudio(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
+            self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
+          }, { [weak self] audio in
+            self?.receiveRawAudio(audio, token: token)
+          }, event)
         } else if let startWithMedia = self.services.startWithMedia {
           try startWithMedia(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
             self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
@@ -351,6 +386,7 @@ final class CaptureController: @unchecked Sendable {
     let token = lock.withLock {
       generation &+= 1
       accepting = false
+      activeFeedID = nil
       return generation
     }
     queue.async {
@@ -367,6 +403,17 @@ final class CaptureController: @unchecked Sendable {
 
   private func isCurrent(_ token: UInt64) -> Bool { lock.withLock { generation == token } }
   private func isAccepting(_ token: UInt64) -> Bool { lock.withLock { generation == token && accepting } }
+
+  /// Installs one feed's raw callback fan-out. The callback itself performs
+  /// only bounded SourceRecorderCore admission and is safe to call on the
+  /// native DeckLink callback thread.
+  func setRecordingCallbacks(feedID: FeedID,
+    callbacks: SourceRecordingCallbackAdapter.Callbacks?) {
+    lock.withLock {
+      if let callbacks { recordingCallbacks[feedID] = callbacks }
+      else { recordingCallbacks.removeValue(forKey: feedID) }
+    }
+  }
 
   private func stopResources() {
     watchdog?.cancel()
@@ -470,7 +517,15 @@ final class CaptureController: @unchecked Sendable {
 
   private func receive(_ image: CVPixelBuffer, at pts: CMTime, duration: CMTime?,
     signalValid: Bool, token: UInt64) {
-    guard signalValid else { return }
+    let recording = lock.withLock { () -> (SourceRecordingCallbackAdapter.Callbacks?, CMTime) in
+      let frameDuration = duration ?? sourceDuration
+      guard generation == token, accepting else { return (nil, frameDuration) }
+      return (activeFeedID.flatMap { recordingCallbacks[$0] }, frameDuration)
+    }
+    if !signalValid {
+      _ = recording.0?.video(image, pts, recording.1, false)
+      return
+    }
     let accepted = lock.withLock { () -> CMTime? in
       guard generation == token, accepting else { return nil }
       let frameDuration = duration ?? sourceDuration
@@ -495,6 +550,7 @@ final class CaptureController: @unchecked Sendable {
       return frameDuration
     }
     guard let accepted else { return }
+    _ = recording.0?.video(image, pts, accepted, true)
     let frame = CapturedFrame(image: image, pts: pts, duration: accepted,
       receivedAt: ProcessInfo.processInfo.systemUptime)
     queue.async {
@@ -523,6 +579,21 @@ final class CaptureController: @unchecked Sendable {
       guard self.isAccepting(token) else { return }
       self.recordMedia(stats)
     }
+  }
+
+  private func receiveRawAudio(_ audio: CaptureRawAudio, token: UInt64) {
+    let recording = lock.withLock { () -> SourceRecordingCallbackAdapter.Callbacks? in
+      guard generation == token, accepting else { return nil }
+      return activeFeedID.flatMap { recordingCallbacks[$0] }
+    }
+    if let samples = audio.samples, audio.sampleFrames > 0, audio.channels > 0,
+      audio.bytesPerSample > 0 {
+      _ = recording?.rawAudio(samples, Int(audio.sampleFrames), audio.packetTime, audio.channels)
+    }
+    receiveMedia(CaptureMediaStats(timecode: nil, audioPacketTime: audio.packetTime,
+      audioSampleFrames: audio.sampleFrames, audioChannels: audio.channels,
+      leftPeak: 0, rightPeak: 0, leftRMS: 0, rightRMS: 0,
+      audioBytes: UInt64(audio.samples?.count ?? 0), audioPresent: audio.samples != nil), token: token)
   }
 
   private func releaseFrame(_ token: UInt64) {
@@ -799,6 +870,8 @@ struct CaptureServices: @unchecked Sendable {
   var startWithMedia: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,
     @escaping (CaptureMediaStats) -> Void,
     @escaping (String) -> Void) throws -> Void)?
+  var startWithRawAudio: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,
+    @escaping (CaptureRawAudio) -> Void, @escaping (String) -> Void) throws -> Void)?
   var stop: () -> Void
   var connect: (PipelineConfiguration, OSType) throws -> Void
   var disconnect: () -> Void
@@ -809,6 +882,8 @@ struct CaptureServices: @unchecked Sendable {
   var startAutomaticWithMedia: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void,
     @escaping (CaptureMediaStats) -> Void,
     @escaping (String) -> Void) throws -> Void)?
+  var startAutomaticWithRawAudio: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void,
+    @escaping (CaptureRawAudio) -> Void, @escaping (String) -> Void) throws -> Void)?
   // Known backend storage layout is used only to prepare transport memory;
   // displayed input metadata always comes from received buffers and duration.
   var capturePixelFormat: OSType?
@@ -831,6 +906,14 @@ struct CaptureServices: @unchecked Sendable {
               audioBytes: UInt64(bytes), audioPresent: present))
           }, eventHandler: event)
       },
+      startWithRawAudio: { id, fast, frame, audio, event in
+        try backend.start(deviceID: id, inputFast: fast, frameHandler: frame,
+          rawAudioHandler: { samples, packetTime, frames, channels, bytesPerSample in
+            audio(CaptureRawAudio(samples: samples, packetTime: packetTime,
+              sampleFrames: UInt64(frames), channels: Int(channels),
+              bytesPerSample: Int(bytesPerSample)))
+          }, eventHandler: event)
+      },
       stop: { backend.stop() },
       connect: { config, format in try sink.connect(configuration: config, passthroughFormat: format) },
       disconnect: { sink.disconnect() },
@@ -845,6 +928,14 @@ struct CaptureServices: @unchecked Sendable {
               audioSampleFrames: UInt64(frames), audioChannels: Int(channels),
               leftPeak: Double(lp), rightPeak: Double(rp), leftRMS: Double(lr), rightRMS: Double(rr),
               audioBytes: UInt64(bytes), audioPresent: present))
+          }, eventHandler: event)
+      },
+      startAutomaticWithRawAudio: { id, frame, audio, event in
+        try backend.startAuto(deviceID: id, frameHandler: frame,
+          rawAudioHandler: { samples, packetTime, frames, channels, bytesPerSample in
+            audio(CaptureRawAudio(samples: samples, packetTime: packetTime,
+              sampleFrames: UInt64(frames), channels: Int(channels),
+              bytesPerSample: Int(bytesPerSample)))
           }, eventHandler: event)
       }, capturePixelFormat: kCVPixelFormatType_422YpCbCr10)
   }

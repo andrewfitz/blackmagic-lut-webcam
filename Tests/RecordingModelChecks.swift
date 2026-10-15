@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import XCTest
 
 @MainActor @objcMembers final class RecordingModelChecks: XCTestCase {
@@ -35,6 +36,17 @@ import XCTest
   }
 
   private enum TestError: Error { case failed }
+
+  private final class Writer: SourceRecordingWriter {
+    private(set) var started = false
+    private(set) var finished = false
+    var telemetry: SourceRecordingWriterTelemetry { SourceRecordingWriterTelemetry() }
+
+    func start() throws { started = true }
+    func appendVideo(_ sample: CMSampleBuffer) throws {}
+    func appendAudio(_ sample: CMSampleBuffer) throws {}
+    func finish() throws { finished = true }
+  }
 
   private let first = FeedID(rawValue: "feed-a")
   private let second = FeedID(rawValue: "feed-b")
@@ -132,11 +144,40 @@ import XCTest
     XCTAssertEqual(model.feeds[1].status, .idle)
   }
 
+  func testNativeDriverUsesPerFeedSourceRecorderAndReportsAudioGap() throws {
+    let capture = CaptureController(services: CaptureServices(
+      start: { _, _, _, _ in }, stop: {}, connect: { _, _ in }, disconnect: {}, send: { _ in true }))
+    var configurations: [SourceRecordingConfiguration] = []
+    let driver = NativeRecordingSessionDriver(capture: capture,
+      recorderFactory: { configuration in
+        configurations.append(configuration)
+        return try SourceRecorderCore(configuration: configuration, writerFactory: { Writer() })
+      })
+    let first = FeedID(rawValue: "feed-a")
+    let second = FeedID(rawValue: "feed-b")
+    let folder = URL(fileURLWithPath: "/tmp/ultrastudio-recordings", isDirectory: true)
+
+    try driver.startRecording(feedID: first,
+      configuration: RecordingConfiguration(codec: .hevcMain10_422, outputFolder: folder))
+    try driver.startRecording(feedID: second,
+      configuration: RecordingConfiguration(codec: .proRes42210Bit, outputFolder: folder))
+
+    XCTAssertEqual(configurations.count, 2)
+    XCTAssertEqual(configurations.map(\ .feedID.rawValue), [first.rawValue, second.rawValue])
+    XCTAssertEqual(configurations.map(\ .videoCodec), [kCMVideoCodecType_HEVC, kCMVideoCodecType_AppleProRes422HQ])
+    XCTAssertTrue(configurations.allSatisfy { $0.width == 3840 && $0.height == 2160 })
+    XCTAssertEqual(driver.startWarning, .rawAudioUnavailable)
+
+    try driver.stopRecording(feedID: first)
+    try driver.stopRecording(feedID: second)
+  }
+
   static let allTests = [
     ("recording choices", testDefaultsExposeRequiredRecordingChoices),
     ("independent feed controls", testPerFeedControlsRemainIndependent),
     ("all feed error isolation", testAllFeedActionsContinueAfterOneFeedError),
     ("folder requirement", testFolderRequirementIsReportedPerFeed),
     ("feed refresh state", testFeedRefreshPreservesLiveStateAndDropsRemovedFeeds),
+    ("native source recording driver", testNativeDriverUsesPerFeedSourceRecorderAndReportsAudioGap),
   ]
 }

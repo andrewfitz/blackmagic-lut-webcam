@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import CoreMedia
+import CoreVideo
 
 /// The codecs exposed by the recording UI. The media writer is injected through
 /// `RecordingSessionDriver`, so this model does not own capture or file I/O.
@@ -84,11 +86,14 @@ struct RecordingFeedState: Identifiable, Equatable, Sendable {
 enum RecordingUIError: LocalizedError, Equatable {
   case unavailable
   case outputFolderRequired
+  case rawAudioUnavailable
 
   var errorDescription: String? {
     switch self {
     case .unavailable: return "Recording is unavailable until a recording backend is connected."
     case .outputFolderRequired: return "Choose an output folder before recording."
+    case .rawAudioUnavailable:
+      return "Blackmagic raw audio recording is unavailable; video will be recorded without audio."
     }
   }
 }
@@ -100,6 +105,99 @@ protocol RecordingSessionDriver: AnyObject {
   func pauseRecording(feedID: FeedID) throws
   func resumeRecording(feedID: FeedID) throws
   func stopRecording(feedID: FeedID) throws
+}
+
+/// Optional diagnostics exposed by a driver after a successful start. Keeping
+/// this separate from `RecordingSessionDriver` preserves the small injected
+/// test boundary and lets older drivers continue to work unchanged.
+protocol RecordingSessionDriverDiagnostics: AnyObject {
+  var startWarning: RecordingUIError? { get }
+}
+
+/// Native source recorder used by the app. Each feed owns one callback adapter
+/// and one `SourceRecorderCore`, so pause/stop on one feed cannot affect any
+/// other feed. Capture callbacks are connected only after the adapter starts.
+final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessionDriverDiagnostics {
+  typealias RecorderFactory = (SourceRecordingConfiguration) throws -> SourceRecorderCore
+
+  private struct Session {
+    let adapter: SourceRecordingCallbackAdapter
+    let feedID: FeedID
+  }
+
+  private weak var capture: CaptureController?
+  private let recorderFactory: RecorderFactory
+  private let rawAudioCallbackAvailable: Bool
+  private var sessions: [FeedID: Session] = [:]
+
+  init(capture: CaptureController, rawAudioCallbackAvailable: Bool = false,
+    recorderFactory: @escaping RecorderFactory = { try SourceRecorderCore(configuration: $0) }) {
+    self.capture = capture
+    self.rawAudioCallbackAvailable = rawAudioCallbackAvailable
+    self.recorderFactory = recorderFactory
+  }
+
+  var startWarning: RecordingUIError? {
+    rawAudioCallbackAvailable ? nil : .rawAudioUnavailable
+  }
+
+  func startRecording(feedID: FeedID, configuration: RecordingConfiguration) throws {
+    guard sessions[feedID] == nil else {
+      throw SourceRecordingError.invalidState(.recording, operation: "start recording")
+    }
+    guard let folder = configuration.outputFolder else {
+      throw RecordingUIError.outputFolderRequired
+    }
+    let outputURL = folder.appendingPathComponent(
+      "ultrastudio-\(Self.safeComponent(feedID.rawValue))-\(UUID().uuidString).mov")
+    let sourceConfiguration = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID(feedID.rawValue), outputURL: outputURL,
+      width: 3840, height: 2160,
+      videoCodec: configuration.codec == .proRes42210Bit
+        ? kCMVideoCodecType_AppleProRes422HQ : kCMVideoCodecType_HEVC)
+    let recorder = try recorderFactory(sourceConfiguration)
+    let adapter = SourceRecordingCallbackAdapter(feedID: sourceConfiguration.feedID, recorder: recorder)
+    try adapter.start()
+    capture?.setRecordingCallbacks(feedID: feedID, callbacks: adapter.callbacks)
+    sessions[feedID] = Session(adapter: adapter, feedID: feedID)
+  }
+
+  func pauseRecording(feedID: FeedID) throws {
+    guard let session = sessions[feedID] else {
+      throw SourceRecordingError.invalidState(.idle, operation: "pause recording")
+    }
+    try session.adapter.pause()
+  }
+
+  func resumeRecording(feedID: FeedID) throws {
+    guard let session = sessions[feedID] else {
+      throw SourceRecordingError.invalidState(.idle, operation: "resume recording")
+    }
+    try session.adapter.resume()
+  }
+
+  func stopRecording(feedID: FeedID) throws {
+    guard let session = sessions.removeValue(forKey: feedID) else { return }
+    capture?.setRecordingCallbacks(feedID: feedID, callbacks: nil)
+    try session.adapter.stop()
+  }
+
+  /// Callers must not fabricate an audio sample when a backend has no raw PCM
+  /// callback; this explicit error keeps unsupported capture visible.
+  func appendRawAudio(feedID: FeedID, sample: CMSampleBuffer) throws {
+    guard rawAudioCallbackAvailable else { throw RecordingUIError.rawAudioUnavailable }
+    guard let session = sessions[feedID] else {
+      throw SourceRecordingError.invalidState(.idle, operation: "append audio")
+    }
+    guard session.adapter.appendEmbeddedAudio(sample: sample) else {
+      throw SourceRecordingError.unsupportedSample("The raw audio sample was rejected.")
+    }
+  }
+
+  private static func safeComponent(_ value: String) -> String {
+    let result = value.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    return result.isEmpty ? "feed" : result
+  }
 }
 
 final class UnavailableRecordingSessionDriver: RecordingSessionDriver {
@@ -157,7 +255,7 @@ final class RecordingModel {
     do {
       try driver.startRecording(feedID: feedID, configuration: configuration)
       feeds[index].status = .recording
-      feeds[index].error = nil
+      feeds[index].error = (driver as? RecordingSessionDriverDiagnostics)?.startWarning?.localizedDescription
     } catch {
       feeds[index].error = error.localizedDescription
     }

@@ -3,7 +3,12 @@ import SwiftUI
 
 struct ContentView: View {
   let model: AppModel
-  @State private var recordingModel = RecordingModel()
+  @State private var recordingModel: RecordingModel
+
+  init(model: AppModel) {
+    self.model = model
+    _recordingModel = State(initialValue: model.recordingModel)
+  }
 
   private var recordingFeeds: [RecordingFeedDescriptor] {
     model.feedDescriptors.map { RecordingFeedDescriptor(id: $0.id, name: $0.name) }

@@ -67,6 +67,7 @@ final class AppModel {
   let previewRenderer: VideoPreviewRenderer
   let miniPreviewRenderer: VideoPreviewRenderer
   private let capture: CaptureController
+  let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
   private let lutLoader: LUTFileLoader
@@ -90,6 +91,9 @@ final class AppModel {
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
     capture = primaryCapture
+    recordingModel = RecordingModel(
+      feeds: feedCoordinator.descriptors.map { RecordingFeedDescriptor(id: $0.id, name: $0.name) },
+      driver: NativeRecordingSessionDriver(capture: primaryCapture, rawAudioCallbackAvailable: true))
     self.lutLoader = lutLoader
     let savedFeed = snapshot.selectedFeed ?? FeedDescriptor()
     selectedDevice = savedFeed.selectedDevice
@@ -117,6 +121,7 @@ final class AppModel {
         }
         if update.stopped {
           self.feedCoordinator.selectedSession.stop()
+          self.recordingModel.stopAll()
           self.running = false
         }
       }
@@ -250,13 +255,14 @@ final class AppModel {
     running = true
     previewReady = false
     update = CaptureUpdate(message: "Opening UltraStudio…")
-    capture.start(deviceID: selectedDevice, configuration: effectiveConfiguration,
+    capture.start(feedID: selectedFeedID, deviceID: selectedDevice, configuration: effectiveConfiguration,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
   }
 
   func stop() {
     running = false
     feedCoordinator.stop(selectedFeedID)
+    recordingModel.stopAll()
     capture.stop()
   }
 
