@@ -92,6 +92,22 @@ import XCTest
     XCTAssertEqual(mapped.sourceID, "C")
   }
 
+  func testInvalidPendingTargetDoesNotSwitchSelection() {
+    var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
+    guard case .queued = scheduler.requestCut(to: "B") else {
+      return XCTFail("A valid target should queue")
+    }
+    guard case .skipped(.invalidTimestamp(.sourceEpochUnsupported(1))) =
+      scheduler.ingest(frame("B", 0, epoch: 1)) else {
+      return XCTFail("Invalid target frame should be skipped")
+    }
+    XCTAssertEqual(scheduler.selectedSource, "A")
+    XCTAssertTrue(scheduler.hasPendingCut)
+    guard case .cutApplied = scheduler.ingest(frame("B", 0)) else {
+      return XCTFail("A later valid target frame should still apply the cut")
+    }
+  }
+
   func testMissingSourcesAreRejectedAndPendingTargetIsDropped() {
     var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
     scheduler.setSource("B", available: false)
@@ -114,6 +130,7 @@ import XCTest
     ("invalid source timing", testRejectsForeignEpochTimebaseBackwardsAndInvalidDuration),
     ("cut flushes stale frames", testCutAppliesAtTargetBoundaryAndRequestsStaleFlush),
     ("rapid cuts coalesce", testRapidCutsCoalesceToLatestTarget),
+    ("invalid target preserves selection", testInvalidPendingTargetDoesNotSwitchSelection),
     ("missing sources", testMissingSourcesAreRejectedAndPendingTargetIsDropped),
   ]
 }
