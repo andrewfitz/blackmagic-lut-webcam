@@ -223,3 +223,60 @@ Before calling the refactor complete, test:
 - clearing meters, timecode, bitrates, and counters when each feed stops
 - idle release of GPU, DeckLink, preview, and output resources
 - Zoom enumeration and restart behavior after registry changes
+
+## Astra audit resolutions
+
+The current implementation is still single-feed. These are prerequisites,
+not assumed existing capabilities:
+
+- `AppModel`, `AppSettingsStore`, and the `ultrastudio.settings.v1` key currently
+  hold one selected device, one `CaptureController`, and one automatic-feed flag.
+  Define the v1-to-v2 migration explicitly: decode the old JSON, create Feed 1
+  with a deterministic UUID, move the old LUT bookmark/effects into it, write a
+  complete v2 snapshot, and retain the old data until the new write succeeds.
+- `CameraProvider` currently publishes one fixed device with one pair of hard-
+  coded streams and global format/latest/consumer state. `VideoContract` and
+  `CameraDemandMonitor` likewise identify one device. The extension entry point
+  must become a registry-backed device manager before multiple feeds can work.
+- The registry format must include a schema version, generation, checksum, feed
+  descriptors, stable UUID derivation, and the app-group identifier. Writes use
+  a temporary file followed by flush and atomic rename. The extension falls back
+  to the last valid snapshot after a crash or partial write.
+- Producer authorization and sink ownership are currently global to one
+  provider. Ownership must become per virtual device/feed, while each source
+  demand property remains per feed. Feed removal uses a grace state: unavailable
+  to new clients first, removed only after existing clients release it.
+- Demand notifications and producer ingestion are separate mechanisms. Source
+  demand is event-driven and route-aware; the sink's frame-pull timer remains a
+  bounded producer-ingest mechanism. The route demand truth table must cover
+  dedicated-camera demand, Program demand, manual output demand, preview-only
+  demand, and transitions where one route stops while another remains.
+- `CaptureController` currently sends directly to one camera sink. Introduce a
+  queue-owned `FrameLease`/`ProcessedFrame` contract containing image, PTS,
+  duration, format, and metadata. Fan-out must retain/release explicitly,
+  bound each route's queue, and allow one route to stop without invalidating
+  another route's frame.
+- Program switching needs a defined timestamp algorithm: flush stale queued
+  frames at a cut, coalesce rapid cut requests, map the new source timebase to
+  the next monotonic Program timestamp, and skip invalid feeds without sending
+  duplicate or backward-timestamped frames.
+- Physical input reservations and runtime budgets need measurable policy. Start
+  with current capture admission (12 frames) and output pool (64 images) as
+  inputs to a governor, then add per-feed GPU-memory, queue-latency, and frame-
+  timing measurements. Failure must be explicit and visible rather than silent
+  frame loss. The model may store arbitrary feeds even when fewer can run.
+- Audio telemetry currently infers the sample rate from packet timing. Preserve
+  that behavior for existing hardware, but add an explicit audio-rate field to
+  the future media contract so per-feed and Program telemetry can distinguish
+  reported rate from inferred rate.
+
+Additional verification gates are required for the migration and boundaries:
+
+- old v1 JSON migration and rollback after a failed v2 write
+- registry crash/partial-write recovery and stable per-feed UID uniqueness
+- per-feed producer ownership and source-demand transition matrix
+- sink pull-timer lifecycle independent of source demand notifications
+- one processed frame consumed by two routes, then one route stopping
+- Program cuts during missing signal, pending frames, and rapid coalesced cuts
+- resource-governor refusal/degradation with two active synthetic feeds
+- telemetry reset when a feed stops while another feed continues
