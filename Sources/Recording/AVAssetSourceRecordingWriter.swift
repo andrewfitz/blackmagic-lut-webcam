@@ -125,7 +125,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   }
 
   func finish() throws {
-    let compressionSession = try lock.withLock { () -> VTCompressionSession? in
+    let compressionSession = lock.withLock { () -> VTCompressionSession? in
       guard started, !finished else { return nil }
       finishing = true
       return self.compressionSession
