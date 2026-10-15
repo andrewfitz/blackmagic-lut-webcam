@@ -304,6 +304,10 @@ final class SourceRecorderCore: @unchecked Sendable {
     queue.async { [weak self] in
       guard let self else { return }
       defer { self.stateLock.withLock { self.pending -= 1 } }
+      guard self.stateLock.withLock({ self.telemetryValue.state != .failed }) else {
+        self.recordDrop(.notRecording)
+        return
+      }
       do {
         switch kind {
         case .video:
