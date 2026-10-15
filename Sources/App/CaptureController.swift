@@ -203,7 +203,6 @@ final class CaptureController: @unchecked Sendable {
       guard self.isCurrent(token) else { return }
       self.stopResources()
       do {
-        if self.processor == nil { self.processor = try LUTProcessor() }
         self.realtimeActivity = ProcessInfo.processInfo.beginActivity(
           options: [.userInitiated, .latencyCritical], reason: "Live UltraStudio video processing")
         self.configuration = configuration
@@ -711,7 +710,7 @@ final class CaptureController: @unchecked Sendable {
       fail("Unsupported detected input: \(actual.label). Expected 4K 10-bit 4:2:2.", token: token)
       return
     }
-    guard frame.pts.isNumeric, frame.pts.epoch == 0, actual.duration.epoch == 0, let processor,
+    guard frame.pts.isNumeric, frame.pts.epoch == 0, actual.duration.epoch == 0,
       actual.duration == VideoContract.fastDuration || actual.duration == VideoContract.slowDuration else {
       fail("Unsupported or invalid detected frame timing.", token: token)
       return
@@ -727,7 +726,7 @@ final class CaptureController: @unchecked Sendable {
       // submitting GPU work or staging raw buffers that nobody can consume.
       guard cameraConnected || hasPreview else {
         if preparedConfiguration != nil {
-          processor.releaseIdleResources()
+          processor?.releaseIdleResources()
           preparedConfiguration = nil
           deliveryStager = CameraFrameStager()
         }
@@ -739,9 +738,20 @@ final class CaptureController: @unchecked Sendable {
         publishIfDue(token: token, force: metadataChanged)
         return
       }
+      // A complete bypass does not need a Metal device, command queue, or LUT
+      // resources. Instantiate the processor only when an active destination
+      // actually needs GPU work; this keeps idle/passthrough capture light.
+      if !effective.untouched, processor == nil { self.processor = try LUTProcessor() }
+      let processor = self.processor
       try ensurePrepared(effective)
       let start = ProcessInfo.processInfo.systemUptime
-      let rendered = effective.untouched ? input : try processor.process(input, configuration: effective)
+      let rendered: CVPixelBuffer
+      if effective.untouched {
+        rendered = input
+      } else {
+        guard let processor else { throw VideoError.message("GPU processor is unavailable.") }
+        rendered = try processor.process(input, configuration: effective)
+      }
       processingMS = (ProcessInfo.processInfo.systemUptime - start) * 1000
       services.didProcess(processingMS, (start - frame.receivedAt) * 1000)
       guard isAccepting(token) else { return }
