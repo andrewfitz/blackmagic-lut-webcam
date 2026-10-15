@@ -199,6 +199,10 @@ struct SwitcherCoordinator {
     return .cutQueued(target)
   }
 
+  mutating func evaluate(at seconds: TimeInterval) -> SwitcherEvaluation {
+    evaluate(at: CMTime(seconds: seconds, preferredTimescale: 1_000))
+  }
+
   mutating func evaluate(at mediaTime: CMTime, audioCues: [AudioCue],
     transcriptCues: [TranscriptCue]) -> SwitcherEvaluation {
     _ = audioCues
@@ -234,6 +238,10 @@ struct SwitcherCoordinator {
 
   mutating func tick(at mediaTime: CMTime) -> SwitcherEvaluation {
     evaluate(at: mediaTime)
+  }
+
+  mutating func tick(at seconds: TimeInterval) -> SwitcherEvaluation {
+    evaluate(at: seconds)
   }
 
   /// Runs the existing natural director when an integration explicitly opts
