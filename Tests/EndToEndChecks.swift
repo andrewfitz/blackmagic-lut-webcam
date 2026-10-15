@@ -208,6 +208,7 @@ import XCTest
 private final class CaptureHarness: @unchecked Sendable {
   private let lock = NSLock()
   private var handlers = [(CVPixelBuffer, CMTime, Bool) -> Void]()
+  private var mediaHandlers = [(CaptureMediaStats) -> Void]()
   private var automaticHandlers = [(CVPixelBuffer, CMTime, CMTime, Bool) -> Void]()
   private var connections = [(PipelineConfiguration, OSType)]()
   private var deliveryObserver: ((Int) -> Void)?
@@ -272,6 +273,11 @@ private final class CaptureHarness: @unchecked Sendable {
     handler(image, time, duration, true)
   }
 
+  func emitMedia(_ stats: CaptureMediaStats, from generation: Int? = nil) {
+    let handler = lock.withLock { mediaHandlers[generation ?? mediaHandlers.count - 1] }
+    handler(stats)
+  }
+
   private func finishStart() throws {
     started?.fulfill()
     if let gate = startGate {
@@ -285,6 +291,10 @@ private final class CaptureHarness: @unchecked Sendable {
     var services = CaptureServices(
       start: { _, _, frames, _ in
         self.lock.withLock { self.handlers.append(frames); self.captureActive = true }
+        try self.finishStart()
+      },
+      startWithMedia: { _, _, frames, media, _ in
+        self.lock.withLock { self.handlers.append(frames); self.mediaHandlers.append(media); self.captureActive = true }
         try self.finishStart()
       },
       stop: { self.lock.withLock { self.stopTotal += 1; self.captureActive = false } },
@@ -520,6 +530,38 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     awaitCondition("Applied status must follow real processed output") { statuses.last?.pipelineEnabledApplied == true }
     XCTAssertEqual(harness.starts, 1, "Changing pipeline state must not reopen the physical capture device")
     XCTAssertEqual(statuses.failures, [])
+  }
+
+  func testCaptureMediaStatsExposeLevelsTimecodeRatesAndDropAccounting() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(), previewRenderer: nil)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    defer { controller.onUpdate = nil; controller.stop() }
+    controller.start(deviceID: "synthetic", configuration: config, pipelineEnabled: false, previewEnabled: false)
+    awaitCondition("Synthetic media capture must start") { harness.active }
+    let first = CaptureMediaStats(timecode: "01:02:03:04", audioPacketTime: .zero,
+      audioSampleFrames: 160, audioChannels: 2, leftPeak: 0.75, rightPeak: 0.5,
+      leftRMS: 0.25, rightRMS: 0.125, audioBytes: 640, audioPresent: true)
+    let second = CaptureMediaStats(timecode: "01:02:03:05", audioPacketTime: CMTime(value: 160, timescale: 48_000),
+      audioSampleFrames: 160, audioChannels: 2, leftPeak: 0.5, rightPeak: 0.25,
+      leftRMS: 0.125, rightRMS: 0.0625, audioBytes: 640, audioPresent: true)
+    harness.emitMedia(first)
+    harness.emitMedia(second)
+    harness.emit(try EndToEndChecks.source(), frame: 0)
+    awaitCondition("Media metadata must be published with the next video update") { statuses.last?.audioPackets == 2 }
+    let update = try XCTUnwrap(statuses.last)
+    XCTAssertEqual(update.timecode, "01:02:03:05")
+    XCTAssertEqual(update.audioChannels, 2)
+    XCTAssertEqual(update.audioSampleRate, 48_000)
+    XCTAssertEqual(update.audioPackets, 2)
+    XCTAssertEqual(update.audioSamples, 320)
+    XCTAssertEqual(update.audioBytes, 1_280)
+    XCTAssertEqual(update.audioDrops, 0)
+    XCTAssertEqual(update.audioPeakLeft, 0.5, accuracy: 0.0001)
+    XCTAssertEqual(update.audioRMSRight, 0.0625, accuracy: 0.0001)
+    XCTAssertTrue(update.audioPresent)
+    XCTAssertEqual(update.videoDrops, update.dropped)
   }
 
   func testPreviewOffLeavesProcessedCameraOutputRunningAndCanReenable() throws {
