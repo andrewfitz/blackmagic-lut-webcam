@@ -122,7 +122,7 @@ private struct RecordingFeedRow: View {
       }
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("(feed.name) recording")
+    .accessibilityLabel("\(feed.name) recording")
     .accessibilityValue(feed.error ?? feed.status.title)
   }
 
