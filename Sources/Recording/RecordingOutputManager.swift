@@ -176,7 +176,6 @@ public final class RecordingOutputManager: @unchecked Sendable {
   }
 
   fileprivate func reserveAdditional(_ additional: UInt64) throws {
-    guard additional > 0 else { return }
     lock.lock()
     defer { lock.unlock() }
     try checkAndReserveLocked(additional: additional)
