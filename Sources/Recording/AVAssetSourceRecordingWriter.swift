@@ -20,6 +20,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var telemetryValue = SourceRecordingWriterTelemetry()
   private var started = false
   private var sessionStarted = false
+  private var finishing = false
   private var finished = false
   private var lastVideoPTS: CMTime?
   private var lastAudioPTS: CMTime?
@@ -124,39 +125,51 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   }
 
   func finish() throws {
-    try lock.withLock {
-      guard started, !finished else { return }
-      if let compressionSession {
-        let status = VTCompressionSessionCompleteFrames(compressionSession, untilPresentationTimeStamp: .invalid)
-        guard status == noErr else {
-          finished = true
-          throw SourceRecordingError.writerFailure("VideoToolbox flush failed (OSStatus \(status)).")
-        }
+    let compressionSession = try lock.withLock { () -> VTCompressionSession? in
+      guard started, !finished else { return nil }
+      finishing = true
+      return self.compressionSession
+    }
+    // CompleteFrames synchronously invokes the VideoToolbox callback. Never
+    // hold `lock` here: the callback needs the same lock to append its final
+    // compressed sample, otherwise stop deadlocks indefinitely on HEVC.
+    if let compressionSession {
+      let status = VTCompressionSessionCompleteFrames(compressionSession, untilPresentationTimeStamp: .invalid)
+      guard status == noErr else {
+        lock.withLock { finished = true; finishing = false }
+        throw SourceRecordingError.writerFailure("VideoToolbox flush failed (OSStatus \(status)).")
       }
+    }
+    let writer = try lock.withLock { () -> AVAssetWriter? in
       guard pendingAudio.isEmpty else {
         finished = true
+        finishing = false
         throw SourceRecordingError.writerFailure("VideoToolbox finished before the audio input was established.")
       }
       guard let writer else {
         finished = true
-        return
+        finishing = false
+        return nil
       }
       videoInput?.markAsFinished()
       audioInput?.markAsFinished()
       timecodeInput?.markAsFinished()
       finished = true
-      let semaphore = DispatchSemaphore(value: 0)
-      writer.finishWriting { semaphore.signal() }
-      semaphore.wait()
-      if writer.status == .failed {
-        throw Self.writerError(writer, fallback: "AVAssetWriter finish failed.")
-      }
+      finishing = false
+      return writer
+    }
+    guard let writer else { return }
+    let semaphore = DispatchSemaphore(value: 0)
+    writer.finishWriting { semaphore.signal() }
+    semaphore.wait()
+    if writer.status == .failed {
+      throw Self.writerError(writer, fallback: "AVAssetWriter finish failed.")
     }
   }
 
   private func ensureCanAppend() throws {
     guard started else { throw SourceRecordingError.invalidState(.idle, operation: "append sample") }
-    guard !finished else { throw SourceRecordingError.invalidState(.finished, operation: "append sample") }
+    guard !finished, !finishing else { throw SourceRecordingError.invalidState(.stopping, operation: "append sample") }
   }
 
   private func ensureSession(at time: CMTime) throws {
@@ -264,8 +277,10 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       throw SourceRecordingError.writerFailure("VideoToolbox rejected the no-reordering source contract.")
     }
     let keyFrameInterval = configuration.maxKeyFrameInterval as CFTypeRef
-    guard VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval,
-      value: keyFrameInterval) == noErr else {
+    let keyFrameStatus = VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval,
+      value: keyFrameInterval)
+    if configuration.videoProfile.codecType == kCMVideoCodecType_HEVC,
+      keyFrameStatus != noErr {
       VTCompressionSessionInvalidate(session)
       throw SourceRecordingError.writerFailure("VideoToolbox rejected the source key-frame interval.")
     }
