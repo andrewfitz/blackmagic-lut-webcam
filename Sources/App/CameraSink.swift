@@ -348,7 +348,7 @@ final class CameraSink {
         })?.0
       let sourceStream = namedStreams.first(where: { $0.1 == route.sourceStreamName })?.0
         ?? namedStreams.first(where: { $0.0 != sinkStream })?.0
-      guard let sinkStream, let sourceStream else {
+      guard let sinkStream, let sourceStream, sourceStream != sinkStream else {
         throw VideoError.message("The virtual camera for \(route.feedID ?? "legacy") does not publish its source and input streams.")
       }
       // AVFoundation clients such as Zoom claim device control before starting
