@@ -295,6 +295,17 @@ struct FeedMetadata: View {
     VStack(alignment: .leading, spacing: 12) {
       MetadataRow(title: "Input", value: model.running ? model.update.input : "Not detected")
       MetadataRow(title: "Output", value: model.running && !model.update.output.isEmpty ? model.update.output : "Not streaming")
+      Divider()
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Label("Timecode", systemImage: "clock")
+          .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+        Spacer(minLength: 8)
+        Text(model.update.timecode ?? "—")
+          .font(.system(.caption, design: .monospaced).weight(.medium))
+          .foregroundStyle(model.update.timecode == nil ? .secondary : .primary)
+          .textSelection(.enabled)
+      }
+      AudioLevelMeter(model: model)
     }
   }
 }
@@ -326,6 +337,13 @@ struct FeedDiagnostics: View {
       if model.running {
         LabeledContent("Delivered", value: String(format: "%.2f fps", model.update.outputFPS))
         LabeledContent("Processing", value: String(format: "%.2f ms", model.update.processingMS))
+        LabeledContent("Video bitrate", value: formattedVideoBitrate(model.update.videoBitrateMbps))
+        LabeledContent("Video drops", value: model.update.videoDrops.formatted())
+        Divider()
+        LabeledContent("Audio", value: audioFormat(model.update))
+        LabeledContent("Audio bitrate", value: formattedAudioBitrate(model.update.audioBitrateKbps))
+        LabeledContent("Audio samples", value: model.update.audioSamples.formatted())
+        LabeledContent("Audio drops", value: model.update.audioDrops.formatted())
         if !compact {
           Divider()
           LabeledContent("Source gaps", value: "\(model.update.sourceDrops)")
@@ -344,6 +362,121 @@ struct FeedDiagnostics: View {
     .font(.caption.monospacedDigit())
     .frame(maxWidth: .infinity, alignment: .leading)
   }
+
+  private func audioFormat(_ update: CaptureUpdate) -> String {
+    guard update.audioPresent else { return "No embedded audio" }
+    let channels = update.audioChannels > 0 ? "\(update.audioChannels) ch" : "Audio"
+    let rate = update.audioSampleRate > 0 ? " · \(formatSampleRate(update.audioSampleRate))" : ""
+    return channels + rate
+  }
+
+  private func formatSampleRate(_ rate: Int) -> String {
+    if rate >= 1_000 { return String(format: "%.1f kHz", Double(rate) / 1_000.0) }
+    return "\(rate) Hz"
+  }
+
+  private func formattedAudioBitrate(_ bitrate: Double) -> String {
+    guard bitrate.isFinite, bitrate > 0 else { return "—" }
+    return bitrate >= 1_000 ? String(format: "%.2f Mbps", bitrate / 1_000.0) : String(format: "%.1f kbps", bitrate)
+  }
+
+  private func formattedVideoBitrate(_ bitrate: Double) -> String {
+    guard bitrate.isFinite, bitrate > 0 else { return "—" }
+    return String(format: "%.2f Mbps", bitrate)
+  }
+}
+
+/// A compact two-channel peak/RMS meter. Values arrive as linear 0…1 levels
+/// from the DeckLink callback; the marker is the peak and the filled body is
+/// RMS. Keeping the conversion and clamping here avoids making the capture
+/// queue do presentation work or sending audio samples through SwiftUI.
+struct AudioLevelMeter: View {
+  let model: AppModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack(alignment: .firstTextBaseline, spacing: 7) {
+        Label("Embedded audio", systemImage: "waveform")
+          .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+        Spacer(minLength: 4)
+        Text(audioSummary)
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(model.update.audioPresent ? .secondary : .tertiary)
+      }
+      AudioLevelRow(label: "L", rms: model.update.audioRMSLeft, peak: model.update.audioPeakLeft)
+      AudioLevelRow(label: "R", rms: model.update.audioRMSRight, peak: model.update.audioPeakRight)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Two channel embedded audio meter")
+  }
+
+  private var audioSummary: String {
+    guard model.update.audioPresent else { return "No signal" }
+    let channels = model.update.audioChannels > 0 ? "\(model.update.audioChannels) ch" : "Audio"
+    guard model.update.audioSampleRate > 0 else { return channels }
+    return "\(channels) · \(formatSampleRate(model.update.audioSampleRate))"
+  }
+
+  private func formatSampleRate(_ rate: Int) -> String {
+    rate >= 1_000 ? String(format: "%.1f kHz", Double(rate) / 1_000.0) : "\(rate) Hz"
+  }
+}
+
+private struct AudioLevelRow: View {
+  let label: String
+  let rms: Double
+  let peak: Double
+
+  var body: some View {
+    HStack(spacing: 7) {
+      Text(label).font(.caption2.weight(.semibold).monospaced()).foregroundStyle(.secondary)
+        .frame(width: 12, alignment: .leading)
+      LevelBar(rms: rms, peak: peak)
+        .frame(height: 9)
+      Text(decibelText(peak))
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .frame(width: 49, alignment: .trailing)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Audio channel \(label)")
+    .accessibilityValue("Peak \(decibelText(peak)), RMS \(decibelText(rms))")
+  }
+}
+
+private struct LevelBar: View {
+  let rms: Double
+  let peak: Double
+
+  var body: some View {
+    GeometryReader { proxy in
+      let width = proxy.size.width
+      let rmsWidth = width * normalized(rms)
+      let peakX = width * normalized(peak)
+      ZStack(alignment: .leading) {
+        Capsule().fill(Color.primary.opacity(0.10))
+        Capsule().fill(LinearGradient(
+          colors: [.green, .yellow, .orange, .red],
+          startPoint: .leading, endPoint: .trailing
+        )).frame(width: max(2, rmsWidth))
+        Capsule().fill(Color.white.opacity(0.95)).frame(width: 2).offset(x: max(0, peakX - 1))
+      }
+      .clipShape(Capsule())
+      .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+private func normalized(_ value: Double) -> Double {
+  guard value.isFinite else { return 0 }
+  return min(1, max(0, value))
+}
+
+private func decibelText(_ linear: Double) -> String {
+  let level = normalized(linear)
+  guard level > 0.000001 else { return "−∞ dB" }
+  return String(format: "%.1f dB", max(-60, 20 * log10(level)))
 }
 
 struct PipelineControls: View {
