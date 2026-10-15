@@ -3,6 +3,11 @@ import SwiftUI
 
 struct ContentView: View {
   let model: AppModel
+  @State private var recordingModel = RecordingModel()
+
+  private var recordingFeeds: [RecordingFeedDescriptor] {
+    model.feedDescriptors.map { RecordingFeedDescriptor(id: $0.id, name: $0.name) }
+  }
 
   var body: some View {
     ScrollView {
@@ -19,6 +24,9 @@ struct ContentView: View {
           }
           .frame(maxWidth: .infinity)
           FeedControls(model: model).frame(width: 292)
+        }
+        ControlPanel {
+          RecordingControls(model: recordingModel, feeds: recordingFeeds)
         }
         ControlPanel { PipelineControls(model: model, compact: false) }
         ControlPanel { LUTControls(model: model, compact: false) }
