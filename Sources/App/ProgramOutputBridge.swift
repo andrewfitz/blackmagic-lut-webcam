@@ -142,6 +142,14 @@ final class ProgramOutputBridge: @unchecked Sendable {
         else { statistics.dropped &+= 1 }
       } catch {
         statistics.sendErrors &+= 1
+        // A failed enqueue usually means the CMIO client released the
+        // virtual camera between our demand check and this send. Stop
+        // hammering a dead queue on every frame; the next explicit demand
+        // transition can reconnect it cleanly.
+        if connected { disconnectSink() }
+        connected = false
+        drainLocked()
+        break
       }
     }
   }
