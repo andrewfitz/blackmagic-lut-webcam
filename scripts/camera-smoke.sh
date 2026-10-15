@@ -24,6 +24,8 @@ compile_log="$smoke_root/logs/compile-$receipt.log"
 xcrun swiftc -O -swift-version 5 -strict-concurrency=complete -warnings-as-errors \
   -module-cache-path "$smoke_root/modules" \
   "$task_root/Sources/Shared/VideoContract.swift" "$task_root/Sources/Shared/VideoBufferLayout.swift" \
+  "$task_root/Sources/Shared/VirtualCameraRegistry.swift" \
+  "$task_root/Sources/App/AppSettingsStore.swift" \
   "$task_root/Sources/App/CameraSink.swift" "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/App/SharedMetalBuffer.swift" "$task_root/Tools/CameraSmoke/main.swift" \
   -o "$smoke_root/camera-smoke" > "$compile_log" 2>&1 || { cat "$compile_log"; exit 1; }
