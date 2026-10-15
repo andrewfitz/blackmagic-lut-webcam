@@ -33,12 +33,6 @@ final class AppModel {
   var switcherStatus: String { feedCoordinator.switcherCoordinator.statusMessage }
 
   var canEditFeedTopology: Bool { !running && !loading }
-  /// The virtual-camera topology currently published to the CMIO extension.
-  /// These are read-only projections; mutations go through the explicit
-  /// methods below so the persisted snapshot and registry stay in sync.
-  var outputMode: FeedOutputMode { feedCoordinator.outputMode }
-  var switcherSettings: SwitcherSettings { feedCoordinator.switcher }
-
   var selectedFeedName: String {
     feedCoordinator.selectedDescriptor.name
   }
@@ -250,6 +244,108 @@ final class AppModel {
     reconcileAutomaticFeed()
   }
 
+  /// Selects a feed and loads its persisted controls into the app-level
+  /// bindings. Selection is a state transition, so pending edits on the
+  /// previous feed are committed before the new descriptor is applied.
+  @discardableResult
+  func selectFeed(_ id: FeedID) -> Bool {
+    guard feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
+    saveSettings()
+    guard feedCoordinator.select(id) else { return false }
+    let descriptor = feedCoordinator.selectedDescriptor
+    applySelectedDescriptor(descriptor)
+    persistedSnapshot = feedCoordinator.snapshot
+    settingsStore.saveSnapshot(persistedSnapshot)
+    installProcessedFrameHandler(for: id)
+    return true
+  }
+
+  /// Adds an idle feed, persists the new topology, and selects it so the UI
+  /// immediately edits the new feed's independent settings.
+  @discardableResult
+  func addFeed(name: String? = nil) -> FeedID? {
+    guard canEditFeedTopology else { return nil }
+    saveSettings()
+    let id = feedCoordinator.add(name: name)
+    guard selectFeed(id) else { return nil }
+    saveSettings()
+    return id
+  }
+
+  /// Removes an idle feed and selects the first remaining descriptor when the
+  /// removed feed was active. The coordinator owns the running/removal guard.
+  @discardableResult
+  func removeFeed(_ id: FeedID) -> Bool {
+    guard canEditFeedTopology else { return false }
+    saveSettings()
+    guard feedCoordinator.remove(id) else { return false }
+    if feedCoordinator.selectedFeedID == id {
+      _ = feedCoordinator.select(feedCoordinator.descriptors[0].id)
+    }
+    let descriptor = feedCoordinator.selectedDescriptor
+    applySelectedDescriptor(descriptor)
+    persistedSnapshot = feedCoordinator.snapshot
+    settingsStore.saveSnapshot(persistedSnapshot)
+    return true
+  }
+
+  @discardableResult
+  func renameFeed(_ id: FeedID, name: String) -> Bool {
+    guard canEditFeedTopology,
+      let existing = feedCoordinator.descriptors.first(where: { $0.id == id }) else { return false }
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    var updated = existing
+    updated.name = trimmed
+    feedCoordinator.update(updated)
+    if id == selectedFeedID { applySelectedDescriptor(updated) }
+    saveSettings()
+    return true
+  }
+
+  func setOutputMode(_ mode: FeedOutputMode) {
+    guard !running, feedCoordinator.outputMode != mode else { return }
+    saveSettings()
+    feedCoordinator.setOutputMode(mode)
+    saveSettings()
+  }
+
+  /// Applies switcher controls atomically to the live Program route and its
+  /// persisted snapshot. Invalid feed IDs are normalized by the coordinator.
+  func updateSwitcher(_ settings: SwitcherSettings) {
+    guard !restoringSettings else { return }
+    feedCoordinator.setSwitcher(settings)
+    saveSettings()
+  }
+
+  @discardableResult
+  func requestProgramCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    let result = feedCoordinator.requestProgramCut(to: feedID)
+    if case .rejectedMissingSource = result { return result }
+    saveSettings()
+    return result
+  }
+
+  private func applySelectedDescriptor(_ descriptor: FeedDescriptor) {
+    restoringSettings = true
+    selectedDevice = descriptor.selectedDevice
+    configuration = descriptor.configuration
+    rememberedLUTEnabled = descriptor.applyLUT
+    configuration.applyLUT = false
+    gamut = descriptor.gamut
+    pipelineEnabled = descriptor.pipelineEnabled
+    previewEnabled = descriptor.previewEnabled
+    automaticFeedEnabled = descriptor.automaticFeed
+    lutBookmark = descriptor.lutBookmark
+    lutLoaded = false
+    lutTitle = "No LUT loaded"
+    lutFileName = nil
+    lutError = nil
+    restoringSettings = false
+    if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
+    capture.setPreviewEnabled(previewEnabled)
+  }
+
   func saveSettings() {
     guard !restoringSettings else { return }
     let oldName = feedCoordinator.selectedDescriptor.name
@@ -264,80 +360,6 @@ final class AppModel {
     settingsStore.saveSnapshot(persistedSnapshot)
     demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
     publishVirtualCameraRegistry(persistedSnapshot)
-  }
-
-  /// Selects the feed whose settings and preview are shown in the main UI.
-  /// Capture must be stopped while changing the selected owner so a running
-  /// DeckLink callback can never be rebound to another feed accidentally.
-  func selectFeed(_ id: FeedID) {
-    guard !running, feedCoordinator.select(id) else { return }
-    loadSelectedFeedSettings()
-    installProcessedFrameHandler(for: id)
-    saveSettings()
-  }
-
-  @discardableResult
-  func addFeed() -> FeedID? {
-    guard !running else { return nil }
-    saveSettings()
-    let id = feedCoordinator.add()
-    selectFeed(id)
-    return id
-  }
-
-  @discardableResult
-  func removeFeed(_ id: FeedID) -> Bool {
-    guard !running, feedDescriptors.count > 1 else { return false }
-    let wasSelected = id == selectedFeedID
-    guard feedCoordinator.remove(id) else { return false }
-    if wasSelected { loadSelectedFeedSettings() }
-    saveSettings()
-    return true
-  }
-
-  func renameFeed(_ id: FeedID, to name: String) {
-    guard !running, let current = feedCoordinator.descriptors.first(where: { $0.id == id }) else { return }
-    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, trimmed != current.name else { return }
-    var updated = current
-    updated.name = trimmed
-    feedCoordinator.update(updated)
-    saveSettings()
-  }
-
-  func setOutputMode(_ mode: FeedOutputMode) {
-    guard !running else { return }
-    feedCoordinator.setOutputMode(mode)
-    saveSettings()
-  }
-
-  func updateSwitcher(_ settings: SwitcherSettings) {
-    feedCoordinator.setSwitcher(settings)
-    saveSettings()
-  }
-
-  @discardableResult
-  func requestProgramCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
-    let result = feedCoordinator.requestProgramCut(to: feedID)
-    if case .queued = result { saveSettings() }
-    return result
-  }
-
-  private func loadSelectedFeedSettings() {
-    let selected = feedCoordinator.selectedDescriptor
-    restoringSettings = true
-    selectedDevice = selected.selectedDevice
-    configuration = selected.configuration
-    configuration.applyLUT = false
-    rememberedLUTEnabled = selected.applyLUT
-    gamut = selected.gamut
-    pipelineEnabled = selected.pipelineEnabled
-    previewEnabled = selected.previewEnabled
-    automaticFeedEnabled = selected.automaticFeed
-    lutBookmark = selected.lutBookmark
-    restoringSettings = false
-    capture.setPreviewEnabled(previewEnabled)
-    demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
   }
 
   /// Publishes the complete feed topology in one transaction. The camera
