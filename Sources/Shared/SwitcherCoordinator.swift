@@ -1,0 +1,319 @@
+import CoreMedia
+import Foundation
+
+/// The state returned by a switcher evaluation. The coordinator never owns a
+/// timer; callers provide the media clock when they evaluate it.
+enum SwitcherEvaluation: Equatable {
+  case idle
+  case cutQueued(FeedID)
+  case noHealthyFeed
+  case dynamicAnalysisUnavailable
+}
+
+/// A pure Program route. It owns only the scheduler's value state and leaves
+/// frame queues, capture and CMIO resources to their existing owners.
+struct ProgramOutput<SourceID: Hashable> {
+  private(set) var scheduler: ProgramCutScheduler<SourceID>
+
+  init(selectedSource: SourceID? = nil, programTimescale: Int32 = 60_000) {
+    scheduler = ProgramCutScheduler(selectedSource: selectedSource,
+      programTimescale: programTimescale)
+  }
+
+  var selectedSource: SourceID? { scheduler.selectedSource }
+  var pendingCut: SourceID? { scheduler.pendingCut }
+  var hasPendingCut: Bool { scheduler.hasPendingCut }
+
+  mutating func setSource(_ sourceID: SourceID, available: Bool) {
+    scheduler.setSource(sourceID, available: available)
+  }
+
+  mutating func setSourceHealth(_ sourceID: SourceID, healthy: Bool) {
+    setSource(sourceID, available: healthy)
+  }
+
+  func isSourceAvailable(_ sourceID: SourceID) -> Bool {
+    scheduler.isSourceAvailable(sourceID)
+  }
+
+  mutating func requestCut(to sourceID: SourceID) -> ProgramCutRequestResult<SourceID> {
+    scheduler.requestCut(to: sourceID)
+  }
+
+  mutating func ingest(_ frame: ProgramSourceFrame<SourceID>)
+    -> ProgramFrameDecision<SourceID> {
+    scheduler.ingest(frame)
+  }
+
+  mutating func reset(selectedSource: SourceID? = nil) {
+    scheduler = ProgramCutScheduler(selectedSource: selectedSource,
+      programTimescale: scheduler.mapper.programTimescale)
+  }
+}
+
+/// Compatibility spelling for call sites that use the coordinator name.
+typealias ProgramOutputCoordinator<SourceID: Hashable> = ProgramOutput<SourceID>
+
+/// Coordinates persisted switcher settings with the frame-boundary Program
+/// route. This type is deliberately independent from capture and CMIO.
+struct SwitcherCoordinator {
+  private(set) var settings: SwitcherSettings
+  private(set) var feedIDs: [FeedID]
+  private(set) var feedHealth: [FeedID: Bool]
+  private(set) var selectedFeedID: FeedID?
+  private(set) var programOutput: ProgramOutput<FeedID>
+
+  private var director: NaturalTalkingHeadDirector
+  private var pendingDirectorDecision: CutDecision?
+  private var fixedIntervalOrigin: TimeInterval?
+  private var automaticRequestPending = false
+  private let anchorFeedID: FeedID?
+  private let emphasisFeedID: FeedID?
+
+  init(settings: SwitcherSettings = .init(), feedIDs: [FeedID] = [],
+    anchorFeedID: FeedID? = nil, emphasisFeedID: FeedID? = nil,
+    directorSettings: NaturalTalkingHeadDirectorSettings = .init()) {
+    let ids = Self.unique(feedIDs)
+    let initial = settings.selectedFeedID.flatMap { ids.contains($0) ? $0 : nil }
+      ?? ids.first
+    self.settings = settings
+    self.feedIDs = ids
+    self.feedHealth = Dictionary(uniqueKeysWithValues: self.feedIDs.map { ($0, true) })
+    self.selectedFeedID = initial
+    self.programOutput = ProgramOutput(selectedSource: initial)
+    self.director = NaturalTalkingHeadDirector(settings: directorSettings)
+    self.anchorFeedID = anchorFeedID ?? self.feedIDs.first
+    self.emphasisFeedID = emphasisFeedID ?? self.feedIDs.dropFirst().first
+  }
+
+  init(settings: SwitcherSettings = .init(), feeds: [FeedDescriptor],
+    anchorFeedID: FeedID? = nil, emphasisFeedID: FeedID? = nil,
+    directorSettings: NaturalTalkingHeadDirectorSettings = .init()) {
+    self.init(settings: settings,
+      feedIDs: feeds.filter(\.enabled).map(\.id), anchorFeedID: anchorFeedID,
+      emphasisFeedID: emphasisFeedID, directorSettings: directorSettings)
+  }
+
+  /// The UI can use this message without presenting dynamic analysis as an
+  /// active mode. The strategy remains persisted for a future implementation.
+  var statusMessage: String {
+    settings.strategy == .dynamicAnalysis ? "Coming later" : "Ready"
+  }
+
+  var anchorID: FeedID? { anchorFeedID }
+  var emphasisID: FeedID? { emphasisFeedID }
+
+  var pendingCut: FeedID? { programOutput.pendingCut }
+  var hasPendingCut: Bool { programOutput.hasPendingCut }
+  var pendingDirectorCut: CutDecision? { pendingDirectorDecision }
+
+  mutating func setFeedHealth(_ feedID: FeedID, healthy: Bool) {
+    guard feedIDs.contains(feedID) else { return }
+    feedHealth[feedID] = healthy
+    programOutput.setSourceHealth(feedID, healthy: healthy)
+  }
+
+  mutating func setSourceHealth(_ feedID: FeedID, healthy: Bool) {
+    setFeedHealth(feedID, healthy: healthy)
+  }
+
+  mutating func updateSettings(_ settings: SwitcherSettings) {
+    self.settings = settings
+    fixedIntervalOrigin = nil
+    automaticRequestPending = false
+  }
+
+  func isFeedHealthy(_ feedID: FeedID) -> Bool {
+    feedHealth[feedID] ?? false
+  }
+
+  /// Adds a manual cut to the Program boundary queue. `selectedFeedID` changes
+  /// only once the Program route observes the target frame or an explicit ACK.
+  @discardableResult
+  mutating func requestManualCut(to feedID: FeedID, at: CMTime? = nil)
+    -> ProgramCutRequestResult<FeedID> {
+    _ = at
+    guard feedIDs.contains(feedID), isFeedHealthy(feedID) else {
+      return .rejectedMissingSource
+    }
+    automaticRequestPending = false
+    return programOutput.requestCut(to: feedID)
+  }
+
+  @discardableResult
+  mutating func manualCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    requestManualCut(to: feedID)
+  }
+
+  @discardableResult
+  mutating func manualOverride(to feedID: FeedID, at time: CMTime)
+    -> ProgramCutRequestResult<FeedID> {
+    let result = requestManualCut(to: feedID, at: time)
+    if case .queued = result {
+      director.manualOverride(cameraID: feedID.rawValue, at: time)
+    }
+    return result
+  }
+
+  @discardableResult
+  mutating func selectFeed(_ feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    requestManualCut(to: feedID)
+  }
+
+  /// Evaluate fixed interval policy at a caller supplied media time. The first
+  /// evaluation establishes the interval origin, making replay deterministic.
+  mutating func evaluate(at mediaTime: CMTime) -> SwitcherEvaluation {
+    guard let now = validSeconds(mediaTime) else { return .idle }
+    guard settings.strategy != .dynamicAnalysis else { return .dynamicAnalysisUnavailable }
+    guard settings.automatic, settings.strategy == .fixedInterval else { return .idle }
+    guard !automaticRequestPending, !programOutput.hasPendingCut else { return .idle }
+
+    if fixedIntervalOrigin == nil {
+      fixedIntervalOrigin = now
+      return .idle
+    }
+    let interval = max(settings.intervalSeconds.isFinite ? settings.intervalSeconds : 0, 0.001)
+    guard now - (fixedIntervalOrigin ?? now) >= interval else { return .idle }
+
+    guard let target = nextHealthyFeed(after: selectedFeedID) else {
+      fixedIntervalOrigin = now
+      return .noHealthyFeed
+    }
+    let result = programOutput.requestCut(to: target)
+    fixedIntervalOrigin = now
+    guard case .queued = result else { return .idle }
+    automaticRequestPending = true
+    return .cutQueued(target)
+  }
+
+  mutating func evaluate(at mediaTime: CMTime, audioCues: [AudioCue],
+    transcriptCues: [TranscriptCue]) -> SwitcherEvaluation {
+    _ = audioCues
+    _ = transcriptCues
+    return evaluate(at: mediaTime)
+  }
+
+  mutating func tick(at mediaTime: CMTime) -> SwitcherEvaluation {
+    evaluate(at: mediaTime)
+  }
+
+  /// Runs the existing natural director when an integration explicitly opts
+  /// into it. Persisted dynamicAnalysis still reports its disabled stub above.
+  mutating func evaluateDirector(_ input: NaturalTalkingHeadDirectorInput)
+    -> CutDecision? {
+    guard settings.strategy != .dynamicAnalysis else { return nil }
+    guard let decision = director.evaluate(input) else { return nil }
+    let target = FeedID(rawValue: decision.targetCameraID)
+    guard feedIDs.contains(target), isFeedHealthy(target) else { return nil }
+    let result = programOutput.requestCut(to: target)
+    switch result {
+    case .queued, .coalesced:
+      pendingDirectorDecision = decision
+      return decision
+    case .ignoredSameSource, .rejectedMissingSource:
+      return nil
+    }
+  }
+
+  mutating func evaluateNatural(_ input: NaturalTalkingHeadDirectorInput)
+    -> CutDecision? {
+    evaluateDirector(input)
+  }
+
+  /// Forward one source frame to the Program scheduler. A cut is applied only
+  /// when the target source presents a valid frame boundary.
+  mutating func ingest(_ frame: ProgramSourceFrame<FeedID>)
+    -> ProgramFrameDecision<FeedID> {
+    let decision = programOutput.ingest(frame)
+    if case let .cutApplied(mapped, _) = decision {
+      selectedFeedID = mapped.sourceID
+      settings.selectedFeedID = mapped.sourceID
+      automaticRequestPending = false
+    }
+    return decision
+  }
+
+  /// Acknowledges the natural director's exact decision after the output route
+  /// applies it. Replaying the same decision returns false.
+  @discardableResult
+  mutating func acknowledgeCut(_ decision: CutDecision, appliedAt: CMTime? = nil) -> Bool {
+    guard pendingDirectorDecision == decision else { return false }
+    guard director.acknowledgeOutput(decision, appliedAt: appliedAt) else { return false }
+    pendingDirectorDecision = nil
+    let target = FeedID(rawValue: decision.targetCameraID)
+    if programOutput.selectedSource == target {
+      selectedFeedID = target
+      settings.selectedFeedID = target
+    }
+    automaticRequestPending = false
+    return true
+  }
+
+  @discardableResult
+  mutating func acknowledgeOutput(_ decision: CutDecision, appliedAt: CMTime? = nil) -> Bool {
+    acknowledgeCut(decision, appliedAt: appliedAt)
+  }
+
+  @discardableResult
+  mutating func acknowledge(_ decision: CutDecision, appliedAt: CMTime? = nil) -> Bool {
+    acknowledgeCut(decision, appliedAt: appliedAt)
+  }
+
+  /// Acknowledges a manual or fixed-interval cut by feed ID. The route should
+  /// normally call `ingest` first; this method is useful for output adapters
+  /// that report an applied boundary separately from frame delivery.
+  @discardableResult
+  mutating func acknowledgeCut(to feedID: FeedID, appliedAt: CMTime? = nil) -> Bool {
+    _ = appliedAt
+    guard feedIDs.contains(feedID), isFeedHealthy(feedID) else { return false }
+    guard programOutput.selectedSource == feedID || programOutput.pendingCut == feedID else {
+      return false
+    }
+    selectedFeedID = feedID
+    settings.selectedFeedID = feedID
+    automaticRequestPending = false
+    if pendingDirectorDecision?.targetCameraID == feedID.rawValue {
+      pendingDirectorDecision = nil
+    }
+    return true
+  }
+
+  @discardableResult
+  mutating func acknowledgeCut(_ feedID: FeedID, appliedAt: CMTime? = nil) -> Bool {
+    acknowledgeCut(to: feedID, appliedAt: appliedAt)
+  }
+
+  mutating func reset() {
+    selectedFeedID = feedIDs.first
+    settings.selectedFeedID = selectedFeedID
+    programOutput.reset(selectedSource: selectedFeedID)
+    for (feedID, healthy) in feedHealth {
+      programOutput.setSourceHealth(feedID, healthy: healthy)
+    }
+    director.reset()
+    pendingDirectorDecision = nil
+    fixedIntervalOrigin = nil
+    automaticRequestPending = false
+  }
+
+  private func nextHealthyFeed(after feedID: FeedID?) -> FeedID? {
+    guard !feedIDs.isEmpty else { return nil }
+    let start = feedID.flatMap { feedIDs.firstIndex(of: $0) } ?? -1
+    for offset in 1...feedIDs.count {
+      let candidate = feedIDs[(start + offset) % feedIDs.count]
+      if candidate != feedID, isFeedHealthy(candidate) { return candidate }
+    }
+    return nil
+  }
+
+  private static func unique(_ ids: [FeedID]) -> [FeedID] {
+    var seen = Set<FeedID>()
+    return ids.filter { seen.insert($0).inserted }
+  }
+}
+
+private func validSeconds(_ time: CMTime) -> TimeInterval? {
+  guard time.isValid, time.isNumeric else { return nil }
+  let seconds = CMTimeGetSeconds(time)
+  return seconds.isFinite && seconds >= 0 ? seconds : nil
+}
