@@ -140,10 +140,11 @@ final class AppModel {
     }
     refresh()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
-    demandMonitor.onChange = { [weak self] requested, error in
-      guard let self, self.automaticFeedEnabled else { return }
-      self.cameraDemandError = error
-      self.automaticPolicy.demand(requested == true)
+    demandMonitor.onRouteChange = { [weak self] change in
+      guard let self, self.automaticFeedEnabled,
+        change.route.id == self.automaticDemandRouteID else { return }
+      self.cameraDemandError = change.error
+      self.automaticPolicy.demand(change.requested == true)
       self.reconcileAutomaticFeed()
     }
     if automaticFeedEnabled { demandMonitor.start() }
@@ -336,6 +337,13 @@ final class AppModel {
   }
 
   var cameraRequested: Bool { automaticPolicy.requested }
+
+  private var automaticDemandRouteID: String {
+    if feedCoordinator.outputMode == .program {
+      return VirtualCameraDescriptor.program().id
+    }
+    return VirtualCameraDescriptor.feed(feedID: selectedFeedID.rawValue).id
+  }
 
   var automaticFeedStatus: String {
     if let cameraDemandError { return cameraDemandError }
