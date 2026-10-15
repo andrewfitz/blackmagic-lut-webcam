@@ -137,7 +137,12 @@ public struct EmbeddedAudioPacket {
     guard channelCount == EmbeddedAudioFormat.channelCount else {
       throw EmbeddedAudioError.invalidChannelCount
     }
-    guard presentationTime.isNumeric else { throw EmbeddedAudioError.invalidPresentationTime }
+    guard presentationTime.isNumeric,
+          presentationTime.timescale == EmbeddedAudioFormat.sampleRateTimescale,
+          presentationTime.epoch == 0,
+          presentationTime.value >= 0 else {
+      throw EmbeddedAudioError.invalidPresentationTime
+    }
     let expectedBytes = sampleFrameCount * channelCount * EmbeddedAudioFormat.sourceBytesPerSample
     guard sourcePCM32.count == expectedBytes else {
       throw EmbeddedAudioError.byteCountMismatch(expected: expectedBytes, actual: sourcePCM32.count)
