@@ -37,6 +37,15 @@ Blackmagic Desktop Video 16.4. Executed October 14, 2026.
   not a promise of literally zero OS/app CPU. Capture timers/SDK input, queued
   previews and working GPU buffers are stopped/released; the activity monitor
   uses property notifications and schedules no polling or video GPU work.
+- Final telemetry build `60c96f4` passed the full **114-test** suite and strict
+  local-development bundle validation. A live source-only client produced
+  detected 4K v210 59.94 input and 1080p NV12 59.94 output; the installed app
+  displayed real embedded stereo levels (2 channels at 48.0 kHz, approximately
+  -37 to -52 dB during this check), while timecode remained `—` because the
+  current HDMI source did not carry RP188. Diagnostics exposed the live packet,
+  sample, byte, bitrate and separate audio/video-drop fields. Closing the client
+  returned the meters to **No signal**, cleared timecode and reset transient
+  counters while automatic mode returned to idle.
 - macOS 27 camera replacement hit one launchd registration race and retained a
   stale device list in an already-running host. Re-activation/reopening the host
   restored discovery. No security policy, permissions or certificate changes were

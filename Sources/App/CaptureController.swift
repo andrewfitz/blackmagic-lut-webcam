@@ -709,13 +709,15 @@ final class CaptureController: @unchecked Sendable {
       outputFPS: outputFPS, displayedFrames: diagnostics.reduce(0) { $0 + $1.rendererFrames },
       rendererDrops: diagnostics.reduce(0) { $0 + $1.rendererDropped },
       previewError: diagnostics.compactMap(\.lastError).first,
-      timecode: timecode, audioChannels: audioChannels, audioSampleRate: audioSampleRate,
-      audioPackets: audioPackets, audioSamples: audioSamples, audioBytes: audioBytes,
-      audioDrops: audioDrops, audioPeakLeft: audioPeakLeft, audioPeakRight: audioPeakRight,
-      audioRMSLeft: audioRMSLeft, audioRMSRight: audioRMSRight,
-      audioBitrateKbps: audioBitrateKbps, audioPresent: audioPresent,
-      videoBitrateMbps: videoBitrateMbps,
-      videoDrops: losses.0 + losses.1 + poolDrops + cameraDrops,
+      timecode: stopped ? nil : timecode,
+      audioChannels: stopped ? 0 : audioChannels, audioSampleRate: stopped ? 0 : audioSampleRate,
+      audioPackets: stopped ? 0 : audioPackets, audioSamples: stopped ? 0 : audioSamples,
+      audioBytes: stopped ? 0 : audioBytes, audioDrops: stopped ? 0 : audioDrops,
+      audioPeakLeft: stopped ? 0 : audioPeakLeft, audioPeakRight: stopped ? 0 : audioPeakRight,
+      audioRMSLeft: stopped ? 0 : audioRMSLeft, audioRMSRight: stopped ? 0 : audioRMSRight,
+      audioBitrateKbps: stopped ? 0 : audioBitrateKbps, audioPresent: stopped ? false : audioPresent,
+      videoBitrateMbps: stopped ? 0 : videoBitrateMbps,
+      videoDrops: stopped ? 0 : losses.0 + losses.1 + poolDrops + cameraDrops,
       cameraOutputActive: cameraConnected, cameraMessage: cameraMessage, stopped: stopped)
     DispatchQueue.main.async { [weak self] in
       guard let self, self.isCurrent(token) else { return }

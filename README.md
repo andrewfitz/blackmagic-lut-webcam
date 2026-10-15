@@ -62,6 +62,14 @@ session, with an explicit Retry action rather than a background retry loop.
 Turn automatic mode off to regain manual Start/Stop controls; an already live
 feed continues under manual control.
 
+The metadata panel also reports the detected RP188 video timecode when the HDMI
+source carries one. It shows two embedded-audio meters from the UltraStudio's
+48 kHz, 16-bit stereo input, with peak and RMS values for left and right. The
+diagnostics disclosure includes audio channels, sample rate, packet/sample/byte
+counts, estimated audio bitrate and audio gaps, plus video bitrate and separate
+video drop counters. If the source carries no audio or timecode, the UI says so
+instead of fabricating values.
+
 A missing or invalid saved LUT leaves capture usable and keeps
 the saved choice for recovery. The menu bar popover shares the window's controls
 and includes its own native mini preview; closing the window does not stop capture.
