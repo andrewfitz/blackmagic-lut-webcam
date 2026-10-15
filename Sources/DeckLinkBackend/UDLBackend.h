@@ -21,6 +21,12 @@ typedef void (^UDLMediaStatsHandler)(NSString *_Nullable timecode, CMTime audioP
   NSUInteger audioSampleFrames, NSUInteger audioChannels, float leftPeak, float rightPeak,
   float leftRMS, float rightRMS, NSUInteger audioBytes, BOOL audioPresent);
 
+// Raw embedded audio packets are copied on the DeckLink callback thread before
+// the SDK packet is released. Samples are interleaved signed 32-bit PCM when
+// this handler is used (48 kHz, two channels, little-endian native bytes).
+typedef void (^UDLRawAudioHandler)(NSData *_Nullable samples, CMTime audioPacketTime,
+  NSUInteger audioSampleFrames, NSUInteger audioChannels, NSUInteger bytesPerSample);
+
 // Calls start/stop on one control queue. Frames execute on Blackmagic's
 // callback thread; events may also use the native control queue. Handlers must
 // return promptly: reject a frame while processing is
@@ -40,6 +46,13 @@ typedef void (^UDLMediaStatsHandler)(NSString *_Nullable timecode, CMTime audioP
 - (BOOL)startWithDeviceID:(NSString *)deviceID
                inputFast:(BOOL)inputFast
             frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
+       rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+            eventHandler:(void (^)(NSString *message))eventHandler
+                   error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:rawAudioHandler:eventHandler:));
+- (BOOL)startWithDeviceID:(NSString *)deviceID
+               inputFast:(BOOL)inputFast
+            frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
             eventHandler:(void (^)(NSString *message))eventHandler
                    error:(NSError *_Nullable *_Nullable)error
   NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:eventHandler:));
@@ -53,6 +66,12 @@ typedef void (^UDLMediaStatsHandler)(NSString *_Nullable timecode, CMTime audioP
   NS_SWIFT_NAME(startAuto(deviceID:frameHandler:mediaHandler:eventHandler:));
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
                 frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
+           rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+                eventHandler:(void (^)(NSString *message))eventHandler
+                       error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(startAuto(deviceID:frameHandler:rawAudioHandler:eventHandler:));
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+                frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
                 eventHandler:(void (^)(NSString *message))eventHandler
                        error:(NSError *_Nullable *_Nullable)error
   NS_SWIFT_NAME(startAuto(deviceID:frameHandler:eventHandler:));
@@ -63,6 +82,7 @@ typedef void (^UDLMediaStatsHandler)(NSString *_Nullable timecode, CMTime audioP
 // Synthetic SDK callbacks only; never opens hardware or saves video.
 FOUNDATION_EXPORT BOOL UDLRunSyntheticChecks(NSError *_Nullable *_Nullable error);
 FOUNDATION_EXPORT BOOL UDLRunAutoSyntheticChecks(NSError *_Nullable *_Nullable error);
+FOUNDATION_EXPORT BOOL UDLRunRawAudioSyntheticChecks(NSError *_Nullable *_Nullable error);
 #endif
 
 NS_ASSUME_NONNULL_END

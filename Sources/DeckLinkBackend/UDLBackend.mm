@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>
+#include <limits>
 
 #if __has_include("DeckLinkAPI.h")
 #include "DeckLinkAPI.h"
@@ -279,6 +280,38 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
     leftRMS, rightRMS, bytes, present);
 }
 
+// Raw audio is a separate capture mode: the DeckLink input must be enabled
+// with bmdAudioSampleType32bitInteger, and every packet is copied before the
+// callback returns. Keep the same conservative frame bound as the stats path
+// so malformed driver metadata cannot produce an oversized allocation.
+static void reportRawAudio(IDeckLinkAudioInputPacket *audio, UDLRawAudioHandler handler) {
+  if (!handler) return;
+  constexpr NSUInteger channels = 2;
+  constexpr NSUInteger bytesPerSample = sizeof(int32_t);
+  CMTime packetTime = kCMTimeInvalid;
+  NSData *samplesData = nil;
+  NSUInteger sampleFrames = 0;
+  if (audio) {
+    long count = audio->GetSampleFrameCount();
+    if (count > 0 && static_cast<uint64_t>(count) <= 96000) {
+      BMDTimeValue timestamp = 0;
+      if (audio->GetPacketTime(&timestamp, bmdAudioSampleRate48kHz) == S_OK && timestamp >= 0)
+        packetTime = CMTimeMake(timestamp, bmdAudioSampleRate48kHz);
+      const NSUInteger frameCount = static_cast<NSUInteger>(count);
+      const NSUInteger bytesPerFrame = channels * bytesPerSample;
+      if (frameCount <= (std::numeric_limits<NSUInteger>::max() / bytesPerFrame)) {
+        const NSUInteger expectedBytes = frameCount * bytesPerFrame;
+        void *raw = nullptr;
+        if (audio->GetBytes(&raw) == S_OK && raw && expectedBytes > 0) {
+          samplesData = [NSData dataWithBytes:raw length:expectedBytes];
+          sampleFrames = frameCount;
+        }
+      }
+    }
+  }
+  handler(samplesData, packetTime, sampleFrames, samplesData ? channels : 0, bytesPerSample);
+}
+
 class CaptureCallback final : public IDeckLinkInputCallback {
  public:
   std::atomic<ULONG> references{1};
@@ -292,13 +325,15 @@ class CaptureCallback final : public IDeckLinkInputCallback {
   CMTimeScale timeScale;
   void (^frameHandler)(CVPixelBufferRef, CMTime, BOOL);
   UDLMediaStatsHandler mediaHandler;
+  UDLRawAudioHandler rawAudioHandler;
   void (^eventHandler)(NSString *);
   void (^autoFrameHandler)(CVPixelBufferRef, CMTime, CMTime, BOOL) = nil;
   void (^modeHandler)(DetectedInput) = nil;
   CaptureCallback(BMDDisplayMode mode, CMTimeScale scale,
     void (^frames)(CVPixelBufferRef, CMTime, BOOL), void (^events)(NSString *),
-    UDLMediaStatsHandler media = nil)
-    : requestedMode(mode), timeScale(scale), frameHandler([frames copy]), mediaHandler([media copy]), eventHandler([events copy]) {}
+    UDLMediaStatsHandler media = nil, UDLRawAudioHandler rawAudio = nil)
+    : requestedMode(mode), timeScale(scale), frameHandler([frames copy]), mediaHandler([media copy]),
+      rawAudioHandler([rawAudio copy]), eventHandler([events copy]) {}
   HRESULT QueryInterface(REFIID iid, LPVOID *object) override {
     if (!object) return E_INVALIDARG;
     *object = nullptr;
@@ -384,6 +419,7 @@ class CaptureCallback final : public IDeckLinkInputCallback {
         reportFatal(@"Desktop Video supplied a pixel format incompatible with the native v210 feed."); return S_OK;
       }
       reportMedia(frame, audioPacket, timeScale, mediaHandler);
+      reportRawAudio(audioPacket, rawAudioHandler);
       // Swift retaining the buffer safely extends the native frame lifetime.
       if (accepting && framesEnabled) {
         if (autoFrameHandler) autoFrameHandler(buffer, CMTimeMake(timestamp, timeScale), CMTimeMake(duration, timeScale), YES);
@@ -407,7 +443,7 @@ static void stopInput(IDeckLinkInput *input, CaptureCallback *callback) {
 }
 
 static HRESULT startInput(IDeckLinkInput *input, CaptureCallback *callback,
-  BMDDisplayMode mode, BMDVideoInputFlags flags) {
+  BMDDisplayMode mode, BMDVideoInputFlags flags, bool rawAudio = false) {
   HRESULT status = input->SetCallback(callback);
   if (status == S_OK) status = input->EnableVideoInput(mode, bmdFormat10BitYUV, flags);
   if (status == S_OK) {
@@ -415,7 +451,7 @@ static HRESULT startInput(IDeckLinkInput *input, CaptureCallback *callback,
     // video capture usable when audio is unavailable, but retain the enabled
     // bit so teardown can always disable a successfully opened audio stream.
     HRESULT audioStatus = input->EnableAudioInput(bmdAudioSampleRate48kHz,
-      bmdAudioSampleType16bitInteger, 2);
+      rawAudio ? bmdAudioSampleType32bitInteger : bmdAudioSampleType16bitInteger, 2);
     if (audioStatus == S_OK) callback->audioEnabled = true;
   }
   if (status == S_OK) status = input->StartStreams();
@@ -505,7 +541,21 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   __block BOOL result = NO;
   __block NSError *localError = nil;
   [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:inputFast
-    frameHandler:frameHandler autoFrameHandler:nil mediaHandler:mediaHandler eventHandler:eventHandler error:&localError]; }];
+    frameHandler:frameHandler autoFrameHandler:nil mediaHandler:mediaHandler rawAudioHandler:nil
+    eventHandler:eventHandler error:&localError]; }];
+  if (!result && error) *error = localError;
+  return result;
+}
+
+- (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
+  frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
+  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
+  __block BOOL result = NO;
+  __block NSError *localError = nil;
+  [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:inputFast
+    frameHandler:frameHandler autoFrameHandler:nil mediaHandler:nil rawAudioHandler:rawAudioHandler
+    eventHandler:eventHandler error:&localError]; }];
   if (!result && error) *error = localError;
   return result;
 }
@@ -524,7 +574,21 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   __block BOOL result = NO;
   __block NSError *localError = nil;
   [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:YES
-    frameHandler:nil autoFrameHandler:frameHandler mediaHandler:mediaHandler eventHandler:eventHandler error:&localError]; }];
+    frameHandler:nil autoFrameHandler:frameHandler mediaHandler:mediaHandler rawAudioHandler:nil
+    eventHandler:eventHandler error:&localError]; }];
+  if (!result && error) *error = localError;
+  return result;
+}
+
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+  frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler
+  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
+  __block BOOL result = NO;
+  __block NSError *localError = nil;
+  [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:YES
+    frameHandler:nil autoFrameHandler:frameHandler mediaHandler:nil rawAudioHandler:rawAudioHandler
+    eventHandler:eventHandler error:&localError]; }];
   if (!result && error) *error = localError;
   return result;
 }
@@ -540,6 +604,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
   autoFrameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))autoFrameHandler
   mediaHandler:(UDLMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   [self stopOnQueue];
 #if UDL_HAS_SDK
@@ -577,11 +642,12 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   }
   if (status != S_OK || !supported)
     return fail(error, @"UltraStudio does not support 3840 × 2160 10-bit 4:2:2 at the selected frame rate.", status);
-  auto callback = new CaptureCallback(requestedMode, inputFast ? 60000 : 30000, frameHandler, eventHandler, mediaHandler);
+  auto callback = new CaptureCallback(requestedMode, inputFast ? 60000 : 30000, frameHandler, eventHandler,
+    mediaHandler, rawAudioHandler);
   if (autoFrameHandler) {
     [self configureAutoCallback:callback frameHandler:autoFrameHandler];
   }
-  status = startInput(input.value, callback, requestedMode, inputFlags);
+  status = startInput(input.value, callback, requestedMode, inputFlags, rawAudioHandler != nil);
   if (status != S_OK) {
     if (_autoMode) { _autoMode->cancel(); _autoMode.reset(); }
     callback->Release();

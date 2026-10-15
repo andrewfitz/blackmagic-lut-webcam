@@ -34,6 +34,20 @@ class FakeAudioPacket final : public IDeckLinkAudioInputPacket {
   HRESULT GetPacketTime(BMDTimeValue *result, BMDTimeScale) override { if (!result) return E_INVALIDARG; *result = packetTime; return S_OK; }
 };
 
+class FakeRawAudioPacket final : public IDeckLinkAudioInputPacket {
+ public:
+  std::atomic<ULONG> references{1};
+  std::vector<int32_t> samples;
+  BMDTimeValue packetTime = 48000 * 3 + 17;
+  explicit FakeRawAudioPacket(std::initializer_list<int32_t> values) : samples(values) {}
+  HRESULT QueryInterface(REFIID, LPVOID *result) override { *result = nullptr; return E_NOINTERFACE; }
+  ULONG AddRef() override { return ++references; }
+  ULONG Release() override { ULONG n = --references; if (!n) delete this; return n; }
+  long GetSampleFrameCount() override { return static_cast<long>(samples.size() / 2); }
+  HRESULT GetBytes(void **result) override { if (!result) return E_INVALIDARG; *result = samples.data(); return S_OK; }
+  HRESULT GetPacketTime(BMDTimeValue *result, BMDTimeScale) override { if (!result) return E_INVALIDARG; *result = packetTime; return S_OK; }
+};
+
 class FakeFrame final : public IDeckLinkVideoInputFrame {
  public:
   std::atomic<ULONG> references{1};
@@ -90,6 +104,10 @@ class FakeInput final : public IDeckLinkInput {
   ULONG references = 1;
   std::vector<std::string> calls;
   HRESULT enableResult = S_OK, startResult = S_OK, callbackResult = S_OK;
+  HRESULT audioResult = E_NOTIMPL;
+  BMDAudioSampleRate enabledAudioRate = bmdAudioSampleRate48kHz;
+  BMDAudioSampleType enabledAudioType = bmdAudioSampleType16bitInteger;
+  uint32_t enabledAudioChannels = 0;
   HRESULT pauseResult = S_OK, flushResult = S_OK;
   bool reconfiguredOnMainThread = false;
   BMDDisplayMode enabledMode = bmdModeUnknown;
@@ -113,7 +131,9 @@ class FakeInput final : public IDeckLinkInput {
   HRESULT DisableVideoInput() override { calls.push_back("disable"); return S_OK; }
   HRESULT GetAvailableVideoFrameCount(uint32_t *) override { return E_NOTIMPL; }
   HRESULT SetVideoInputFrameMemoryAllocator(IDeckLinkMemoryAllocator *) override { return E_NOTIMPL; }
-  HRESULT EnableAudioInput(BMDAudioSampleRate, BMDAudioSampleType, uint32_t) override { return E_NOTIMPL; }
+  HRESULT EnableAudioInput(BMDAudioSampleRate rate, BMDAudioSampleType type, uint32_t channels) override {
+    enabledAudioRate = rate; enabledAudioType = type; enabledAudioChannels = channels; return audioResult;
+  }
   HRESULT DisableAudioInput() override { return E_NOTIMPL; }
   HRESULT GetAvailableAudioSampleFrameCount(uint32_t *) override { return E_NOTIMPL; }
   HRESULT StartStreams() override { calls.push_back("start"); return startResult; }
@@ -158,6 +178,48 @@ class FakeConfiguration final : public IDeckLinkConfiguration {
   HRESULT GetString(BMDDeckLinkConfigurationID, CFStringRef *) override { return E_NOTIMPL; }
   HRESULT WriteConfigurationToPreferences() override { ++persistentWrites; return S_OK; }
 };
+
+BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
+  @autoreleasepool {
+    __block NSData *received = nil;
+    __block CMTime packetTime = kCMTimeInvalid;
+    __block NSUInteger sampleFrames = 0, channels = 0, bytesPerSample = 0;
+    auto framesBlock = ^(CVPixelBufferRef, CMTime, BOOL) {};
+    auto eventsBlock = ^(NSString *) {};
+    auto rawBlock = ^(NSData *samples, CMTime time, NSUInteger frames, NSUInteger channelCount, NSUInteger sampleBytes) {
+      received = [samples copy]; packetTime = time; sampleFrames = frames;
+      channels = channelCount; bytesPerSample = sampleBytes;
+    };
+
+    auto callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock, nil, rawBlock);
+    bool destroyed = false;
+    auto frame = new FakeFrame(&destroyed);
+    auto audio = new FakeRawAudioPacket({INT32_MIN, 0x40000000, -123, 123});
+    const int32_t expectedSamples[] = {INT32_MIN, 0x40000000, -123, 123};
+    NSData *expectedData = [NSData dataWithBytes:expectedSamples length:sizeof(expectedSamples)];
+    callback->VideoInputFrameArrived(frame, audio);
+    audio->samples[0] = 0;
+    if (!received || ![received isEqualToData:expectedData] ||
+      CMTimeCompare(packetTime, CMTimeMake(48000 * 3 + 17, 48000)) != 0 ||
+      sampleFrames != 2 || channels != 2 || bytesPerSample != sizeof(int32_t) || received.length != sizeof(expectedSamples))
+      return fail(error, @"Raw embedded audio callback did not copy exact 48 kHz packet metadata and bytes.");
+    callback->accepting = false;
+    audio->Release(); frame->Release(); callback->Release();
+
+    FakeInput input;
+    input.audioResult = S_OK;
+    callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock, nil, rawBlock);
+    HRESULT status = startInput(&input, callback, bmdMode4K2160p5994, bmdVideoInputFlagDefault, true);
+    if (status != S_OK || input.enabledAudioRate != bmdAudioSampleRate48kHz ||
+      input.enabledAudioType != bmdAudioSampleType32bitInteger || input.enabledAudioChannels != 2 ||
+      !callback->audioEnabled)
+      return fail(error, @"Raw embedded audio startup did not request 32-bit integer PCM.");
+    stopInput(&input, callback);
+    if (callback->audioEnabled) return fail(error, @"Raw embedded audio teardown left audio enabled.");
+    callback->Release();
+    return YES;
+  }
+}
 
 BOOL UDLRunSyntheticChecks(NSError **error) {
   @autoreleasepool {
@@ -254,6 +316,8 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
       callback = new CaptureCallback(bmdMode4K2160p5994, 60000, framesBlock, eventsBlock);
       HRESULT status = startInput(&input, callback, bmdMode4K2160p5994, bmdVideoInputFlagDefault);
       if ((scenario == 0) != (status == S_OK)) return fail(error, @"SDK startup did not preserve failure status.");
+      if (input.enabledAudioType != bmdAudioSampleType16bitInteger)
+        return fail(error, @"Stats startup unexpectedly requested non-16-bit embedded audio.");
       if (scenario == 0) stopInput(&input, callback);
       if (input.callback || callback->accepting || callback->references != 1 || input.calls.size() < 4 ||
         input.calls[input.calls.size() - 3] != "stop" || input.calls[input.calls.size() - 2] != "clear" || input.calls.back() != "disable")
@@ -291,6 +355,9 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
 }
 #else
 BOOL UDLRunSyntheticChecks(NSError **error) {
+  return fail(error, @"Synthetic SDK frame mocks currently require the pinned SDK12 interfaces.");
+}
+BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
   return fail(error, @"Synthetic SDK frame mocks currently require the pinned SDK12 interfaces.");
 }
 #endif

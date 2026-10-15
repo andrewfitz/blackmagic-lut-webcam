@@ -11,6 +11,11 @@ final class DeckLinkChecks: XCTestCase {
     XCTAssertTrue(UDLRunSyntheticChecks(&error), error?.localizedDescription ?? "Native SDK checks failed")
   }
 
+  func testRawEmbeddedAudioBridge() {
+    var error: NSError?
+    XCTAssertTrue(UDLRunRawAudioSyntheticChecks(&error), error?.localizedDescription ?? "Raw embedded audio bridge failed")
+  }
+
   func testStopBeforeStartIsIdempotent() {
     let backend = UDLBackend()
     backend.stop()
@@ -60,6 +65,7 @@ final class DeckLinkChecks: XCTestCase {
     ("automatic HDMI detection and live transitions", testAutomaticInputDetectionAndTransitions),
     ("missing automatic device fails cleanly", testMissingAutoDeviceFailsCleanly),
     ("native SDK callbacks, frame ownership, lifecycle and HDMI restore", testNativeSDKCallbacksAndLifecycle),
+    ("raw embedded audio bridge", testRawEmbeddedAudioBridge),
     ("native stop before start is idempotent", testStopBeforeStartIsIdempotent),
     ("native missing-device startup cleans up", testMissingDeviceFailsCleanlyAndCanStop),
     ("video contract preserves range and timing metadata", testVideoContractCarriesRangeAndTimingMetadata),
