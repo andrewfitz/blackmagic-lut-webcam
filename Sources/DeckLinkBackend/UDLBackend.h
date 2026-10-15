@@ -52,6 +52,14 @@ typedef void (^UDLRawAudioHandler)(NSData *_Nullable samples, CMTime audioPacket
   NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:rawAudioHandler:eventHandler:));
 - (BOOL)startWithDeviceID:(NSString *)deviceID
                inputFast:(BOOL)inputFast
+               frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
+             mediaHandler:(UDLMediaStatsHandler _Nullable)mediaHandler
+          rawAudioHandler:(UDLRawAudioHandler _Nullable)rawAudioHandler
+            eventHandler:(void (^)(NSString *message))eventHandler
+                   error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(start(deviceID:inputFast:frameHandler:mediaHandler:rawAudioHandler:eventHandler:));
+- (BOOL)startWithDeviceID:(NSString *)deviceID
+               inputFast:(BOOL)inputFast
             frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, BOOL signalValid))frameHandler
             eventHandler:(void (^)(NSString *message))eventHandler
                    error:(NSError *_Nullable *_Nullable)error
@@ -70,6 +78,13 @@ typedef void (^UDLRawAudioHandler)(NSData *_Nullable samples, CMTime audioPacket
                 eventHandler:(void (^)(NSString *message))eventHandler
                        error:(NSError *_Nullable *_Nullable)error
   NS_SWIFT_NAME(startAuto(deviceID:frameHandler:rawAudioHandler:eventHandler:));
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+                frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
+              mediaHandler:(UDLMediaStatsHandler _Nullable)mediaHandler
+           rawAudioHandler:(UDLRawAudioHandler _Nullable)rawAudioHandler
+                eventHandler:(void (^)(NSString *message))eventHandler
+                       error:(NSError *_Nullable *_Nullable)error
+  NS_SWIFT_NAME(startAuto(deviceID:frameHandler:mediaHandler:rawAudioHandler:eventHandler:));
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
                 frameHandler:(void (^)(CVPixelBufferRef pixelBuffer, CMTime presentationTime, CMTime actualDuration, BOOL signalValid))frameHandler
                 eventHandler:(void (^)(NSString *message))eventHandler

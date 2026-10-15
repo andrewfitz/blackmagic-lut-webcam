@@ -215,7 +215,7 @@ struct AutoModeMailbox {
 // count and the configured stream format.  Keep this helper bounded: a bad
 // driver packet must never make the callback walk an untrusted allocation.
 static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPacket *audio,
-  CMTimeScale videoScale, UDLMediaStatsHandler handler) {
+  CMTimeScale videoScale, UDLMediaStatsHandler handler, bool rawAudio = false) {
   if (!handler) return;
   NSString *timecodeString = nil;
   ComRef<IDeckLinkTimecode> timecode;
@@ -248,27 +248,29 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
         packetTime = CMTimeMake(timestamp, bmdAudioSampleRate48kHz);
       void *raw = nullptr;
       const NSUInteger frameCount = static_cast<NSUInteger>(count);
-      const NSUInteger expectedBytes = frameCount * channels * sizeof(int16_t);
+      const NSUInteger bytesPerSample = rawAudio ? sizeof(int32_t) : sizeof(int16_t);
+      const NSUInteger expectedBytes = frameCount * channels * bytesPerSample;
       if (audio->GetBytes(&raw) == S_OK && raw && expectedBytes > 0) {
-        const int16_t *samples = static_cast<const int16_t *>(raw);
+        const int16_t *samples16 = static_cast<const int16_t *>(raw);
+        const int32_t *samples32 = static_cast<const int32_t *>(raw);
         double leftSum = 0.0, rightSum = 0.0;
-        int leftMaximum = 0, rightMaximum = 0;
+        double leftMaximum = 0.0, rightMaximum = 0.0;
         for (NSUInteger index = 0; index < frameCount; ++index) {
-          const int left = samples[index * channels];
-          const int right = samples[index * channels + 1];
-          const int leftMagnitude = left == INT16_MIN ? 32768 : std::abs(left);
-          const int rightMagnitude = right == INT16_MIN ? 32768 : std::abs(right);
-          leftMaximum = std::max(leftMaximum, leftMagnitude);
-          rightMaximum = std::max(rightMaximum, rightMagnitude);
-          const double leftValue = static_cast<double>(left) / 32768.0;
-          const double rightValue = static_cast<double>(right) / 32768.0;
+          const double left = rawAudio ? static_cast<double>(samples32[index * channels]) / 2147483648.0
+            : static_cast<double>(samples16[index * channels]) / 32768.0;
+          const double right = rawAudio ? static_cast<double>(samples32[index * channels + 1]) / 2147483648.0
+            : static_cast<double>(samples16[index * channels + 1]) / 32768.0;
+          leftMaximum = std::max(leftMaximum, std::abs(left));
+          rightMaximum = std::max(rightMaximum, std::abs(right));
+          const double leftValue = left;
+          const double rightValue = right;
           leftSum += leftValue * leftValue;
           rightSum += rightValue * rightValue;
         }
         sampleFrames = frameCount;
         bytes = expectedBytes;
-        leftPeak = static_cast<float>(leftMaximum / 32768.0);
-        rightPeak = static_cast<float>(rightMaximum / 32768.0);
+        leftPeak = static_cast<float>(std::min(1.0, leftMaximum));
+        rightPeak = static_cast<float>(std::min(1.0, rightMaximum));
         leftRMS = static_cast<float>(std::sqrt(leftSum / frameCount));
         rightRMS = static_cast<float>(std::sqrt(rightSum / frameCount));
         present = YES;
@@ -418,7 +420,7 @@ class CaptureCallback final : public IDeckLinkInputCallback {
         CVPixelBufferRelease(buffer);
         reportFatal(@"Desktop Video supplied a pixel format incompatible with the native v210 feed."); return S_OK;
       }
-      reportMedia(frame, audioPacket, timeScale, mediaHandler);
+      reportMedia(frame, audioPacket, timeScale, mediaHandler, rawAudioHandler != nil);
       reportRawAudio(audioPacket, rawAudioHandler);
       // Swift retaining the buffer safely extends the native frame lifetime.
       if (accepting && framesEnabled) {
@@ -562,6 +564,20 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
+  mediaHandler:(UDLMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
+  __block BOOL result = NO;
+  __block NSError *localError = nil;
+  [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:inputFast
+    frameHandler:frameHandler autoFrameHandler:nil mediaHandler:mediaHandler rawAudioHandler:rawAudioHandler
+    eventHandler:eventHandler error:&localError]; }];
+  if (!result && error) *error = localError;
+  return result;
+}
+
+- (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
+  frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   return [self startWithDeviceID:deviceID inputFast:inputFast frameHandler:frameHandler
     mediaHandler:nil eventHandler:eventHandler error:error];
@@ -588,6 +604,20 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   __block NSError *localError = nil;
   [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:YES
     frameHandler:nil autoFrameHandler:frameHandler mediaHandler:nil rawAudioHandler:rawAudioHandler
+    eventHandler:eventHandler error:&localError]; }];
+  if (!result && error) *error = localError;
+  return result;
+}
+
+- (BOOL)startAutoWithDeviceID:(NSString *)deviceID
+  frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler
+  mediaHandler:(UDLMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
+  __block BOOL result = NO;
+  __block NSError *localError = nil;
+  [self onControlQueue:^{ result = [self startOnQueue:deviceID inputFast:YES
+    frameHandler:nil autoFrameHandler:frameHandler mediaHandler:mediaHandler rawAudioHandler:rawAudioHandler
     eventHandler:eventHandler error:&localError]; }];
   if (!result && error) *error = localError;
   return result;

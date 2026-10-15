@@ -299,7 +299,13 @@ final class CaptureController: @unchecked Sendable {
             self.receiveMedia(stats, token: token)
           }
         if let automatic = self.services.startAutomatic {
-          if let automaticWithRawAudio = self.services.startAutomaticWithRawAudio {
+          if let automaticWithSourceAudio = self.services.startAutomaticWithSourceAudio {
+            try automaticWithSourceAudio(deviceID, { [weak self] image, pts, duration, valid in
+              self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
+            }, media, { [weak self] audio in
+              self?.receiveRawAudio(audio, token: token)
+            }, event)
+          } else if let automaticWithRawAudio = self.services.startAutomaticWithRawAudio {
             try automaticWithRawAudio(deviceID, { [weak self] image, pts, duration, valid in
               self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
             }, { [weak self] audio in
@@ -314,6 +320,12 @@ final class CaptureController: @unchecked Sendable {
               self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
             }, event)
           }
+        } else if let startWithSourceAudio = self.services.startWithSourceAudio {
+          try startWithSourceAudio(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
+            self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
+          }, media, { [weak self] audio in
+            self?.receiveRawAudio(audio, token: token)
+          }, event)
         } else if let startWithRawAudio = self.services.startWithRawAudio {
           try startWithRawAudio(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
             self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
@@ -872,6 +884,9 @@ struct CaptureServices: @unchecked Sendable {
     @escaping (String) -> Void) throws -> Void)?
   var startWithRawAudio: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,
     @escaping (CaptureRawAudio) -> Void, @escaping (String) -> Void) throws -> Void)?
+  var startWithSourceAudio: ((String, Bool, @escaping (CVPixelBuffer, CMTime, Bool) -> Void,
+    @escaping (CaptureMediaStats) -> Void, @escaping (CaptureRawAudio) -> Void,
+    @escaping (String) -> Void) throws -> Void)?
   var stop: () -> Void
   var connect: (PipelineConfiguration, OSType) throws -> Void
   var disconnect: () -> Void
@@ -884,6 +899,9 @@ struct CaptureServices: @unchecked Sendable {
     @escaping (String) -> Void) throws -> Void)?
   var startAutomaticWithRawAudio: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void,
     @escaping (CaptureRawAudio) -> Void, @escaping (String) -> Void) throws -> Void)?
+  var startAutomaticWithSourceAudio: ((String, @escaping (CVPixelBuffer, CMTime, CMTime, Bool) -> Void,
+    @escaping (CaptureMediaStats) -> Void, @escaping (CaptureRawAudio) -> Void,
+    @escaping (String) -> Void) throws -> Void)?
   // Known backend storage layout is used only to prepare transport memory;
   // displayed input metadata always comes from received buffers and duration.
   var capturePixelFormat: OSType?
@@ -914,6 +932,19 @@ struct CaptureServices: @unchecked Sendable {
               bytesPerSample: Int(bytesPerSample)))
           }, eventHandler: event)
       },
+      startWithSourceAudio: { id, fast, frame, media, audio, event in
+        try backend.start(deviceID: id, inputFast: fast, frameHandler: frame,
+          mediaHandler: { tc, packetTime, frames, channels, lp, rp, lr, rr, bytes, present in
+            media(CaptureMediaStats(timecode: tc, audioPacketTime: packetTime,
+              audioSampleFrames: UInt64(frames), audioChannels: Int(channels),
+              leftPeak: Double(lp), rightPeak: Double(rp), leftRMS: Double(lr), rightRMS: Double(rr),
+              audioBytes: UInt64(bytes), audioPresent: present))
+          }, rawAudioHandler: { samples, packetTime, frames, channels, bytesPerSample in
+            audio(CaptureRawAudio(samples: samples, packetTime: packetTime,
+              sampleFrames: UInt64(frames), channels: Int(channels),
+              bytesPerSample: Int(bytesPerSample)))
+          }, eventHandler: event)
+      },
       stop: { backend.stop() },
       connect: { config, format in try sink.connect(configuration: config, passthroughFormat: format) },
       disconnect: { sink.disconnect() },
@@ -933,6 +964,19 @@ struct CaptureServices: @unchecked Sendable {
       startAutomaticWithRawAudio: { id, frame, audio, event in
         try backend.startAuto(deviceID: id, frameHandler: frame,
           rawAudioHandler: { samples, packetTime, frames, channels, bytesPerSample in
+            audio(CaptureRawAudio(samples: samples, packetTime: packetTime,
+              sampleFrames: UInt64(frames), channels: Int(channels),
+              bytesPerSample: Int(bytesPerSample)))
+          }, eventHandler: event)
+      },
+      startAutomaticWithSourceAudio: { id, frame, media, audio, event in
+        try backend.startAuto(deviceID: id, frameHandler: frame,
+          mediaHandler: { tc, packetTime, frames, channels, lp, rp, lr, rr, bytes, present in
+            media(CaptureMediaStats(timecode: tc, audioPacketTime: packetTime,
+              audioSampleFrames: UInt64(frames), audioChannels: Int(channels),
+              leftPeak: Double(lp), rightPeak: Double(rp), leftRMS: Double(lr), rightRMS: Double(rr),
+              audioBytes: UInt64(bytes), audioPresent: present))
+          }, rawAudioHandler: { samples, packetTime, frames, channels, bytesPerSample in
             audio(CaptureRawAudio(samples: samples, packetTime: packetTime,
               sampleFrames: UInt64(frames), channels: Int(channels),
               bytesPerSample: Int(bytesPerSample)))
