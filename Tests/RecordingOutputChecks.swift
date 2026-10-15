@@ -118,11 +118,48 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     XCTAssertEqual(try Data(contentsOf: first.finalURL), Data([1]))
   }
 
+  func testExternalWriterSessionLeavesPathForContainerAndFinalizesAtomically() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0,
+      diskSpace: FixedRecordingOutputDiskSpace(bytes: 10_000))
+    let session = try manager.beginExternalWriterSession(feedID: "camera-a")
+
+    // AVAssetWriter owns creation of the temporary container. The output
+    // manager must not pre-create a path that would make AVAssetWriter reject
+    // its URL as already occupied.
+    XCTAssertFalse(FileManager.default.fileExists(atPath: session.temporaryURL.path))
+    try Data([0x66, 0x74, 0x79, 0x70]).write(to: session.temporaryURL,
+      options: [.atomic])
+    let finalURL = try session.finish()
+
+    XCTAssertEqual(finalURL, session.finalURL)
+    XCTAssertEqual(session.state, .finished)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: session.temporaryURL.path))
+    XCTAssertEqual(try Data(contentsOf: finalURL), Data([0x66, 0x74, 0x79, 0x70]))
+  }
+
+  func testExternalWriterWithoutContainerCannotCreateEmptyFinalFile() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0,
+      diskSpace: FixedRecordingOutputDiskSpace(bytes: 10_000))
+    let session = try manager.beginExternalWriterSession(feedID: "camera-b")
+
+    XCTAssertThrowsError(try session.finish()) { error in
+      XCTAssertEqual(error as? RecordingOutputError,
+        .ioFailure("The media writer did not produce a temporary output file."))
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: session.finalURL.path))
+  }
+
   static let allTests = [
     ("per-feed paths and atomic finalization", testPerFeedPathsAndAtomicFinalization),
     ("pause preserves temporary file and sessions are independent", testPausePreservesTemporaryFileAndSessionsAreIndependent),
     ("reject traversal and escaping symlink", testRejectsTraversalAndEscapingSymlink),
     ("admission rejects insufficient space", testAdmissionRejectsInsufficientSpaceAndReleasesReservation),
     ("session ID collision does not replace output", testSessionIDCollisionDoesNotReplaceExistingOutput),
+    ("external writer atomic finalization", testExternalWriterSessionLeavesPathForContainerAndFinalizesAtomically),
+    ("external writer rejects empty output", testExternalWriterWithoutContainerCannotCreateEmptyFinalFile),
   ]
 }

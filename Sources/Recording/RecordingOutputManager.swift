@@ -157,6 +157,23 @@ public final class RecordingOutputManager: @unchecked Sendable {
     }
   }
 
+  /// Creates a session whose temporary path is owned by an external media
+  /// writer such as AVAssetWriter. The writer creates the movie at the
+  /// temporary URL, while this boundary retains disk admission and performs
+  /// the final same-volume rename after the writer closes it.
+  public func beginExternalWriterSession(feedID: String, sessionID: UUID = UUID(),
+                                         expectedBytes: UInt64 = 0) throws -> RecordingOutputSession {
+    let session = try makeSession(feedID: feedID, sessionID: sessionID,
+      expectedBytes: expectedBytes)
+    do {
+      try session.startExternalWriter()
+      return session
+    } catch {
+      try? session.cancel()
+      throw error
+    }
+  }
+
   public var outputRoot: URL { configuration.rootDirectory }
 
   fileprivate var minimumFreeBytes: UInt64 { configuration.minimumFreeBytes }
@@ -271,6 +288,7 @@ public final class RecordingOutputSession: @unchecked Sendable {
   private var reservedBytes: UInt64
   private var bytesWrittenValue: UInt64 = 0
   private var releasedReservation = false
+  private var externalWriterOwnsFile = false
 
   fileprivate init(manager: RecordingOutputManager, paths: RecordingOutputPaths, expectedBytes: UInt64) {
     self.manager = manager
@@ -298,15 +316,7 @@ public final class RecordingOutputSession: @unchecked Sendable {
       throw RecordingOutputError.invalidState(stateValue, operation: "start")
     }
     do {
-      try manager.fileManagerRef.createDirectory(at: paths.feedDirectory, withIntermediateDirectories: true)
-      let resolved = paths.feedDirectory.resolvingSymlinksInPath()
-      guard RecordingOutputManager.isDescendant(resolved, of: paths.rootDirectory) else {
-        throw RecordingOutputError.unsafePath
-      }
-      guard !manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path),
-        !manager.fileManagerRef.fileExists(atPath: paths.finalFile.path) else {
-        throw RecordingOutputError.destinationExists
-      }
+      try prepareFilesystemLocked()
       let descriptor = open(paths.temporaryFile.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
       guard descriptor >= 0 else {
         if errno == EEXIST { throw RecordingOutputError.destinationExists }
@@ -314,6 +324,29 @@ public final class RecordingOutputSession: @unchecked Sendable {
       }
       let next = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
       handle = next
+      stateValue = .recording
+    } catch let error as RecordingOutputError {
+      stateValue = .failed
+      releaseReservationLocked()
+      throw error
+    } catch {
+      stateValue = .failed
+      releaseReservationLocked()
+      throw RecordingOutputError.ioFailure(error.localizedDescription)
+    }
+  }
+
+  /// Starts a session without creating the temporary file. This is used by a
+  /// media writer that must create its own container at the URL. It retains
+  /// the same path and disk safety checks as `start()`.
+  fileprivate func startExternalWriter() throws {
+    lock.lock(); defer { lock.unlock() }
+    guard stateValue == .idle else {
+      throw RecordingOutputError.invalidState(stateValue, operation: "start external writer")
+    }
+    do {
+      try prepareFilesystemLocked()
+      externalWriterOwnsFile = true
       stateValue = .recording
     } catch let error as RecordingOutputError {
       stateValue = .failed
@@ -356,6 +389,12 @@ public final class RecordingOutputSession: @unchecked Sendable {
       throw RecordingOutputError.invalidState(stateValue, operation: "append data")
     }
     guard let handle else {
+      if externalWriterOwnsFile {
+        // The external writer appends directly to the temporary URL. Byte
+        // accounting is unavailable here, but finalization still verifies
+        // that it produced a file before renaming it.
+        throw RecordingOutputError.invalidState(stateValue, operation: "append data")
+      }
       stateValue = .failed
       releaseReservationLocked()
       throw RecordingOutputError.ioFailure("Temporary output file is unavailable.")
@@ -388,15 +427,20 @@ public final class RecordingOutputSession: @unchecked Sendable {
     guard stateValue == .recording || stateValue == .paused else {
       throw RecordingOutputError.invalidState(stateValue, operation: "finish")
     }
-    guard let handle else {
-      stateValue = .failed
-      releaseReservationLocked()
-      throw RecordingOutputError.ioFailure("Temporary output file is unavailable.")
-    }
     do {
-      handle.synchronizeFile()
-      handle.closeFile()
-      self.handle = nil
+      if let handle {
+        handle.synchronizeFile()
+        handle.closeFile()
+        self.handle = nil
+      }
+      guard manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path) else {
+        throw RecordingOutputError.ioFailure("The media writer did not produce a temporary output file.")
+      }
+      let attributes = try manager.fileManagerRef.attributesOfItem(atPath: paths.temporaryFile.path)
+      let byteCount = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+      guard byteCount > 0 else {
+        throw RecordingOutputError.ioFailure("The media writer produced an empty output file.")
+      }
       guard !manager.fileManagerRef.fileExists(atPath: paths.finalFile.path) else {
         throw RecordingOutputError.destinationExists
       }
@@ -457,5 +501,18 @@ public final class RecordingOutputSession: @unchecked Sendable {
     guard !releasedReservation else { return }
     releasedReservation = true
     manager.release(reserved: reservedBytes)
+  }
+
+  private func prepareFilesystemLocked() throws {
+    try manager.fileManagerRef.createDirectory(at: paths.feedDirectory,
+      withIntermediateDirectories: true)
+    let resolved = paths.feedDirectory.resolvingSymlinksInPath()
+    guard RecordingOutputManager.isDescendant(resolved, of: paths.rootDirectory) else {
+      throw RecordingOutputError.unsafePath
+    }
+    guard !manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path),
+      !manager.fileManagerRef.fileExists(atPath: paths.finalFile.path) else {
+      throw RecordingOutputError.destinationExists
+    }
   }
 }

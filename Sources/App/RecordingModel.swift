@@ -126,6 +126,10 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   private struct Session {
     let adapter: SourceRecordingCallbackAdapter
     let feedID: FeedID
+    /// The AVAssetWriter writes into this session's temporary path. Keeping
+    /// the owner here guarantees that its reservation survives until the
+    /// writer is finalized or cancelled.
+    let output: RecordingOutputSession
   }
 
   private weak var capture: CaptureController?
@@ -157,18 +161,29 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
     guard let folder = configuration.outputFolder else {
       throw RecordingUIError.outputFolderRequired
     }
-    let outputURL = folder.appendingPathComponent(
-      "ultrastudio-\(Self.safeComponent(feedID.rawValue))-\(UUID().uuidString).mov")
+    // Allocate a per-feed atomic output before creating the writer. The
+    // writer only sees the temporary path; a completed session is renamed to
+    // its final path after all queued samples have drained.
+    let outputManager = try RecordingOutputManager(rootDirectory: folder,
+      fileExtension: configuration.codec.fileExtension)
+    let output = try outputManager.beginExternalWriterSession(
+      feedID: Self.safeComponent(feedID.rawValue))
     let sourceConfiguration = try SourceRecordingConfiguration(
-      feedID: SourceRecordingFeedID(feedID.rawValue), outputURL: outputURL,
+      feedID: SourceRecordingFeedID(feedID.rawValue), outputURL: output.temporaryURL,
       width: 3840, height: 2160,
       videoCodec: configuration.codec == .proRes42210Bit
-        ? kCMVideoCodecType_AppleProRes422HQ : kCMVideoCodecType_HEVC)
-    let recorder = try recorderFactory(sourceConfiguration)
-    let adapter = SourceRecordingCallbackAdapter(feedID: sourceConfiguration.feedID, recorder: recorder)
-    try adapter.start()
-    capture.setRecordingCallbacks(feedID: feedID, callbacks: adapter.callbacks)
-    sessions[feedID] = Session(adapter: adapter, feedID: feedID)
+        ? kCMVideoCodecType_AppleProRes422HQ : kCMVideoCodecType_HEVC,
+      timecodePolicy: Self.timecodePolicy(for: configuration.timecodeMode))
+    do {
+      let recorder = try recorderFactory(sourceConfiguration)
+      let adapter = SourceRecordingCallbackAdapter(feedID: sourceConfiguration.feedID, recorder: recorder)
+      try adapter.start()
+      capture.setRecordingCallbacks(feedID: feedID, callbacks: adapter.callbacks)
+      sessions[feedID] = Session(adapter: adapter, feedID: feedID, output: output)
+    } catch {
+      try? output.cancel()
+      throw error
+    }
   }
 
   func pauseRecording(feedID: FeedID) throws {
@@ -176,13 +191,26 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
       throw SourceRecordingError.invalidState(.idle, operation: "pause recording")
     }
     try session.adapter.pause()
+    do {
+      try session.output.pause()
+    } catch {
+      // Keep the recorder usable if the filesystem pause operation fails.
+      try? session.adapter.resume()
+      throw error
+    }
   }
 
   func resumeRecording(feedID: FeedID) throws {
     guard let session = sessions[feedID] else {
       throw SourceRecordingError.invalidState(.idle, operation: "resume recording")
     }
-    try session.adapter.resume()
+    try session.output.resume()
+    do {
+      try session.adapter.resume()
+    } catch {
+      try? session.output.pause()
+      throw error
+    }
   }
 
   func stopRecording(feedID: FeedID) throws {
@@ -190,8 +218,20 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
     capture?.setRecordingCallbacks(feedID: feedID, callbacks: nil)
     do {
       try session.adapter.stop()
+      let telemetry = session.adapter.telemetry
+      // A writer that never received source media must not leave a misleading
+      // zero-byte movie in the user's catalog. Cancel removes the temporary
+      // file and releases the reservation.
+      if telemetry.appendedVideo == 0 && telemetry.appendedAudio == 0 {
+        try session.output.cancel()
+      } else if session.adapter.state == .failed {
+        try session.output.cancel()
+      } else {
+        _ = try session.output.finish()
+      }
       sessions.removeValue(forKey: feedID)
     } catch {
+      try? session.output.cancel()
       capture?.setRecordingCallbacks(feedID: feedID, callbacks: session.adapter.callbacks)
       throw error
     }
@@ -212,6 +252,14 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   private static func safeComponent(_ value: String) -> String {
     let result = value.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
     return result.isEmpty ? "feed" : result
+  }
+
+  private static func timecodePolicy(for mode: RecordingTimecodeMode) -> RecordingTimecodePolicy {
+    switch mode {
+    case .source: return .source
+    case .recordStart: return .recordStart
+    case .wallClock: return .wallClock
+    }
   }
 }
 
