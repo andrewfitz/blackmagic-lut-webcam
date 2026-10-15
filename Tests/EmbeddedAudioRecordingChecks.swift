@@ -40,7 +40,8 @@ import XCTest
 
   func testPacketRejectsSampleCountSizeOverflow() {
     XCTAssertThrowsError(try EmbeddedAudioPacket(sourcePCM32: Data(),
-      sampleFrameCount: Int.max, presentationTime: .zero)) { error in
+      sampleFrameCount: Int.max,
+      presentationTime: CMTime(value: 0, timescale: EmbeddedAudioFormat.sampleRateTimescale))) { error in
       XCTAssertEqual(error as? EmbeddedAudioError, .sizeOverflow)
     }
   }
@@ -100,7 +101,8 @@ import XCTest
       withUnsafeBytes(of: &littleEndian) { source.append(contentsOf: $0) }
     }
     let sample = try EmbeddedAudioRecording.makeSampleBuffer(sourcePCM32: source,
-      sampleFrameCount: 2, presentationTime: .zero)
+      sampleFrameCount: 2,
+      presentationTime: CMTime(value: 0, timescale: EmbeddedAudioFormat.sampleRateTimescale))
     XCTAssertEqual(CMSampleBufferGetNumSamples(sample), 2)
     XCTAssertEqual(CMSampleBufferGetTotalSampleSize(sample), 12)
     var bytes = [UInt8](repeating: 0, count: 12)

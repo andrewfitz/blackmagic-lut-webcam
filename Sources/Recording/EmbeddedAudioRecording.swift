@@ -313,7 +313,11 @@ public enum EmbeddedAudioRecording {
       customBlockSource: nil,
       offsetToData: 0,
       dataLength: outputBytes,
-      flags: 0,
+      // Force the block allocator to materialize backing storage now. With
+      // flags == 0 Core Media may leave the block unallocated until a later
+      // replace/copy operation, and CMBlockBufferGetDataPointer then returns
+      // kCMBlockBufferUnallocatedBlockErr (-12707).
+      flags: kCMBlockBufferAssureMemoryNowFlag,
       blockBufferOut: &blockBuffer
     )
     guard status == kCMBlockBufferNoErr, let blockBuffer else {
