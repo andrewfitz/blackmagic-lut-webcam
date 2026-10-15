@@ -20,9 +20,15 @@ struct ProgramOutput<SourceID: Hashable> {
       programTimescale: programTimescale)
   }
 
+  init(selectedFeedID: SourceID?, programTimescale: Int32 = 60_000) {
+    self.init(selectedSource: selectedFeedID, programTimescale: programTimescale)
+  }
+
   var selectedSource: SourceID? { scheduler.selectedSource }
   var pendingCut: SourceID? { scheduler.pendingCut }
   var hasPendingCut: Bool { scheduler.hasPendingCut }
+  var selectedFeedID: SourceID? { selectedSource }
+  var pendingFeedID: SourceID? { pendingCut }
 
   mutating func setSource(_ sourceID: SourceID, available: Bool) {
     scheduler.setSource(sourceID, available: available)
@@ -43,6 +49,11 @@ struct ProgramOutput<SourceID: Hashable> {
   mutating func ingest(_ frame: ProgramSourceFrame<SourceID>)
     -> ProgramFrameDecision<SourceID> {
     scheduler.ingest(frame)
+  }
+
+  mutating func ingestFrame(_ frame: ProgramSourceFrame<SourceID>)
+    -> ProgramFrameDecision<SourceID> {
+    ingest(frame)
   }
 
   mutating func reset(selectedSource: SourceID? = nil) {
