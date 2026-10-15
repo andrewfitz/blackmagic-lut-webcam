@@ -662,26 +662,37 @@ final class CaptureController: @unchecked Sendable {
     audioPeakRight = max(0, min(1, stats.rightPeak))
     audioRMSLeft = max(0, min(1, stats.leftRMS))
     audioRMSRight = max(0, min(1, stats.rightRMS))
-    // The DeckLink packet has no explicit sample-rate field. Infer it from
-    // contiguous packet timestamps and use it to account for missing samples.
-    if let prior = lastAudioPacketTime, stats.audioPacketTime.isNumeric,
-      prior.isNumeric, stats.audioSampleFrames > 0 {
-      let elapsed = CMTimeGetSeconds(CMTimeSubtract(stats.audioPacketTime, prior))
-      if elapsed > 0 {
-        let inferred = Double(lastAudioSampleFrames) / elapsed
-        if inferred >= 1_000, inferred <= 384_000 {
-          if audioSampleRate == 0 { audioSampleRate = Int(inferred.rounded()) }
-          if audioSampleRate > 0 {
-            let expected = Int((elapsed * Double(audioSampleRate)).rounded())
-            if expected > Int(lastAudioSampleFrames) {
-              audioDrops &+= UInt64(expected - Int(lastAudioSampleFrames))
-            }
+    // The native input is always enabled at 48 kHz (the DeckLink callback
+    // does not carry a sample-rate field). Use that fixed contract directly;
+    // inferring a rate from the previous packet hides missing packets because
+    // a gap makes the inferred rate fall in proportion to the gap.
+    if stats.audioPresent && stats.audioSampleFrames > 0 {
+      audioSampleRate = Int(EmbeddedAudioFormat.sampleRate)
+    }
+    let packetTime = stats.audioPacketTime
+    if packetTime.isNumeric, stats.audioSampleFrames > 0 {
+      if let prior = lastAudioPacketTime, prior.isNumeric {
+        let elapsed = CMTimeGetSeconds(CMTimeSubtract(packetTime, prior))
+        if elapsed > 0 {
+          let expected = Int((elapsed * EmbeddedAudioFormat.sampleRate).rounded())
+          if expected > Int(lastAudioSampleFrames) {
+            audioDrops &+= UInt64(expected - Int(lastAudioSampleFrames))
           }
         }
       }
+      // Do not move the baseline backwards after a malformed/regressed packet;
+      // the next valid packet should still be compared with the last source
+      // clock position rather than silently masking the discontinuity.
+      if let prior = lastAudioPacketTime {
+        if CMTimeCompare(packetTime, prior) >= 0 {
+          lastAudioPacketTime = packetTime
+          lastAudioSampleFrames = stats.audioSampleFrames
+        }
+      } else {
+        lastAudioPacketTime = packetTime
+        lastAudioSampleFrames = stats.audioSampleFrames
+      }
     }
-    if stats.audioPacketTime.isNumeric { lastAudioPacketTime = stats.audioPacketTime }
-    lastAudioSampleFrames = stats.audioSampleFrames
   }
 
   private func process(_ frame: CapturedFrame, token: UInt64) {

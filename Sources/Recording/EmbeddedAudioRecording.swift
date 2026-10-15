@@ -7,6 +7,7 @@ import Foundation
 public enum EmbeddedAudioError: Error, Equatable {
   case invalidChannelCount
   case invalidSampleFrameCount
+  case sizeOverflow
   case byteCountMismatch(expected: Int, actual: Int)
   case invalidPresentationTime
   case formatDescriptionCreationFailed(OSStatus)
@@ -62,7 +63,11 @@ public enum BlackmagicAudioConverter {
           channelCount <= Int.max / EmbeddedAudioFormat.sourceBytesPerSample else {
       throw EmbeddedAudioError.invalidChannelCount
     }
-    let bytesPerFrame = channelCount * EmbeddedAudioFormat.sourceBytesPerSample
+    let (bytesPerFrame, frameOverflow) = channelCount.multipliedReportingOverflow(
+      by: EmbeddedAudioFormat.sourceBytesPerSample)
+    guard !frameOverflow, bytesPerFrame > 0 else {
+      throw EmbeddedAudioError.sizeOverflow
+    }
     guard source.count % bytesPerFrame == 0 else {
       throw EmbeddedAudioError.byteCountMismatch(
         expected: source.count / bytesPerFrame * bytesPerFrame + bytesPerFrame,
@@ -71,7 +76,10 @@ public enum BlackmagicAudioConverter {
     }
 
     let sampleCount = source.count / EmbeddedAudioFormat.sourceBytesPerSample
-    var result = Data(count: sampleCount * EmbeddedAudioFormat.recordingBytesPerSample)
+    let (resultCount, resultOverflow) = sampleCount.multipliedReportingOverflow(
+      by: EmbeddedAudioFormat.recordingBytesPerSample)
+    guard !resultOverflow else { throw EmbeddedAudioError.sizeOverflow }
+    var result = Data(count: resultCount)
     source.withUnsafeBytes { sourceBytes in
       result.withUnsafeMutableBytes { outputBytes in
         guard let sourceBase = sourceBytes.baseAddress,
@@ -143,7 +151,11 @@ public struct EmbeddedAudioPacket {
           presentationTime.value >= 0 else {
       throw EmbeddedAudioError.invalidPresentationTime
     }
-    let expectedBytes = sampleFrameCount * channelCount * EmbeddedAudioFormat.sourceBytesPerSample
+    let (channelBytes, channelOverflow) = sampleFrameCount.multipliedReportingOverflow(by: channelCount)
+    guard !channelOverflow else { throw EmbeddedAudioError.sizeOverflow }
+    let (expectedBytes, byteOverflow) = channelBytes.multipliedReportingOverflow(
+      by: EmbeddedAudioFormat.sourceBytesPerSample)
+    guard !byteOverflow else { throw EmbeddedAudioError.sizeOverflow }
     guard sourcePCM32.count == expectedBytes else {
       throw EmbeddedAudioError.byteCountMismatch(expected: expectedBytes, actual: sourcePCM32.count)
     }
@@ -176,7 +188,9 @@ public struct EmbeddedAudioTimeline {
       timescale: EmbeddedAudioFormat.sampleRateTimescale)
     let duration = CMTime(value: Int64(sampleFrameCount),
       timescale: EmbeddedAudioFormat.sampleRateTimescale)
-    emittedSampleFrames += Int64(sampleFrameCount)
+    let (nextOffset, overflow) = emittedSampleFrames.addingReportingOverflow(Int64(sampleFrameCount))
+    guard !overflow else { throw EmbeddedAudioError.sizeOverflow }
+    emittedSampleFrames = nextOffset
     return (presentationTime, duration)
   }
 
@@ -194,6 +208,72 @@ public enum EmbeddedAudioRecording {
   /// Builds a ready CMSampleBuffer from a converted packet. The sample buffer
   /// retains the packet's exact PTS and uses one 48 kHz duration per frame.
   public static func makeSampleBuffer(for packet: EmbeddedAudioPacket) throws -> CMSampleBuffer {
+    try makeSampleBuffer(sampleFrameCount: packet.sampleFrameCount,
+      presentationTime: packet.presentationTime) { destination in
+      packet.pcm24.withUnsafeBytes { source in
+        guard let source = source.baseAddress else { return }
+        destination.copyMemory(from: source, byteCount: packet.pcm24.count)
+      }
+    }
+  }
+
+  /// Builds a sample buffer directly from Blackmagic's 32-bit integer PCM.
+  ///
+  /// The SDK packet has already been copied into `sourcePCM32` by the native
+  /// callback boundary.  Convert the significant 24 bits straight into the
+  /// Core Media block buffer so the normal recording path does not allocate a
+  /// temporary packed-24 `Data` object and then copy it a second time.  This
+  /// preserves the exact integer conversion used by ``EmbeddedAudioPacket``
+  /// while reducing peak packet memory and callback work.
+  public static func makeSampleBuffer(sourcePCM32: Data, sampleFrameCount: Int,
+    presentationTime: CMTime,
+    channelCount: Int = EmbeddedAudioFormat.channelCount) throws -> CMSampleBuffer {
+    guard sampleFrameCount > 0 else { throw EmbeddedAudioError.invalidSampleFrameCount }
+    guard channelCount == EmbeddedAudioFormat.channelCount else {
+      throw EmbeddedAudioError.invalidChannelCount
+    }
+    guard presentationTime.isNumeric,
+      presentationTime.timescale == EmbeddedAudioFormat.sampleRateTimescale,
+      presentationTime.epoch == 0,
+      presentationTime.value >= 0 else {
+      throw EmbeddedAudioError.invalidPresentationTime
+    }
+    let sourceBytesPerFrame = channelCount * EmbeddedAudioFormat.sourceBytesPerSample
+    let recordingBytesPerFrame = channelCount * EmbeddedAudioFormat.recordingBytesPerSample
+    guard sampleFrameCount <= Int.max / sourceBytesPerFrame,
+      sampleFrameCount <= Int.max / recordingBytesPerFrame else {
+      throw EmbeddedAudioError.invalidSampleFrameCount
+    }
+    let expectedBytes = sampleFrameCount * sourceBytesPerFrame
+    guard sourcePCM32.count == expectedBytes else {
+      throw EmbeddedAudioError.byteCountMismatch(expected: expectedBytes, actual: sourcePCM32.count)
+    }
+    return try makeSampleBuffer(sampleFrameCount: sampleFrameCount,
+      presentationTime: presentationTime) { destination in
+      sourcePCM32.withUnsafeBytes { sourceBytes in
+        guard let sourceBase = sourceBytes.baseAddress else { return }
+        for sampleIndex in 0..<(sampleFrameCount * channelCount) {
+          let sourceOffset = sampleIndex * EmbeddedAudioFormat.sourceBytesPerSample
+          let raw = sourceBase.loadUnaligned(fromByteOffset: sourceOffset, as: UInt32.self)
+          let littleEndian = UInt32(littleEndian: raw)
+          let sample = Int32(bitPattern: littleEndian)
+          let significant = Int32(truncatingIfNeeded: sample >> 8)
+          let packed = UInt32(bitPattern: significant)
+          let outputOffset = sampleIndex * EmbeddedAudioFormat.recordingBytesPerSample
+          destination.storeBytes(of: UInt8(truncatingIfNeeded: packed),
+            toByteOffset: outputOffset, as: UInt8.self)
+          destination.storeBytes(of: UInt8(truncatingIfNeeded: packed >> 8),
+            toByteOffset: outputOffset + 1, as: UInt8.self)
+          destination.storeBytes(of: UInt8(truncatingIfNeeded: packed >> 16),
+            toByteOffset: outputOffset + 2, as: UInt8.self)
+        }
+      }
+    }
+  }
+
+  private static func makeSampleBuffer(sampleFrameCount: Int,
+    presentationTime: CMTime,
+    fill: (UnsafeMutableRawPointer) -> Void) throws -> CMSampleBuffer {
     var streamDescription = AudioStreamBasicDescription(
       mSampleRate: EmbeddedAudioFormat.sampleRate,
       mFormatID: kAudioFormatLinearPCM,
@@ -221,48 +301,48 @@ public enum EmbeddedAudioRecording {
     }
 
     var blockBuffer: CMBlockBuffer?
-    // Allocate storage owned by CoreMedia, then copy the converted packet.
-    // Passing Data's pointer directly would leave a sample buffer referring to
-    // storage that can be released as soon as this method returns.
+    // Allocate storage owned by CoreMedia. Passing Data's pointer directly
+    // would leave a sample buffer referring to storage that can be released as
+    // soon as this method returns.
+    let outputBytes = sampleFrameCount * EmbeddedAudioFormat.recordingBytesPerFrame
     status = CMBlockBufferCreateWithMemoryBlock(
       allocator: kCFAllocatorDefault,
       memoryBlock: nil,
-      blockLength: packet.pcm24.count,
+      blockLength: outputBytes,
       blockAllocator: kCFAllocatorDefault,
       customBlockSource: nil,
       offsetToData: 0,
-      dataLength: packet.pcm24.count,
+      dataLength: outputBytes,
       flags: 0,
       blockBufferOut: &blockBuffer
     )
     guard status == kCMBlockBufferNoErr, let blockBuffer else {
       throw EmbeddedAudioError.blockBufferCreationFailed(status)
     }
-    status = packet.pcm24.withUnsafeBytes { bytes in
-      guard let source = bytes.baseAddress else { return kCMBlockBufferNoErr }
-      return CMBlockBufferReplaceDataBytes(
-        with: source,
-        blockBuffer: blockBuffer,
-        offsetIntoDestination: 0,
-        dataLength: packet.pcm24.count
-      )
-    }
-    guard status == kCMBlockBufferNoErr else {
+    var lengthAtOffset = 0
+    var totalLength = 0
+    var destination: UnsafeMutablePointer<CChar>?
+    status = CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0,
+      lengthAtOffsetOut: &lengthAtOffset, totalLengthOut: &totalLength,
+      dataPointerOut: &destination)
+    guard status == kCMBlockBufferNoErr, let destination,
+      lengthAtOffset >= outputBytes, totalLength >= outputBytes else {
       throw EmbeddedAudioError.blockBufferCreationFailed(status)
     }
+    fill(UnsafeMutableRawPointer(destination))
 
     var timing = CMSampleTimingInfo(
       duration: CMTime(value: 1, timescale: EmbeddedAudioFormat.sampleRateTimescale),
-      presentationTimeStamp: packet.presentationTime,
+      presentationTimeStamp: presentationTime,
       decodeTimeStamp: .invalid
     )
-    var sampleSize = packet.pcm24.count / packet.sampleFrameCount
+    var sampleSize = EmbeddedAudioFormat.recordingBytesPerFrame
     var sampleBuffer: CMSampleBuffer?
     status = CMSampleBufferCreateReady(
       allocator: kCFAllocatorDefault,
       dataBuffer: blockBuffer,
       formatDescription: formatDescription,
-      sampleCount: packet.sampleFrameCount,
+      sampleCount: sampleFrameCount,
       sampleTimingEntryCount: 1,
       sampleTimingArray: &timing,
       sampleSizeEntryCount: 1,

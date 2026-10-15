@@ -38,6 +38,13 @@ import XCTest
     }
   }
 
+  func testPacketRejectsSampleCountSizeOverflow() {
+    XCTAssertThrowsError(try EmbeddedAudioPacket(sourcePCM32: Data(),
+      sampleFrameCount: Int.max, presentationTime: .zero)) { error in
+      XCTAssertEqual(error as? EmbeddedAudioError, .sizeOverflow)
+    }
+  }
+
   func testTimelineKeepsInteger48KHzClockWithoutDrift() throws {
     var timeline = EmbeddedAudioTimeline()
     var frameOffset: Int64 = 0
@@ -85,11 +92,39 @@ import XCTest
     XCTAssertEqual(CMSampleBufferGetDuration(sampleBuffer), packet.duration)
   }
 
+  func testDirectSourceSampleBufferPacks24BitWithoutChangingPayload() throws {
+    let values: [Int32] = [0x12345678, Int32(bitPattern: 0x80000000), -1, -0x12345678]
+    var source = Data()
+    for value in values {
+      var littleEndian = UInt32(bitPattern: value).littleEndian
+      withUnsafeBytes(of: &littleEndian) { source.append(contentsOf: $0) }
+    }
+    let sample = try EmbeddedAudioRecording.makeSampleBuffer(sourcePCM32: source,
+      sampleFrameCount: 2, presentationTime: .zero)
+    XCTAssertEqual(CMSampleBufferGetNumSamples(sample), 2)
+    XCTAssertEqual(CMSampleBufferGetTotalSampleSize(sample), 12)
+    var bytes = [UInt8](repeating: 0, count: 12)
+    let byteCount = bytes.count
+    let status = bytes.withUnsafeMutableBytes { destination in
+      guard let block = CMSampleBufferGetDataBuffer(sample),
+        let base = destination.baseAddress else { return OSStatus(-1) }
+      return CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: byteCount,
+        destination: base)
+    }
+    XCTAssertEqual(status, kCMBlockBufferNoErr)
+    XCTAssertEqual(bytes, [
+      0x56, 0x34, 0x12, 0x00, 0x00, 0x80,
+      0xFF, 0xFF, 0xFF, 0xA9, 0xCB, 0xED,
+    ])
+  }
+
   static let allTests = [
     ("exact signed 32 to packed 24 conversion", testExactSigned32ToPacked24Conversion),
     ("reject partial interleaved frame", testConversionRejectsPartialInterleavedFrame),
+    ("reject sample count size overflow", testPacketRejectsSampleCountSizeOverflow),
     ("integer 48 kHz timeline", testTimelineKeepsInteger48KHzClockWithoutDrift),
     ("writer settings", testWriterSettingsDescribe48KHzInterleaved24BitPCM),
     ("packet sample buffer PTS", testPacketAndSampleBufferRetainExactPTS),
+    ("direct source sample buffer", testDirectSourceSampleBufferPacks24BitWithoutChangingPayload),
   ]
 }

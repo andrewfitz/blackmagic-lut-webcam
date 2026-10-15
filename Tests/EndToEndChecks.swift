@@ -564,6 +564,37 @@ private final class PacedDriverMetrics: @unchecked Sendable {
     XCTAssertEqual(update.videoDrops, update.dropped)
   }
 
+  func testAudioDropAccountingUsesFixedDeckLink48KHzClock() throws {
+    let harness = CaptureHarness()
+    let controller = CaptureController(services: harness.services(), previewRenderer: nil)
+    let statuses = CaptureStatusRecorder()
+    controller.onUpdate = { statuses.record($0) }
+    defer { controller.onUpdate = nil; controller.stop() }
+    controller.start(deviceID: "synthetic", configuration: config,
+      pipelineEnabled: false, previewEnabled: false)
+    awaitCondition("Synthetic media capture must start") { harness.active }
+
+    // The second packet starts 320 frames after the end of the first one.
+    // Inferring a rate from the previous packet would incorrectly turn this
+    // gap into a lower apparent rate and report zero drops.
+    let first = CaptureMediaStats(timecode: nil, audioPacketTime: .zero,
+      audioSampleFrames: 160, audioChannels: 2, leftPeak: 0, rightPeak: 0,
+      leftRMS: 0, rightRMS: 0, audioBytes: 1_280, audioPresent: true)
+    let gap = CaptureMediaStats(timecode: nil,
+      audioPacketTime: CMTime(value: 480, timescale: EmbeddedAudioFormat.sampleRateTimescale),
+      audioSampleFrames: 160, audioChannels: 2, leftPeak: 0, rightPeak: 0,
+      leftRMS: 0, rightRMS: 0, audioBytes: 1_280, audioPresent: true)
+    harness.emitMedia(first)
+    harness.emitMedia(gap)
+    harness.emit(try EndToEndChecks.source(), frame: 0)
+    awaitCondition("Audio gap must be published with the next video update") {
+      statuses.last?.audioDrops == 320
+    }
+    let update = try XCTUnwrap(statuses.last)
+    XCTAssertEqual(update.audioSampleRate, 48_000)
+    XCTAssertEqual(update.audioDrops, 320)
+  }
+
   func testMediaAdmissionIsBoundedAndCountsDroppedAudioSamples() throws {
     let entered = expectation(description: "Capture queue held inside native start")
     let gate = DispatchSemaphore(value: 0)
