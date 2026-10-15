@@ -581,9 +581,15 @@ final class CaptureController: @unchecked Sendable {
     let frame = CapturedFrame(image: image, pts: pts, duration: accepted,
       receivedAt: ProcessInfo.processInfo.systemUptime)
     queue.async {
-      defer { self.releaseFrame(token) }
-      guard self.isAccepting(token) else { return }
-      self.process(frame, token: token)
+      // DeckLink callbacks arrive at video cadence for hours. CoreMedia and
+      // AVFoundation create autoreleased wrappers while a frame is staged,
+      // processed and fanned out; drain them after each serial work item so
+      // bounded admission also bounds Objective-C autorelease memory.
+      autoreleasepool {
+        defer { self.releaseFrame(token) }
+        guard self.isAccepting(token) else { return }
+        self.process(frame, token: token)
+      }
     }
   }
 
@@ -602,9 +608,11 @@ final class CaptureController: @unchecked Sendable {
     }
     guard accepted else { return }
     queue.async {
-      defer { self.releaseMedia(token) }
-      guard self.isAccepting(token) else { return }
-      self.recordMedia(stats)
+      autoreleasepool {
+        defer { self.releaseMedia(token) }
+        guard self.isAccepting(token) else { return }
+        self.recordMedia(stats)
+      }
     }
   }
 
