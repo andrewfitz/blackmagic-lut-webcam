@@ -112,6 +112,8 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
       presentationTime: CMTime(value: 1, timescale: 30), duration: CMTime(value: 1, timescale: 30))) else {
       return XCTFail("Payload byte bound must reject media before memory grows")
     }
+    XCTAssertEqual(session.pendingCount, 0, "Terminal failure must release admitted packets")
+    XCTAssertEqual(session.pendingByteCount, 0)
   }
 
   func testSessionRollsOverAndPauseResumeKeepsTimelineContinuous() throws {

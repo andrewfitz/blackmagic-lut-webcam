@@ -641,8 +641,11 @@ public final class LongRunRecordingSession: @unchecked Sendable {
   }
 
   private func transitionToFailure(_ error: RecordingError) {
+    _ = error
     guard state != .failed && state != .finalized else { return }
-    queue.close()
+    let discarded = queue.closeAndDrain()
+    pendingBytes -= discarded.reduce(Int64(0)) { $0 + $1.encodedByteCount }
+    pendingBytes = max(0, pendingBytes)
     writer.abortSegment()
     state = .failed
   }
@@ -667,7 +670,11 @@ public final class AtomicRecordingSegmentWriter: RecordingSegmentWriter {
   public func beginSegment(index: Int, startTime: CMTime) throws {
     guard handle == nil else { throw RecordingError.invalidState }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let stem = "recording-\(sessionID)-segment-\(String(format: "%06d", index))"
+    let safeSessionID = sessionID.map { character in
+      character.isLetter || character.isNumber || character == "-" || character == "_"
+        ? String(character) : "_"
+    }.joined()
+    let stem = "recording-\(safeSessionID.isEmpty ? "session" : safeSessionID)-segment-\(String(format: "%06d", index))"
     let temporary = directory.appendingPathComponent(stem + ".part", isDirectory: false)
     let final = directory.appendingPathComponent(stem + ".media", isDirectory: false)
     guard !FileManager.default.fileExists(atPath: final.path) else {
