@@ -262,7 +262,7 @@ struct HEVCAssetWriterContract {
       AVVideoWidthKey: configuration.width,
       AVVideoHeightKey: configuration.height,
       AVVideoProfileLevelKey: configuration.profile.profileLevel,
-      AVVideoExpectedSourceFrameRateKey: configuration.frameRate,
+      AVVideoExpectedSourceFrameRateKey: Int(configuration.frameRate.rounded()),
       AVVideoAllowFrameReorderingKey: false,
       AVVideoEncoderSpecificationKey: encoderSpecification,
       AVVideoCompressionPropertiesKey: [
