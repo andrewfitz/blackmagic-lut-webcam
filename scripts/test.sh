@@ -41,6 +41,7 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
   "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/App/AppSettingsStore.swift" \
+  "$task_root/Sources/App/VirtualCameraRegistryPublishing.swift" \
   "$task_root/Sources/App/RecordingModel.swift" \
   "$task_root/Sources/App/AutomaticFeedPolicy.swift" \
   "$task_root/Sources/App/CameraDemandMonitor.swift" \

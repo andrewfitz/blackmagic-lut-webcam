@@ -909,8 +909,8 @@ final class FeedCapturePool: @unchecked Sendable {
   private let factory: Factory
   private var controllers: [FeedID: CaptureController]
 
-  init(initial: [FeedID: CaptureController] = [:], factory: @escaping Factory = { _ in
-    CaptureController()
+  init(initial: [FeedID: CaptureController] = [:], factory: @escaping Factory = { feedID in
+    CaptureController(services: .live(feedID: feedID))
   }) {
     controllers = initial
     self.factory = factory
@@ -990,9 +990,9 @@ struct CaptureServices: @unchecked Sendable {
   var hostTime: () -> CMTime = { CMClockGetTime(CMClockGetHostTimeClock()) }
   var cameraRetryInterval: TimeInterval = 2
 
-  static func live() -> CaptureServices {
+  static func live(feedID: FeedID? = nil) -> CaptureServices {
     let backend = UDLBackend()
-    let sink = CameraSink()
+    let sink = CameraSink(feedID: feedID)
     return CaptureServices(
       start: { id, fast, frame, event in
         try backend.start(deviceID: id, inputFast: fast, frameHandler: frame, eventHandler: event)

@@ -247,6 +247,57 @@ final class CameraFrameStager {
   }
 }
 
+/// Stable CMIO destination identity for one processed feed.
+///
+/// The extension derives the same UID and stream names from
+/// `VirtualCameraDescriptor`, so an app-side capture controller never has to
+/// guess which virtual camera a frame belongs to. The legacy route intentionally
+/// retains the original UID and names for existing single-camera installations.
+struct CameraSinkRoute: Equatable, Sendable {
+  let feedID: String?
+  let deviceUID: String
+  let sinkStreamName: String
+  let sourceStreamName: String
+
+  static let legacy = CameraSinkRoute(
+    feedID: nil,
+    deviceUID: VideoContract.deviceUID,
+    sinkStreamName: VideoContract.sinkName,
+    sourceStreamName: VideoContract.cameraName)
+
+  init(feedID: FeedID?) {
+    guard let feedID else {
+      self = .legacy
+      return
+    }
+    let normalized = feedID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty, normalized != "default" else {
+      self = .legacy
+      return
+    }
+    self.init(descriptor: .feed(feedID: normalized))
+  }
+
+  init(descriptor: VirtualCameraDescriptor) {
+    // Feed and Program devices share this transport. The descriptor carries
+    // the stable UID and stream names, so no second sink implementation is
+    // needed for the Program output.
+    self.feedID = descriptor.feedID
+    self.deviceUID = descriptor.deviceUID
+    self.sinkStreamName = descriptor.kind == .feed && descriptor.feedID == "default"
+      ? VideoContract.sinkName
+      : "\(descriptor.displayName) Input"
+    self.sourceStreamName = descriptor.displayName
+  }
+
+  private init(feedID: String?, deviceUID: String, sinkStreamName: String, sourceStreamName: String) {
+    self.feedID = feedID
+    self.deviceUID = deviceUID
+    self.sinkStreamName = sinkStreamName
+    self.sourceStreamName = sourceStreamName
+  }
+}
+
 final class CameraSink {
   private var deviceID: CMIODeviceID = 0
   private var streamID: CMIOStreamID = 0
@@ -254,8 +305,21 @@ final class CameraSink {
   private var negotiatedFormat: CMVideoFormatDescription?
   private var negotiatedDuration: CMTime?
   private var stager = CameraFrameStager()
+  let route: CameraSinkRoute
 
-  init(bufferQueue: CameraBufferQueue? = nil) { queue = bufferQueue }
+  init(bufferQueue: CameraBufferQueue? = nil, route: CameraSinkRoute = .legacy) {
+    queue = bufferQueue
+    self.route = route
+  }
+
+  convenience init(bufferQueue: CameraBufferQueue? = nil, feedID: FeedID?) {
+    self.init(bufferQueue: bufferQueue, route: CameraSinkRoute(feedID: feedID))
+  }
+
+  convenience init(bufferQueue: CameraBufferQueue? = nil, program: Bool) {
+    self.init(bufferQueue: bufferQueue,
+      route: program ? CameraSinkRoute(descriptor: .program()) : .legacy)
+  }
   deinit { disconnect() }
 
   func connect(configuration: PipelineConfiguration, passthroughFormat: OSType) throws {
@@ -268,14 +332,24 @@ final class CameraSink {
     try check(CMIOObjectSetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &address,
       0, nil, UInt32(MemoryLayout.size(ofValue: allow)), &allow), "Enable software camera discovery")
     for id in try ids(CMIOObjectID(kCMIOObjectSystemObject), selector: kCMIOHardwarePropertyDevices) {
-      guard try string(id, selector: kCMIODevicePropertyDeviceUID) == VideoContract.deviceUID else { continue }
+      guard try string(id, selector: kCMIODevicePropertyDeviceUID) == route.deviceUID else { continue }
       let streams = try ids(id, selector: kCMIODevicePropertyStreams)
       let format = try VideoContract.formatDescription(width: configuration.width, height: configuration.height,
         pixelFormat: configuration.untouched ? passthroughFormat : configuration.pixelFormat)
       let namedStreams = try streams.map { ($0, try string($0, selector: kCMIOObjectPropertyName)) }
-      guard let sinkStream = namedStreams.first(where: { $0.1 == VideoContract.sinkName })?.0,
-        let sourceStream = namedStreams.first(where: { $0.1 == VideoContract.cameraName })?.0 else {
-        throw VideoError.message("The virtual camera does not publish its source and input streams.")
+      // The UID selects the feed. Stream display names may be customized in
+      // the registry, so use the deterministic names first and then infer the
+      // two-stream source/input pair within that already selected device.
+      let sinkStream = namedStreams.first(where: { $0.1 == route.sinkStreamName })?.0
+        ?? namedStreams.first(where: { name in
+          let value = name.1.localizedCaseInsensitiveContains("input") ||
+            name.1.localizedCaseInsensitiveContains("sink")
+          return value
+        })?.0
+      let sourceStream = namedStreams.first(where: { $0.1 == route.sourceStreamName })?.0
+        ?? namedStreams.first(where: { $0.0 != sinkStream })?.0
+      guard let sinkStream, let sourceStream else {
+        throw VideoError.message("The virtual camera for \(route.feedID ?? "legacy") does not publish its source and input streams.")
       }
       // AVFoundation clients such as Zoom claim device control before starting
       // the source. In automatic mode the producer necessarily arrives later.

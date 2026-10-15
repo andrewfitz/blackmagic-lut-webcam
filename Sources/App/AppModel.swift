@@ -70,6 +70,7 @@ final class AppModel {
   let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
+  private let virtualCameraRegistryStore: VirtualCameraRegistryStore
   private let lutLoader: LUTFileLoader
   private var restoringSettings = true
   private var lutBookmark: Data?
@@ -78,9 +79,11 @@ final class AppModel {
   private var automaticPolicy = AutomaticFeedPolicy()
   private var persistedSnapshot = AppSettingsSnapshot()
 
-  init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader()) {
+  init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader(),
+       registryStore: VirtualCameraRegistryStore? = nil) {
     let store = settingsStore ?? AppSettingsStore()
     self.settingsStore = store
+    self.virtualCameraRegistryStore = registryStore ?? VirtualCameraRegistryStore()
     let snapshot = store.loadSnapshot()
     persistedSnapshot = snapshot
 
@@ -110,6 +113,7 @@ final class AppModel {
     automaticFeedEnabled = savedFeed.automaticFeed
     lutBookmark = savedFeed.lutBookmark
     restoringSettings = false
+    publishVirtualCameraRegistry(snapshot)
     capture.setPreviewEnabled(previewEnabled)
     capture.onUpdate = { [weak self] update in
       MainActor.assumeIsolated {
@@ -229,6 +233,21 @@ final class AppModel {
     feedCoordinator.update(descriptor)
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
+    publishVirtualCameraRegistry(persistedSnapshot)
+  }
+
+  /// Publishes the complete feed topology in one transaction. The camera
+  /// extension reads this snapshot from the shared app group and can retain
+  /// existing CMIO devices until their clients release them during reconcile.
+  private func publishVirtualCameraRegistry(_ snapshot: AppSettingsSnapshot) {
+    let previous = virtualCameraRegistryStore.load()
+    let candidate = VirtualCameraRegistrySnapshot.forFeeds(snapshot.feeds,
+      outputMode: snapshot.outputMode, previous: previous)
+    do {
+      try virtualCameraRegistryStore.save(candidate)
+    } catch {
+      update.message = "Virtual cameras could not be updated: \(error.localizedDescription)"
+    }
   }
 
   private var effectiveConfiguration: PipelineConfiguration {
