@@ -281,6 +281,7 @@ public enum RecordingError: Error, Equatable {
   case paused
   case failed
   case queueFull
+  case queueBytesFull
   case queueClosed
   case diskSpaceUnavailable
   case insufficientDiskSpace(required: Int64, available: Int64)
@@ -294,6 +295,7 @@ public struct LongRunRecordingConfiguration: Sendable {
   public let maximumSegmentDuration: CMTime
   public let maximumAVDrift: CMTime
   public let queueCapacity: Int
+  public let maximumQueueBytes: Int64
   public let minimumFreeBytes: Int64
   public let outputDirectory: URL
 
@@ -301,12 +303,14 @@ public struct LongRunRecordingConfiguration: Sendable {
               maximumSegmentDuration: CMTime = CMTime(value: 3_600, timescale: 1),
               maximumAVDrift: CMTime = CMTime(value: 1, timescale: 10),
               queueCapacity: Int = 256,
+              maximumQueueBytes: Int64 = 256 * 1_048_576,
               minimumFreeBytes: Int64 = 1_073_741_824,
               outputDirectory: URL) {
     self.timescale = timescale
     self.maximumSegmentDuration = maximumSegmentDuration
     self.maximumAVDrift = maximumAVDrift
     self.queueCapacity = queueCapacity
+    self.maximumQueueBytes = maximumQueueBytes
     self.minimumFreeBytes = minimumFreeBytes
     self.outputDirectory = outputDirectory
   }
@@ -315,7 +319,7 @@ public struct LongRunRecordingConfiguration: Sendable {
     guard timescale > 0, maximumSegmentDuration.isValid,
       maximumSegmentDuration.isNumeric, maximumSegmentDuration.value > 0,
       maximumAVDrift.isValid, maximumAVDrift.isNumeric, maximumAVDrift.value >= 0,
-      queueCapacity > 0, minimumFreeBytes >= 0, outputDirectory.isFileURL,
+      queueCapacity > 0, maximumQueueBytes > 0, minimumFreeBytes >= 0, outputDirectory.isFileURL,
       !outputDirectory.path.isEmpty else {
       throw RecordingError.invalidConfiguration
     }
@@ -364,6 +368,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
   private var segmentHasPackets = false
   private var segments: [RecordingSegmentInfo] = []
   private var packetCount = 0
+  private var pendingBytes: Int64 = 0
   private var resumeSourceOrigin: CMTime?
   private var resumeOutputOrigin: CMTime?
   private let lock = NSLock()
@@ -388,6 +393,12 @@ public final class LongRunRecordingSession: @unchecked Sendable {
   }
 
   public var pendingCount: Int { queue.count }
+
+  public var pendingByteCount: Int64 {
+    lock.lock()
+    defer { lock.unlock() }
+    return pendingBytes
+  }
 
   public func start() throws {
     lock.lock()
@@ -415,8 +426,14 @@ public final class LongRunRecordingSession: @unchecked Sendable {
       default: return .failure(.invalidState)
       }
     }
+    guard packet.encodedByteCount <= configuration.maximumQueueBytes,
+      pendingBytes <= configuration.maximumQueueBytes - packet.encodedByteCount else {
+      transitionToFailure(.queueBytesFull)
+      return .failure(.queueBytesFull)
+    }
     do {
       try queue.enqueue(packet)
+      pendingBytes += packet.encodedByteCount
       return .success(())
     } catch RecordingQueueError.full {
       transitionToFailure(.queueFull)
@@ -438,7 +455,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
       if state == .failed { throw RecordingError.failed }
       return false
     }
-    guard let packet = queue.dequeue() else { return false }
+    guard let packet = dequeuePending() else { return false }
     do {
       try process(packet)
       return true
@@ -466,7 +483,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
       throw RecordingError.invalidState
     }
     do {
-      while let packet = queue.dequeue() { try process(packet) }
+      while let packet = dequeuePending() { try process(packet) }
       state = .paused
       videoNormalizer.reset()
       audioNormalizer.reset()
@@ -501,7 +518,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
       throw RecordingError.invalidState
     }
     do {
-      while let packet = queue.dequeue() { try process(packet) }
+      while let packet = dequeuePending() { try process(packet) }
       try finalizeCurrentSegment()
       queue.close()
       state = .finalized
@@ -589,6 +606,12 @@ public final class LongRunRecordingSession: @unchecked Sendable {
     try writer.beginSegment(index: segmentIndex, startTime: start)
     segmentStart = start
     segmentHasPackets = false
+  }
+
+  private func dequeuePending() -> RecordingPacket? {
+    guard let packet = queue.dequeue() else { return nil }
+    pendingBytes -= packet.encodedByteCount
+    return packet
   }
 
   private func finalizeCurrentSegment() throws {

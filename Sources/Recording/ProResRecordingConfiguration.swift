@@ -284,8 +284,11 @@ public struct ProResRecordingConfiguration {
   public let timecodeTrack: ProResTimecodeTrack
 
   public static func inspectEncoder(profile: ProRes422Profile, width: Int,
-                                    height: Int) throws -> ProResEncoderInfo {
-    try ProResEncoderInspector.inspect(profile: profile, width: width, height: height)
+                                    height: Int,
+                                    pixelFormat: OSType = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    throws -> ProResEncoderInfo {
+    try ProResEncoderInspector.inspect(profile: profile, width: width, height: height,
+      pixelFormat: pixelFormat)
   }
 
   public init(source: ProRes422SourceFormat, profile: ProRes422Profile = .standard,
@@ -296,7 +299,7 @@ public struct ProResRecordingConfiguration {
     switch encoderAvailability {
     case .system:
       self.encoder = try ProResEncoderInspector.inspect(profile: profile,
-        width: source.width, height: source.height)
+        width: source.width, height: source.height, pixelFormat: source.pixelFormat)
     case .assumedAvailable:
       self.encoder = ProResEncoderInfo(encoderID: "assumed",
         hardwareAccelerated: false, supportedPropertyKeys: [])
@@ -346,7 +349,9 @@ public struct ProResRecordingConfiguration {
 }
 
 private enum ProResEncoderInspector {
-  static func inspect(profile: ProRes422Profile, width: Int, height: Int) throws -> ProResEncoderInfo {
+  static func inspect(profile: ProRes422Profile, width: Int, height: Int,
+                      pixelFormat: OSType = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)
+    throws -> ProResEncoderInfo {
     var list: CFArray?
     let listStatus = VTCopyVideoEncoderList(nil, &list)
     guard listStatus == noErr else {
@@ -381,6 +386,13 @@ private enum ProResEncoderInspector {
       throw ProResRecordingError.encoderCapabilityQueryFailed(codec: profile.displayName,
         status: status)
     }
+    guard let selectedID,
+      sessionSupports(profile: profile, width: width, height: height,
+        pixelFormat: pixelFormat, encoderID: selectedID) else {
+      throw ProResRecordingError.encoderUnavailable(codec: profile.displayName,
+        width: width, height: height,
+        reason: "the selected encoder rejected the 10-bit 4:2:2 source pixel format")
+    }
 
     var propertyKeys = Set<String>()
     if let properties {
@@ -389,8 +401,30 @@ private enum ProResEncoderInspector {
       }
     }
     return ProResEncoderInfo(
-      encoderID: (encoderID as String?) ?? selectedID ?? "unknown",
+      encoderID: (encoderID as String?) ?? selectedID,
       hardwareAccelerated: (selected[kVTVideoEncoderList_IsHardwareAccelerated as String] as? NSNumber)?.boolValue ?? false,
       supportedPropertyKeys: propertyKeys)
+  }
+
+  private static func sessionSupports(profile: ProRes422Profile, width: Int, height: Int,
+                                       pixelFormat: OSType, encoderID: String) -> Bool {
+    let specification: CFDictionary = [
+      kVTVideoEncoderSpecification_EncoderID as String: encoderID,
+    ] as CFDictionary
+    let attributes: CFDictionary = [
+      kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
+      kCVPixelBufferWidthKey as String: width,
+      kCVPixelBufferHeightKey as String: height,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary
+    var session: VTCompressionSession?
+    let status = VTCompressionSessionCreate(
+      allocator: kCFAllocatorDefault, width: Int32(width), height: Int32(height),
+      codecType: profile.codecType, encoderSpecification: specification,
+      imageBufferAttributes: attributes, compressedDataAllocator: nil,
+      outputCallback: nil, refcon: nil, compressionSessionOut: &session)
+    guard status == noErr, let session else { return false }
+    VTCompressionSessionInvalidate(session)
+    return true
   }
 }

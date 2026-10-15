@@ -99,6 +99,19 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
     XCTAssertEqual(queue.dequeue(), 1)
     XCTAssertEqual(queue.dequeue(), 2)
     XCTAssertNil(queue.dequeue())
+
+    let writer = MemorySegmentWriter()
+    let configuration = LongRunRecordingConfiguration(queueCapacity: 8, maximumQueueBytes: 25,
+      minimumFreeBytes: 0, outputDirectory: URL(fileURLWithPath: "/tmp/ultrastudio-recording-test"))
+    let session = try LongRunRecordingSession(configuration: configuration,
+      diskSpace: FixedDiskSpace(Int64.max), writer: writer)
+    try session.start()
+    assertEnqueued(session.enqueue(RecordingPacket(mediaKind: .video, presentationTime: .zero,
+      duration: CMTime(value: 1, timescale: 30))))
+    guard case .failure(.queueBytesFull) = session.enqueue(RecordingPacket(mediaKind: .video,
+      presentationTime: CMTime(value: 1, timescale: 30), duration: CMTime(value: 1, timescale: 30))) else {
+      return XCTFail("Payload byte bound must reject media before memory grows")
+    }
   }
 
   func testSessionRollsOverAndPauseResumeKeepsTimelineContinuous() throws {
