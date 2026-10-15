@@ -436,10 +436,12 @@ public final class RecordingOutputSession: @unchecked Sendable {
       guard manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path) else {
         throw RecordingOutputError.ioFailure("The media writer did not produce a temporary output file.")
       }
-      let attributes = try manager.fileManagerRef.attributesOfItem(atPath: paths.temporaryFile.path)
-      let byteCount = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
-      guard byteCount > 0 else {
-        throw RecordingOutputError.ioFailure("The media writer produced an empty output file.")
+      if externalWriterOwnsFile {
+        let attributes = try manager.fileManagerRef.attributesOfItem(atPath: paths.temporaryFile.path)
+        let byteCount = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        guard byteCount > 0 else {
+          throw RecordingOutputError.ioFailure("The media writer produced an empty output file.")
+        }
       }
       guard !manager.fileManagerRef.fileExists(atPath: paths.finalFile.path) else {
         throw RecordingOutputError.destinationExists
