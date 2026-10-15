@@ -97,11 +97,13 @@ import XCTest
     let b = FeedDescriptor(id: feed("beta"), name: "Tight")
     let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
       feeds: [a, b], outputMode: .separateCameras,
-      switcher: SwitcherSettings(selectedFeedID: b.id)))
+      switcher: SwitcherSettings(selectedFeedID: a.id)))
 
     XCTAssertEqual(coordinator.programOutput.selectedFeedID, a.id)
+    coordinator.setSwitcher(SwitcherSettings(selectedFeedID: b.id))
     coordinator.setOutputMode(.program)
-    XCTAssertEqual(coordinator.programOutput.pendingFeedID, b.id)
+    XCTAssertEqual(coordinator.programOutput.selectedFeedID, b.id)
+    XCTAssertNil(coordinator.programOutput.pendingFeedID)
   }
 
   func testProgramBridgePreservesImageAndTimingAndOwnsDemandLifecycle() throws {
