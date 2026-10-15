@@ -69,6 +69,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
   private(set) var latest: CVPixelBuffer?
   private(set) var receivedAt: CMTime = .invalid
   var consumers = 0
+  var inUse: Bool { consumers > 0 || sink?.consuming == true || sink?.client != nil }
   private var black: CVPixelBuffer?
   private var timer: DispatchSourceTimer?
   private var lastOutput: CMTime = .invalid
@@ -453,7 +454,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   }
 
   private func removeIfReleased(_ runtime: CameraDeviceRuntime) {
-    guard pendingRemoval.contains(runtime.descriptor.id), runtime.consumers == 0 else { return }
+    guard pendingRemoval.contains(runtime.descriptor.id), !runtime.inUse else { return }
     pendingRemoval.remove(runtime.descriptor.id)
     if let provider { try? provider.removeDevice(runtime.device) }
     runtimes.removeValue(forKey: runtime.descriptor.id)
@@ -711,6 +712,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     request = nil
     client = nil
     owner.clearInput()
+    owner.onDemandChange?()
   }
   func consume() {
     guard consuming, !consumePending, let request else { return }
