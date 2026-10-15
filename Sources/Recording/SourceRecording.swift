@@ -238,16 +238,15 @@ final class SourceRecorderCore: @unchecked Sendable {
   /// samples are rejected once stopping begins. This method must not be called
   /// from the recorder's private queue or from a writer callback.
   func stop() throws {
+    let failedBeforeStop = stateLock.withLock { telemetryValue.state == .failed }
     let shouldStop = stateLock.withLock { () -> Bool in
       switch telemetryValue.state {
-      case .recording, .paused:
+      case .recording, .paused, .failed:
         telemetryValue.state = .stopping
         return true
       case .idle:
         return false
       case .finished:
-        return false
-      case .failed:
         return false
       case .stopping:
         return false
@@ -256,13 +255,12 @@ final class SourceRecorderCore: @unchecked Sendable {
     guard shouldStop else {
       let current = stateLock.withLock { telemetryValue.state }
       if current == .idle || current == .finished { return }
-      if current == .failed { throw SourceRecordingError.invalidState(current, operation: "stop") }
       return
     }
     try queue.sync {
       do {
         try writer.finish()
-        stateLock.withLock { telemetryValue.state = .finished }
+        stateLock.withLock { telemetryValue.state = failedBeforeStop ? .failed : .finished }
       } catch {
         let failure = Self.recordingError(error)
         stateLock.withLock {
