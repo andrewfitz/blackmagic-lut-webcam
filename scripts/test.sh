@@ -40,6 +40,7 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   "$task_root/Sources/App/VideoPreview.swift" "$task_root/Sources/App/SharedMetalBuffer.swift" \
   "$task_root/Sources/App/GPURawFrameCopy.swift" \
   "$task_root/Sources/App/AppSettingsStore.swift" \
+  "$task_root/Sources/App/RecordingModel.swift" \
   "$task_root/Sources/App/AutomaticFeedPolicy.swift" \
   "$task_root/Sources/App/CameraDemandMonitor.swift" \
   "$task_root/Sources/App/ExtensionInstaller.swift" \
@@ -54,3 +55,4 @@ xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
   exit 1
 }
 tail -5 "$test_log"
+  "$task_root"/Sources/Recording/*.swift \
