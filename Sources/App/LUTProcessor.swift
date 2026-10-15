@@ -262,15 +262,16 @@ final class LUTProcessor {
         let length = packedLength
         if packedBuffer == nil || packedBuffer!.length < length { packedBuffer = device.makeBuffer(length: length, options: .storageModeShared) }
         guard let packedBuffer, let base = CVPixelBufferGetBaseAddress(input) else { throw VideoError.message("Cannot read packed capture frame.") }
+        let destination = packedBuffer.contents()
         let sourceStride = CVPixelBufferGetBytesPerRow(input)
         if sourceStride == packedRowBytes {
-          memcpy(packedBuffer.contents(), base, length)
+          memcpy(destination, base, length)
         } else {
           // v210 rows may include producer padding. Do not upload that padding
           // or make the shader walk it; a compact staging stride lowers CPU and
           // GPU traffic while preserving every active media word.
           for row in 0..<height {
-            memcpy(packedBuffer.contents().advanced(by: row * packedRowBytes),
+            memcpy(destination.advanced(by: row * packedRowBytes),
               base.advanced(by: row * sourceStride), packedRowBytes)
           }
         }
