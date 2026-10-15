@@ -39,16 +39,18 @@ import XCTest
     let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(feeds: [first, second]))
     let left = coordinator.session(for: first.id)
     let right = coordinator.session(for: second.id)
-    let leftRoute = try left.addRoute(id: "camera", capacity: 2, policy: .reject)
-    let rightRoute = try right.addRoute(id: "camera", capacity: 2, policy: .reject)
+    let leftRoute = try coordinator.addOutputRoute(feedID: first.id, routeID: "camera",
+      capacity: 2, policy: .reject)
+    let rightRoute = try coordinator.addOutputRoute(feedID: second.id, routeID: "camera",
+      capacity: 2, policy: .reject)
 
     XCTAssertTrue(coordinator.start(first.id))
     XCTAssertTrue(coordinator.start(second.id))
     XCTAssertEqual(left.state, .running)
     XCTAssertEqual(right.state, .running)
 
-    XCTAssertEqual(left.publish(try frame(1))["camera"], .enqueued)
-    XCTAssertEqual(right.publish(try frame(2))["camera"], .enqueued)
+    XCTAssertEqual(coordinator.publish(try frame(1), to: first.id)["camera"], .enqueued)
+    XCTAssertEqual(coordinator.publish(try frame(2), to: second.id)["camera"], .enqueued)
     XCTAssertEqual(leftRoute.pendingCount, 1)
     XCTAssertEqual(rightRoute.pendingCount, 1)
 

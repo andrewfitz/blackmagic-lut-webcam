@@ -172,6 +172,16 @@ final class FeedCoordinator {
 
   func stop(_ id: FeedID) { session(for: id).stop() }
 
+  func addOutputRoute(feedID: FeedID, routeID: String, capacity: Int,
+                      policy: FrameQueueOverflowPolicy) throws -> FrameRoute<CVPixelBuffer> {
+    try session(for: feedID).addRoute(id: routeID, capacity: capacity, policy: policy)
+  }
+
+  func publish(_ frame: ProcessedFrame<CVPixelBuffer>, to feedID: FeedID)
+    -> FrameFanOutReport {
+    session(for: feedID).publish(frame)
+  }
+
   func setOutputMode(_ mode: FeedOutputMode) { outputMode = mode }
 
   func setSwitcher(_ settings: SwitcherSettings) {
