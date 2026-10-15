@@ -131,6 +131,10 @@ final class CaptureController: @unchecked Sendable {
   private var audioRateStart: Double = 0
   private var audioRateBytes: UInt64 = 0
   private var audioBitrateKbps = 0.0
+  // Raw-only backends need a synthesized media-stat update. The native live
+  // backend supplies both callbacks, so its raw packet must not be counted a
+  // second time through the stats path.
+  private var rawAudioProvidesStats = false
   private var videoRateStart: Double = 0
   private var videoRateBytes: UInt64 = 0
   private var videoBitrateMbps = 0.0
@@ -238,6 +242,7 @@ final class CaptureController: @unchecked Sendable {
         self.audioRateStart = 0
         self.audioRateBytes = 0
         self.audioBitrateKbps = 0
+        self.rawAudioProvidesStats = false
         self.videoRateStart = 0
         self.videoRateBytes = 0
         self.videoBitrateMbps = 0
@@ -306,6 +311,7 @@ final class CaptureController: @unchecked Sendable {
               self?.receiveRawAudio(audio, token: token)
             }, event)
           } else if let automaticWithRawAudio = self.services.startAutomaticWithRawAudio {
+            self.rawAudioProvidesStats = true
             try automaticWithRawAudio(deviceID, { [weak self] image, pts, duration, valid in
               self?.receive(image, at: pts, duration: duration, signalValid: valid, token: token)
             }, { [weak self] audio in
@@ -327,6 +333,7 @@ final class CaptureController: @unchecked Sendable {
             self?.receiveRawAudio(audio, token: token)
           }, event)
         } else if let startWithRawAudio = self.services.startWithRawAudio {
+          self.rawAudioProvidesStats = true
           try startWithRawAudio(deviceID, configuration.inputFast, { [weak self] image, pts, valid in
             self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
           }, { [weak self] audio in
@@ -602,10 +609,12 @@ final class CaptureController: @unchecked Sendable {
       audio.bytesPerSample > 0 {
       _ = recording?.rawAudio(samples, Int(audio.sampleFrames), audio.packetTime, audio.channels)
     }
-    receiveMedia(CaptureMediaStats(timecode: nil, audioPacketTime: audio.packetTime,
-      audioSampleFrames: audio.sampleFrames, audioChannels: audio.channels,
-      leftPeak: 0, rightPeak: 0, leftRMS: 0, rightRMS: 0,
-      audioBytes: UInt64(audio.samples?.count ?? 0), audioPresent: audio.samples != nil), token: token)
+    if lock.withLock({ rawAudioProvidesStats }) {
+      receiveMedia(CaptureMediaStats(timecode: nil, audioPacketTime: audio.packetTime,
+        audioSampleFrames: audio.sampleFrames, audioChannels: audio.channels,
+        leftPeak: 0, rightPeak: 0, leftRMS: 0, rightRMS: 0,
+        audioBytes: UInt64(audio.samples?.count ?? 0), audioPresent: audio.samples != nil), token: token)
+    }
   }
 
   private func releaseFrame(_ token: UInt64) {
