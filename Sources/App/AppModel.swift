@@ -70,7 +70,6 @@ final class AppModel {
   private let capture: CaptureController
   let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
-  private let programBridge: ProgramOutputBridge?
   private let settingsStore: AppSettingsStore
   private let virtualCameraRegistryStore: VirtualCameraRegistryStore
   private let lutLoader: LUTFileLoader
@@ -95,11 +94,6 @@ final class AppModel {
     let capturePool = FeedCapturePool(initial: [snapshot.selectedFeedID: primaryCapture])
     feedCoordinator = FeedCoordinator(snapshot: snapshot, capturePool: capturePool)
     let coordinator = feedCoordinator
-    if snapshot.outputMode == .program, let route = try? feedCoordinator.addProgramOutputRoute() {
-      programBridge = ProgramOutputBridge(route: route)
-    } else {
-      programBridge = nil
-    }
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
     capture = primaryCapture
@@ -122,13 +116,15 @@ final class AppModel {
     restoringSettings = false
     publishVirtualCameraRegistry(snapshot)
     capture.setPreviewEnabled(previewEnabled)
-    capture.setCameraOutputEnabled(snapshot.outputMode != .program)
-    capture.onProcessedFrame = { [weak self] frame in
-      guard let self, let feedID = self.capture.activeFeed else { return }
+    feedCoordinator.setCameraOutputEnabled(feedID: snapshot.selectedFeedID,
+      enabled: snapshot.outputMode != .program)
+    let primaryFeedID = snapshot.selectedFeedID
+    feedCoordinator.setProcessedFrameHandler(feedID: primaryFeedID) { [weak self] frame in
+      guard let self else { return }
       Task { @MainActor [weak self] in
         guard let self else { return }
-        _ = self.feedCoordinator.publish(frame, to: feedID)
-        self.programBridge?.pump()
+        _ = self.feedCoordinator.publish(frame, to: primaryFeedID)
+        self.feedCoordinator.pumpProgramOutput()
       }
     }
     capture.onUpdate = { [weak self] update in
@@ -294,15 +290,15 @@ final class AppModel {
     previewReady = false
     update = CaptureUpdate(message: "Opening UltraStudio…")
     if feedCoordinator.outputMode == .program {
-      capture.setCameraOutputEnabled(false)
+      feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: false)
       do {
-        try programBridge?.setDemand(true, configuration: effectiveConfiguration,
+        try feedCoordinator.setProgramOutputDemand(true, configuration: effectiveConfiguration,
           passthroughFormat: kCVPixelFormatType_422YpCbCr10)
       } catch {
         update.message = "Program camera unavailable: \(error.localizedDescription)"
       }
     } else {
-      capture.setCameraOutputEnabled(true)
+      feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: true)
     }
     capture.start(feedID: selectedFeedID, deviceID: selectedDevice, configuration: effectiveConfiguration,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
@@ -310,7 +306,10 @@ final class AppModel {
 
   func stop() {
     running = false
-    programBridge?.disconnect()
+    if feedCoordinator.outputMode == .program {
+      try? feedCoordinator.setProgramOutputDemand(false, configuration: effectiveConfiguration,
+        passthroughFormat: kCVPixelFormatType_422YpCbCr10)
+    }
     feedCoordinator.stop(selectedFeedID)
     recordingModel.stopAll()
     capture.stop()
