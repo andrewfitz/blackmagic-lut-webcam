@@ -342,6 +342,7 @@ struct FeedDiagnostics: View {
         Divider()
         LabeledContent("Audio", value: audioFormat(model.update))
         LabeledContent("Audio bitrate", value: formattedAudioBitrate(model.update.audioBitrateKbps))
+        LabeledContent("Audio packets", value: model.update.audioPackets.formatted())
         LabeledContent("Audio samples", value: model.update.audioSamples.formatted())
         LabeledContent("Audio drops", value: model.update.audioDrops.formatted())
         if !compact {
