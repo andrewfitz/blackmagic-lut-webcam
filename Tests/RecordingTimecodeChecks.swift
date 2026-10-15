@@ -100,6 +100,40 @@ import XCTest
     XCTAssertEqual(bytes, [0, 0, 7, 8])
   }
 
+  func testSourceWriterCreatesWallClockAndRecordStartTracksAtBothRates() throws {
+    for rate in [RecordingFrameRate.fps2997, .fps5994] {
+      let wallClockConfiguration = try SourceRecordingConfiguration(
+        feedID: SourceRecordingFeedID("tc-wall-(rate)"),
+        outputURL: URL(fileURLWithPath: "/tmp/tc-wall.mov"),
+        width: 1_920, height: 1_080, frameRate: rate,
+        timecodePolicy: .wallClock, timecodeStartDate: utc(12, 34, 56, 500_000_000))
+      let wallClockTrack = try XCTUnwrap(
+        AVAssetSourceRecordingWriter.makeTimecodeTrack(for: wallClockConfiguration))
+      XCTAssertEqual(wallClockTrack.frameRate, rate)
+      XCTAssertTrue(wallClockTrack.dropFrame)
+      XCTAssertEqual(wallClockTrack.makeInput().mediaType, .timecode)
+
+      let recordStartConfiguration = try SourceRecordingConfiguration(
+        feedID: SourceRecordingFeedID("tc-start-(rate)"),
+        outputURL: URL(fileURLWithPath: "/tmp/tc-start.mov"),
+        width: 1_920, height: 1_080, frameRate: rate,
+        timecodePolicy: .recordStart)
+      let recordStartTrack = try XCTUnwrap(
+        AVAssetSourceRecordingWriter.makeTimecodeTrack(for: recordStartConfiguration))
+      XCTAssertEqual(recordStartTrack.frameRate, rate)
+      let session = RecordingTimecodeSession(frameRate: rate, dropFrame: true,
+        policy: .recordStart)
+      XCTAssertEqual(session.timecode(for: rate.frameDuration)?.frameNumber, 1)
+
+      let sourceConfiguration = try SourceRecordingConfiguration(
+        feedID: SourceRecordingFeedID("tc-source-(rate)"),
+        outputURL: URL(fileURLWithPath: "/tmp/tc-source.mov"),
+        width: 1_920, height: 1_080, frameRate: rate,
+        timecodePolicy: .source)
+      XCTAssertNil(try AVAssetSourceRecordingWriter.makeTimecodeTrack(for: sourceConfiguration))
+    }
+  }
+
   static let allTests = [
     ("wall clock NDF and independent feeds", testWallClockNDFUsesNominalFramesAndSeparatelyStartedFeeds),
     ("drop frame boundaries and midnight", testDropFrameBoundariesAtTenMinutesAndMidnight),
@@ -107,5 +141,6 @@ import XCTest
     ("source policy", testSourcePolicyPreservesEmbeddedValueAndRejectsMissingSourceTime),
     ("timecode parsing", testTimecodeParsingAndInvalidDropLabels),
     ("QuickTime TimeCode32 sample", testQuickTimeTimecodeTrackWritesBigEndianTimeCode32Sample),
+    ("source writer timecode tracks", testSourceWriterCreatesWallClockAndRecordStartTracksAtBothRates),
   ]
 }
