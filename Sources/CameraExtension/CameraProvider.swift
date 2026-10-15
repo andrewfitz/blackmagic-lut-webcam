@@ -113,7 +113,12 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   var availableProperties: Set<CMIOExtensionProperty> { [.providerManufacturer] }
   func connect(to client: CMIOExtensionClient) throws {}
   func disconnect(from client: CMIOExtensionClient) {
-    if sink.client == client { sink.stopConsumption() }
+    // CMIO can hand the source a different wrapper instance for the same
+    // client over its lifetime.  Ownership follows clientID, not NSObject
+    // identity.  A disconnected source client must release its demand or the
+    // provider will keep capture and its timers alive indefinitely.
+    sink.disconnect(from: client)
+    source.disconnect(from: client)
   }
   func providerProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionProviderProperties {
     let result = CMIOExtensionProviderProperties(dictionary: [:])
@@ -154,6 +159,10 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     if !changes.isEmpty {
       source.stream.notifyPropertiesChanged(changes)
       sink.stream.notifyPropertiesChanged(changes)
+      // Producer negotiation can change the cadence while the sink pull loop
+      // is active.  Re-arm that loop so it does not continue polling at the
+      // previous rate after a 29.97/59.94 transition.
+      sink.restartConsumptionTimer()
       restartTimer()
     }
   }
@@ -164,6 +173,10 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     nextStandby = .invalid
     guard consumers > 0 else {
       lastOutput = .invalid
+      // A new source client starts a fresh output segment.  Mark its first
+      // live frame as a discontinuity even when the producer stayed running
+      // while the previous viewer disconnected.
+      wasStandby = true
       black = nil
       return
     }
@@ -334,6 +347,13 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   private var timer: DispatchSourceTimer?
   private var request: CameraSampleRequest?
   private var authorizationRejections = 0
+  // CMIO's stream start/stop callbacks do not carry the client argument.  The
+  // authorization callback immediately preceding a start gives us the stable
+  // client ID to associate with that start, allowing provider disconnect to
+  // release only the departed source client's demand.
+  private var pendingSourceClientIDs: [UUID] = []
+  private var activeSourceClientIDs: Set<UUID> = []
+  private var anonymousSourceStarts = 0
 
   init(owner: CameraProvider, isSink: Bool) {
     self.owner = owner
@@ -400,6 +420,8 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
         return false
       }
       self.client = client
+    } else if !activeSourceClientIDs.contains(client.clientID), !pendingSourceClientIDs.contains(client.clientID) {
+      pendingSourceClientIDs.append(client.clientID)
     }
     return true
   }
@@ -416,6 +438,14 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
         self?.stream.consumeSampleBuffer(from: client, completionHandler: completion)
       }
     } else {
+      if let clientID = pendingSourceClientIDs.first {
+        pendingSourceClientIDs.removeFirst()
+        activeSourceClientIDs.insert(clientID)
+      } else {
+        // Keep direct in-process test/control calls balanced even though
+        // native CMIO starts are normally preceded by authorization.
+        anonymousSourceStarts += 1
+      }
       owner.consumers += 1
       // An additional viewer does not reset the clock of existing viewers.
       if owner.consumers == 1 { owner.restartTimer(); publishDemand() }
@@ -424,10 +454,37 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   func stopStream() throws {
     if isSink { stopConsumption() }
     else {
-      guard owner.consumers > 0 else { return }
+      guard owner.consumers > 0 else {
+        // A host can abandon an authorization probe without ever starting the
+        // stream.  Do not let that stale authorization attach to a later
+        // client's start.
+        pendingSourceClientIDs.removeAll()
+        return
+      }
+      if anonymousSourceStarts > 0 {
+        anonymousSourceStarts -= 1
+      } else if let clientID = activeSourceClientIDs.first {
+        activeSourceClientIDs.remove(clientID)
+      }
       owner.consumers = max(0, owner.consumers - 1)
       if owner.consumers == 0 { owner.restartTimer(); publishDemand() }
     }
+  }
+
+  func disconnect(from client: CMIOExtensionClient) {
+    disconnect(clientID: client.clientID)
+  }
+
+  private func disconnect(clientID: UUID) {
+    if isSink {
+      guard self.client?.clientID == clientID else { return }
+      stopConsumption()
+      return
+    }
+    pendingSourceClientIDs.removeAll { $0 == clientID }
+    guard activeSourceClientIDs.remove(clientID) != nil else { return }
+    owner.consumers = max(0, owner.consumers - 1)
+    if owner.consumers == 0 { owner.restartTimer(); publishDemand() }
   }
 
   func beginConsumption(_ request: @escaping CameraSampleRequest) {
@@ -436,7 +493,13 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     consumePending = false
     generation &+= 1
     self.request = request
-    guard owner.automaticTimers else { return }
+    restartConsumptionTimer()
+  }
+
+  func restartConsumptionTimer() {
+    guard isSink, consuming, owner.automaticTimers else { return }
+    timer?.cancel()
+    timer = nil
     let timer = DispatchSource.makeTimerSource(queue: owner.queue)
     // Poll at twice the selected frame rate, draining ready frames immediately.
     // This bounds ingress latency without a fixed 250 Hz wakeup rate.

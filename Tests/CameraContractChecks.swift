@@ -365,6 +365,24 @@ import XCTest
     }
   }
 
+  func testViewerRestartBeginsNewTimestampSegment() throws {
+    var emittedFlags: [CMIOExtensionStream.DiscontinuityFlags] = []
+    var now = CMTime(value: 60_000, timescale: 60_000)
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false, clock: { now },
+      output: { _, flags, _ in emittedFlags.append(flags) })
+    try camera.queue.sync {
+      try camera.source.startStream()
+      XCTAssertTrue(camera.receive(try sample(time: now), discontinuity: []))
+      try camera.source.stopStream()
+      try camera.source.startStream()
+      now = CMTimeAdd(now, VideoContract.fastDuration)
+      XCTAssertTrue(camera.receive(try sample(time: now), discontinuity: []))
+      XCTAssertEqual(emittedFlags.count, 2)
+      XCTAssertTrue(emittedFlags[1].contains(.time), "A new viewer must start a fresh output segment")
+      try camera.source.stopStream()
+    }
+  }
+
   private func bufferQueue(capacity: Int32 = 3) throws -> CameraBufferQueue {
     var queue: CMSimpleQueue?
     XCTAssertEqual(CMSimpleQueueCreate(allocator: kCFAllocatorDefault, capacity: capacity, queueOut: &queue), noErr)
