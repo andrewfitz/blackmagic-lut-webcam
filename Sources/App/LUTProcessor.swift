@@ -193,16 +193,23 @@ final class LUTProcessor {
     guard VideoContract.tenBit422.contains(type) else { throw VideoError.message("Expected 10-bit 4:2:2 input.") }
     try VideoBufferLayout.validate(input)
     var packedLength = 0
+    var packedRowBytes = 0
     if type == kCVPixelFormatType_422YpCbCr10 {
       let stride = CVPixelBufferGetBytesPerRow(input)
-      let (length, overflow) = stride.multipliedReportingOverflow(by: height)
+      let (sourceLength, overflow) = stride.multipliedReportingOverflow(by: height)
       // Packed shader row offsets use 32-bit word indices. A Metal device may
-      // permit a larger buffer than that indexing can represent.
-      guard !overflow, length > 0, length <= device.maxBufferLength,
-        length / MemoryLayout<UInt32>.size <= Int(UInt32.max) else {
+      // permit a larger stride than that indexing can represent. The fallback
+      // copy below compacts each row to its active v210 bytes, so the source
+      // allocation itself does not need to fit in one GPU buffer.
+      let (activeRowBytes, rowOverflow) = ((width + 5) / 6).multipliedReportingOverflow(by: 16)
+      let (compactLength, compactOverflow) = activeRowBytes.multipliedReportingOverflow(by: height)
+      guard !overflow, !rowOverflow, !compactOverflow, sourceLength > 0,
+        stride / MemoryLayout<UInt32>.size <= Int(UInt32.max), compactLength > 0,
+        compactLength <= device.maxBufferLength else {
         throw VideoError.message("Invalid packed 10-bit capture row stride.")
       }
-      packedLength = length
+      packedLength = compactLength
+      packedRowBytes = activeRowBytes
     }
     if configuration.untouched { releaseIdleResources(); return input }
     guard !configuration.applyLUT || cube != nil else { throw VideoError.message("Load a LUT or turn off Apply LUT.") }
@@ -255,7 +262,19 @@ final class LUTProcessor {
         let length = packedLength
         if packedBuffer == nil || packedBuffer!.length < length { packedBuffer = device.makeBuffer(length: length, options: .storageModeShared) }
         guard let packedBuffer, let base = CVPixelBufferGetBaseAddress(input) else { throw VideoError.message("Cannot read packed capture frame.") }
-        memcpy(packedBuffer.contents(), base, length)
+        let sourceStride = CVPixelBufferGetBytesPerRow(input)
+        if sourceStride == packedRowBytes {
+          memcpy(packedBuffer.contents(), base, length)
+        } else {
+          // v210 rows may include producer padding. Do not upload that padding
+          // or make the shader walk it; a compact staging stride lowers CPU and
+          // GPU traffic while preserving every active media word.
+          for row in 0..<height {
+            memcpy(packedBuffer.contents().advanced(by: row * packedRowBytes),
+              base.advanced(by: row * sourceStride), packedRowBytes)
+          }
+        }
+        parameters.geometry.z = UInt32(packedRowBytes / MemoryLayout<UInt32>.size)
         source = packedBuffer
         packedInputDiagnostics.copiedFrames &+= 1
         packedInputDiagnostics.lastPath = "Copied fallback"
