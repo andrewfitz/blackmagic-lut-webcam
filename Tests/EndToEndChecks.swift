@@ -200,6 +200,24 @@ import XCTest
     XCTAssertFalse(gate.shouldDeliver(inputDuration, duration: VideoContract.slowDuration))
     XCTAssertTrue(gate.shouldDeliver(VideoContract.slowDuration, duration: VideoContract.slowDuration))
   }
+
+  func testCadenceRejectsUnrepresentableForwardDelta() {
+    var gate = FrameRateGate()
+    let first = CMTime(value: Int64.min + 1, timescale: 1)
+    let farFuture = CMTime(value: Int64.max, timescale: 1)
+    XCTAssertTrue(gate.shouldDeliver(first, duration: VideoContract.slowDuration))
+    XCTAssertFalse(gate.shouldDeliver(farFuture, duration: VideoContract.slowDuration),
+      "An overflowing timestamp delta must not bypass cadence validation")
+  }
+
+  func testCadenceRestartsImmediatelyWhenDurationChanges() {
+    var gate = FrameRateGate()
+    XCTAssertTrue(gate.shouldDeliver(.zero, duration: VideoContract.fastDuration))
+    XCTAssertFalse(gate.shouldDeliver(.zero, duration: VideoContract.fastDuration))
+    XCTAssertTrue(gate.shouldDeliver(.zero,
+      duration: VideoContract.slowDuration),
+      "A rate change must not suppress the first frame at the new cadence")
+  }
 }
 
 #if CAPTURE_LIFECYCLE_TESTS

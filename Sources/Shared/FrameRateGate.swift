@@ -23,9 +23,20 @@ struct FrameRateGate {
       last = .invalid
     }
     if last.isValid {
-      let delta = CMTimeSubtract(pts, last)
-      // Allow source-clock jitter while selecting every second 59.94 frame.
-      if delta.isNumeric, delta.seconds >= 0 && delta.seconds < duration.seconds * 0.9 { return false }
+      let ordering = CMTimeCompare(pts, last)
+      if ordering == 0 {
+        // A duplicate timestamp is never a new video frame.
+        return false
+      }
+      if ordering > 0 {
+        let delta = CMTimeSubtract(pts, last)
+        // A valid CMTime subtraction can still overflow for extreme values.
+        // Refuse to publish when the cadence cannot be represented reliably.
+        guard delta.isValid, delta.isNumeric, delta.epoch == 0 else { return false }
+        // Allow source-clock jitter while selecting every second 59.94 frame.
+        if delta.seconds < duration.seconds * 0.9 { return false }
+      }
+      // A backwards source clock re-anchors the gate at the new generation.
     }
     last = pts
     lastDuration = duration
