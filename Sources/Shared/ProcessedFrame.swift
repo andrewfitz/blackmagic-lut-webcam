@@ -130,21 +130,25 @@ public enum FrameFanOutError: Error, Equatable {
 public final class FrameRoute<Payload>: @unchecked Sendable {
   public let id: String
   private weak var owner: FrameFanOut<Payload>?
+  // Route IDs can be reused after cancellation. Keep a registration token so
+  // an old handle cannot operate a later route with the same ID.
+  private let token: AnyObject
 
-  fileprivate init(id: String, owner: FrameFanOut<Payload>) {
+  fileprivate init(id: String, owner: FrameFanOut<Payload>, token: AnyObject) {
     self.id = id
     self.owner = owner
+    self.token = token
   }
 
-  public var isCancelled: Bool { owner?.routeIsCancelled(id) ?? true }
-  public var pendingCount: Int { owner?.routePendingCount(id) ?? 0 }
+  public var isCancelled: Bool { owner?.routeIsCancelled(id, token: token) ?? true }
+  public var pendingCount: Int { owner?.routePendingCount(id, token: token) ?? 0 }
 
   /// Removes and transfers the oldest pending lease to the caller.
-  public func dequeue() -> FrameLease<Payload>? { owner?.dequeue(routeID: id) }
+  public func dequeue() -> FrameLease<Payload>? { owner?.dequeue(routeID: id, token: token) }
 
   /// Cancels this route and synchronously releases all leases still pending in
   /// its queue. A dequeued lease remains valid for its current consumer.
-  public func cancel() { owner?.cancel(routeID: id) }
+  public func cancel() { owner?.cancel(routeID: id, token: token) }
 }
 
 /// Serial, synchronous fan-out coordinator. Every mutation, including route
@@ -155,6 +159,7 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
   private final class RouteState {
     let capacity: Int
     let policy: FrameQueueOverflowPolicy
+    let token = NSObject()
     var pending: [FrameLease<Payload>] = []
 
     init(capacity: Int, policy: FrameQueueOverflowPolicy) {
@@ -162,9 +167,13 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
       self.policy = policy
     }
 
-    func drain() {
-      for lease in pending { lease.release() }
+    /// Detaches pending leases before releasing them. Release callbacks are
+    /// user code and may synchronously mutate the fan-out; clearing first
+    /// keeps those callbacks from invalidating an active queue traversal.
+    func detachPending() -> [FrameLease<Payload>] {
+      let leases = pending
       pending.removeAll(keepingCapacity: false)
+      return leases
     }
   }
 
@@ -185,8 +194,9 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
     return try sync {
       guard !closed else { throw FrameFanOutError.routerClosed }
       guard routes[id] == nil else { throw FrameFanOutError.duplicateRoute(id) }
-      routes[id] = RouteState(capacity: capacity, policy: policy)
-      return FrameRoute(id: id, owner: self)
+      let state = RouteState(capacity: capacity, policy: policy)
+      routes[id] = state
+      return FrameRoute(id: id, owner: self, token: state.token)
     }
   }
 
@@ -197,12 +207,15 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
     sync {
       guard !closed else { return FrameFanOutReport(outcomes: [:], routerClosed: true) }
       var outcomes: [String: FrameRouteEnqueueResult] = [:]
+      // Delay release callbacks until every route has been updated. Callbacks
+      // are user code and may synchronously cancel routes or close the router.
+      var leasesToRelease: [FrameLease<Payload>] = []
       for id in routes.keys.sorted() {
         guard let route = routes[id] else { continue }
         if route.pending.count >= route.capacity {
           switch route.policy {
           case .dropOldest:
-            route.pending.removeFirst().release()
+            leasesToRelease.append(route.pending.removeFirst())
             route.pending.append(frame.retainLease())
             outcomes[id] = .enqueuedDroppingOldest
           case .dropNewest:
@@ -215,29 +228,37 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
           outcomes[id] = .enqueued
         }
       }
+      leasesToRelease.forEach { $0.release() }
       return FrameFanOutReport(outcomes: outcomes)
     }
   }
 
-  fileprivate func dequeue(routeID: String) -> FrameLease<Payload>? {
+  fileprivate func dequeue(routeID: String, token: AnyObject) -> FrameLease<Payload>? {
     sync {
-      guard let route = routes[routeID], !closed else { return nil }
+      guard let route = routes[routeID], route.token === token, !closed else { return nil }
       return route.pending.isEmpty ? nil : route.pending.removeFirst()
     }
   }
 
-  fileprivate func routePendingCount(_ routeID: String) -> Int {
-    sync { routes[routeID]?.pending.count ?? 0 }
-  }
-
-  fileprivate func routeIsCancelled(_ routeID: String) -> Bool {
-    sync { closed || routes[routeID] == nil }
-  }
-
-  fileprivate func cancel(routeID: String) {
+  fileprivate func routePendingCount(_ routeID: String, token: AnyObject) -> Int {
     sync {
-      guard let route = routes.removeValue(forKey: routeID) else { return }
-      route.drain()
+      guard let route = routes[routeID], route.token === token else { return 0 }
+      return route.pending.count
+    }
+  }
+
+  fileprivate func routeIsCancelled(_ routeID: String, token: AnyObject) -> Bool {
+    sync {
+      guard !closed, let route = routes[routeID] else { return true }
+      return route.token !== token
+    }
+  }
+
+  fileprivate func cancel(routeID: String, token: AnyObject) {
+    sync {
+      guard let route = routes[routeID], route.token === token else { return }
+      routes.removeValue(forKey: routeID)
+      route.detachPending().forEach { $0.release() }
     }
   }
 
@@ -247,8 +268,14 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
     sync {
       guard !closed else { return }
       closed = true
-      for route in routes.values { route.drain() }
+      // Remove all registrations before releasing payloads. A release
+      // callback may re-enter the router and must observe a closed router
+      // without mutating a dictionary currently being enumerated.
+      let activeRoutes = Array(routes.values)
       routes.removeAll(keepingCapacity: false)
+      for route in activeRoutes {
+        route.detachPending().forEach { $0.release() }
+      }
     }
   }
 
@@ -257,7 +284,12 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
   public func drain() {
     sync {
       guard !closed else { return }
-      for route in routes.values { route.drain() }
+      // Snapshot route state before invoking callbacks. A callback can cancel
+      // another route, which mutates `routes` while this operation is active.
+      let activeRoutes = Array(routes.values)
+      for route in activeRoutes {
+        route.detachPending().forEach { $0.release() }
+      }
     }
   }
 

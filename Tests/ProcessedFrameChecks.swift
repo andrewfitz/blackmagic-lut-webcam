@@ -167,6 +167,45 @@ private final class FrameReleaseCounter: @unchecked Sendable {
     }
   }
 
+  func testCancelledRouteHandleCannotControlReusedID() throws {
+    let fanOut = FrameFanOut<Int>(label: "processed-frame-test-route-generation")
+    let oldRoute = try fanOut.addRoute(id: "preview", capacity: 1, policy: .reject)
+    oldRoute.cancel()
+    let replacement = try fanOut.addRoute(id: "preview", capacity: 1, policy: .reject)
+
+    XCTAssertTrue(oldRoute.isCancelled)
+    XCTAssertEqual(oldRoute.pendingCount, 0)
+    XCTAssertNil(oldRoute.dequeue())
+
+    let source = frame(50)
+    XCTAssertEqual(fanOut.publish(source)["preview"], .enqueued)
+    XCTAssertEqual(replacement.pendingCount, 1)
+    oldRoute.cancel()
+    XCTAssertEqual(replacement.pendingCount, 1, "A stale handle must not cancel a replacement route")
+    XCTAssertEqual(try XCTUnwrap(replacement.dequeue()?.payload), 50)
+    fanOut.close()
+  }
+
+  func testReleaseCallbacksCanMutateRouterDuringDrain() throws {
+    let fanOut = FrameFanOut<Int>(label: "processed-frame-test-reentrant-drain")
+    let first = try fanOut.addRoute(id: "first", capacity: 1, policy: .reject)
+    let second = try fanOut.addRoute(id: "second", capacity: 1, policy: .reject)
+    var source: ProcessedFrame<Int>? = ProcessedFrame(
+      payload: 60,
+      metadata: metadata(60),
+      onReleased: { second.cancel() })
+    _ = fanOut.publish(try XCTUnwrap(source))
+    // Leave the second route empty so the callback from releasing the first
+    // route mutates the route dictionary while drain is iterating it.
+    _ = second.dequeue()
+    source = nil
+    fanOut.drain()
+    XCTAssertFalse(first.isCancelled)
+    XCTAssertTrue(second.isCancelled)
+    XCTAssertEqual(first.pendingCount, 0)
+    fanOut.close()
+  }
+
   static let allTests = [
     ("independent route leases", testOneProcessedFrameHasIndependentRouteLeases),
     ("drop oldest bounds queues", testDropOldestBoundsRouteAndReleasesDroppedLease),
@@ -174,5 +213,7 @@ private final class FrameReleaseCounter: @unchecked Sendable {
     ("route cancellation", testCancellationOnlyDrainsItsRoute),
     ("serial teardown", testCloseDrainsPendingButKeepsDequeuedLeaseValid),
     ("route validation", testInvalidAndDuplicateRoutesAreRejected),
+    ("route generation", testCancelledRouteHandleCannotControlReusedID),
+    ("reentrant drain", testReleaseCallbacksCanMutateRouterDuringDrain),
   ]
 }
