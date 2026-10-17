@@ -144,6 +144,36 @@ import XCTest
     XCTAssertEqual(model.feeds[1].status, .idle)
   }
 
+  func testFeedRefreshRetainsRemovedActiveFeedUntilStopped() {
+    let driver = Driver()
+    let model = RecordingModel(feeds: [RecordingFeedDescriptor(id: first, name: "One")], driver: driver)
+    model.outputFolder = URL(fileURLWithPath: "/tmp/recordings")
+    model.record(feedID: first)
+
+    model.updateFeeds([])
+    XCTAssertEqual(model.feeds.map(\.id), [first],
+      "An active recording must remain addressable after its descriptor is removed")
+    XCTAssertEqual(model.feeds[0].status, .recording)
+
+    model.stop(feedID: first)
+    XCTAssertEqual(model.feeds[0].status, .idle)
+    model.updateFeeds([])
+    XCTAssertTrue(model.feeds.isEmpty,
+      "Once stopped, the removed feed should disappear on the next refresh")
+  }
+
+  func testDuplicateFeedDescriptorsAreCollapsed() {
+    let driver = Driver()
+    let model = RecordingModel(feeds: [RecordingFeedDescriptor(id: first, name: "One")], driver: driver)
+    model.updateFeeds([
+      RecordingFeedDescriptor(id: first, name: "One"),
+      RecordingFeedDescriptor(id: first, name: "One duplicate"),
+      RecordingFeedDescriptor(id: second, name: "Two"),
+      RecordingFeedDescriptor(id: second, name: "Two duplicate"),
+    ])
+    XCTAssertEqual(model.feeds.map(\.id), [first, second])
+  }
+
   func testNativeDriverUsesPerFeedSourceRecorderAndReportsAudioGap() throws {
     let capture = CaptureController(services: CaptureServices(
       start: { _, _, _, _ in }, stop: {}, connect: { _, _ in }, disconnect: {}, send: { _ in true }))
@@ -178,6 +208,8 @@ import XCTest
     ("all feed error isolation", testAllFeedActionsContinueAfterOneFeedError),
     ("folder requirement", testFolderRequirementIsReportedPerFeed),
     ("feed refresh state", testFeedRefreshPreservesLiveStateAndDropsRemovedFeeds),
+    ("feed refresh active retention", testFeedRefreshRetainsRemovedActiveFeedUntilStopped),
+    ("duplicate feed descriptors", testDuplicateFeedDescriptorsAreCollapsed),
     ("native source recording driver", testNativeDriverUsesPerFeedSourceRecorderAndReportsAudioGap),
   ]
 }

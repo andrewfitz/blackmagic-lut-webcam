@@ -115,6 +115,7 @@ public final class RecordingOutputManager: @unchecked Sendable {
   private let fileManager: FileManager
   private let lock = NSLock()
   private var reservedBytes: UInt64 = 0
+  private var pathNonce: UInt64 = 0
 
   public init(configuration: RecordingOutputConfiguration,
               diskSpace: any RecordingOutputDiskSpaceProviding = FileManagerRecordingOutputDiskSpaceProvider(),
@@ -216,6 +217,11 @@ public final class RecordingOutputManager: @unchecked Sendable {
   }
 
   private func makePaths(feedID: String, sessionID: UUID) throws -> RecordingOutputPaths {
+    // Path allocation is performed under the same lock as reservations. This
+    // manager is used by multiple feed starts, and an external AVAssetWriter
+    // does not create its temporary file until after this method returns.
+    lock.lock()
+    defer { lock.unlock() }
     let feedDirectory = configuration.rootDirectory.appendingPathComponent(feedID, isDirectory: true)
       .standardizedFileURL
     guard Self.isDescendant(feedDirectory, of: configuration.rootDirectory) else {
@@ -227,8 +233,20 @@ public final class RecordingOutputManager: @unchecked Sendable {
         throw RecordingOutputError.unsafePath
       }
     }
-    let token = sessionID.uuidString.lowercased()
-    let stem = "\(feedID)-\(token)"
+    let sessionToken = sessionID.uuidString.unicodeScalars.reduce(UInt64(0)) { partial, scalar in
+      partial &* 131 &+ UInt64(scalar.value)
+    }
+    let nonce = pathNonce
+    pathNonce &+= 1
+    let uniqueToken = sessionToken &* 1_000_003 &+ nonce
+    let stemBase = "\(feedID)-\(Self.utcFileStem())-\(uniqueToken)"
+    var stem = stemBase
+    var suffix = 2
+    while fileManager.fileExists(atPath: feedDirectory.appendingPathComponent(".\(stem).partial").path)
+      || fileManager.fileExists(atPath: feedDirectory.appendingPathComponent("\(stem).\(configuration.fileExtension)").path) {
+      stem = "\(stemBase)-\(suffix)"
+      suffix += 1
+    }
     let temporary = feedDirectory.appendingPathComponent(".\(stem).partial", isDirectory: false)
     let final = feedDirectory.appendingPathComponent("\(stem).\(configuration.fileExtension)", isDirectory: false)
     guard Self.isDescendant(temporary, of: configuration.rootDirectory),
@@ -240,6 +258,14 @@ public final class RecordingOutputManager: @unchecked Sendable {
     }
     return RecordingOutputPaths(rootDirectory: configuration.rootDirectory,
       feedDirectory: feedDirectory, temporaryFile: temporary, finalFile: final)
+  }
+
+  private static func utcFileStem() -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+    return formatter.string(from: Date())
   }
 
   fileprivate static func prepareRoot(_ root: URL, fileManager: FileManager) throws {
@@ -255,7 +281,10 @@ public final class RecordingOutputManager: @unchecked Sendable {
   fileprivate static func validateFeedID(_ value: String) throws -> String {
     guard !value.isEmpty, value != ".", value != "..", value.count <= 128,
       !value.unicodeScalars.contains(where: { scalar in
-        scalar == "/" || scalar == "\\" || scalar.value == 0 || scalar.properties.isWhitespace && scalar.value < 32
+        // Keep feed IDs a single, printable path component. `isWhitespace`
+        // does not cover every C0 control (for example U+0001), and those
+        // bytes can still produce ambiguous or unrenderable file paths.
+        scalar == "/" || scalar == "\\" || scalar.value < 0x20 || scalar.value == 0x7F
       }) else {
       throw RecordingOutputError.invalidFeedID
     }
@@ -373,7 +402,11 @@ public final class RecordingOutputSession: @unchecked Sendable {
     guard stateValue == .paused else {
       throw RecordingOutputError.invalidState(stateValue, operation: "resume")
     }
-    guard handle != nil else {
+    // External media writers own the file descriptor, so their session never
+    // has a local FileHandle. Their writer lifecycle is paused/resumed by the
+    // caller (for example SourceRecorderCore); the output boundary only needs
+    // to preserve its admission reservation and state.
+    guard handle != nil || externalWriterOwnsFile else {
       stateValue = .failed
       releaseReservationLocked()
       throw RecordingOutputError.ioFailure("Temporary output file is closed.")
@@ -433,12 +466,25 @@ public final class RecordingOutputSession: @unchecked Sendable {
         handle.closeFile()
         self.handle = nil
       }
+      // The external writer creates the temporary path after admission. Check
+      // the resolved path again before reading or moving it so a replaced
+      // path cannot make the atomic rename escape the configured root.
+      guard RecordingOutputManager.isDescendant(paths.temporaryFile,
+        of: paths.rootDirectory),
+        RecordingOutputManager.isDescendant(paths.finalFile,
+          of: paths.rootDirectory) else {
+        throw RecordingOutputError.unsafePath
+      }
       guard manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path) else {
         throw RecordingOutputError.ioFailure("The media writer did not produce a temporary output file.")
       }
+      let temporaryAttributes = try manager.fileManagerRef.attributesOfItem(
+        atPath: paths.temporaryFile.path)
+      guard (temporaryAttributes[.type] as? FileAttributeType) != .typeSymbolicLink else {
+        throw RecordingOutputError.unsafePath
+      }
       if externalWriterOwnsFile {
-        let attributes = try manager.fileManagerRef.attributesOfItem(atPath: paths.temporaryFile.path)
-        let byteCount = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let byteCount = (temporaryAttributes[.size] as? NSNumber)?.uint64Value ?? 0
         guard byteCount > 0 else {
           throw RecordingOutputError.ioFailure("The media writer produced an empty output file.")
         }

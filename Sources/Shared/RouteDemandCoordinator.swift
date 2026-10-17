@@ -140,9 +140,19 @@ struct RouteDemandCoordinator: Sendable {
   }
 
   /// Route-level demand has no implicit source polling. This is a pure lookup
-  /// over leases currently held by callers.
+  /// over leases currently held by callers. Preview-only leases are included
+  /// because this property describes all active routes, including diagnostics.
   var activeFeedIDs: Set<String> {
     Set(leases.keys.map(\.feedID))
+  }
+
+  /// Feed IDs that currently have a route which requires source capture.
+  /// Preview-only leases intentionally do not appear here: a visible preview
+  /// can exist while its source capture remains idle.
+  var activeSourceFeedIDs: Set<String> {
+    Set(leases.keys.compactMap { key in
+      key.route.contributesToSourceDemand ? key.feedID : nil
+    })
   }
 
   /// Acquire a route lease. Repeating the same `(feed, route, ownerID)` call

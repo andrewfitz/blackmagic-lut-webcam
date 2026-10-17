@@ -285,11 +285,16 @@ struct HEVCAssetWriterContract {
     return settings
   }
 
-  static func pixelBufferAttributes(for profile: HEVCRecordingProfile) -> [String: Any] {
-    [
+  static func pixelBufferAttributes(for profile: HEVCRecordingProfile,
+                                    width: Int? = nil,
+                                    height: Int? = nil) -> [String: Any] {
+    var attributes: [String: Any] = [
       kCVPixelBufferPixelFormatTypeKey as String: profile.pixelFormat,
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ]
+    if let width { attributes[kCVPixelBufferWidthKey as String] = width }
+    if let height { attributes[kCVPixelBufferHeightKey as String] = height }
+    return attributes
   }
 }
 
@@ -314,7 +319,8 @@ final class HEVCAssetWriter: @unchecked Sendable {
     input = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
     input.expectsMediaDataInRealTime = true
     adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
-      sourcePixelBufferAttributes: HEVCAssetWriterContract.pixelBufferAttributes(for: configuration.profile))
+      sourcePixelBufferAttributes: HEVCAssetWriterContract.pixelBufferAttributes(
+        for: configuration.profile, width: configuration.width, height: configuration.height))
     guard writer.canAdd(input) else {
       throw HEVCRecordingError.writerConfigurationFailed("AVAssetWriter rejected the video input.")
     }
@@ -324,6 +330,10 @@ final class HEVCAssetWriter: @unchecked Sendable {
   }
 
   func start(at sourceTime: CMTime) throws {
+    guard sourceTime.isValid, sourceTime.isNumeric, sourceTime.epoch == 0,
+      sourceTime.timescale > 0, sourceTime.value >= 0 else {
+      throw HEVCRecordingError.writerStartFailed("The source start time must be a non-negative CMTime.")
+    }
     guard writer.startWriting() else {
       throw HEVCRecordingError.writerStartFailed(writer.error?.localizedDescription ?? "unknown error")
     }
@@ -332,6 +342,11 @@ final class HEVCAssetWriter: @unchecked Sendable {
 
   @discardableResult
   func append(_ pixelBuffer: CVPixelBuffer, at presentationTime: CMTime) throws -> Bool {
+    guard presentationTime.isValid, presentationTime.isNumeric,
+      presentationTime.epoch == 0, presentationTime.timescale > 0,
+      presentationTime.value >= 0 else {
+      throw HEVCRecordingError.writerAppendFailed("The presentation time must be a non-negative CMTime.")
+    }
     guard CVPixelBufferGetPixelFormatType(pixelBuffer) == configuration.profile.pixelFormat else {
       throw HEVCRecordingError.writerAppendFailed("Expected 10-bit 4:2:2 video-range input.")
     }

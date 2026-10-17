@@ -16,9 +16,11 @@ enum VideoBufferLayout {
       let (minimumStride, strideOverflow) = (paddedWidth / 6).multipliedReportingOverflow(by: 16)
       let stride = CVPixelBufferGetBytesPerRow(image)
       let (length, lengthOverflow) = stride.multipliedReportingOverflow(by: height)
+      let dataSize = CVPixelBufferGetDataSize(image)
       guard !CVPixelBufferIsPlanar(image), CVPixelBufferGetPlaneCount(image) == 0,
         !widthOverflow, !strideOverflow, !lengthOverflow, length > 0,
-        stride >= minimumStride, stride.isMultiple(of: 4) else {
+        stride >= minimumStride, stride.isMultiple(of: 4),
+        dataSize <= 0 || length <= dataSize else {
         throw VideoError.message("Invalid packed 10-bit video layout.")
       }
       return
@@ -39,10 +41,14 @@ enum VideoBufferLayout {
       let rows = plane == 1 && is420 ? height / 2 : height
       let stride = CVPixelBufferGetBytesPerRowOfPlane(image, plane)
       let (length, lengthOverflow) = stride.multipliedReportingOverflow(by: rows)
+      // Some caller-supplied planar buffers report zero for aggregate data
+      // size, so only enforce this bound when Core Video provides it.
+      let dataSize = CVPixelBufferGetDataSize(image)
       guard CVPixelBufferGetWidthOfPlane(image, plane) == (plane == 0 ? width : width / 2),
         CVPixelBufferGetHeightOfPlane(image, plane) == rows,
         stride >= minimumStride, stride.isMultiple(of: bytesPerComponent),
-        !lengthOverflow, length > 0 else {
+        !lengthOverflow, length > 0,
+        dataSize <= 0 || length <= dataSize else {
         throw VideoError.message("Invalid video plane \(plane) dimensions or row stride.")
       }
     }

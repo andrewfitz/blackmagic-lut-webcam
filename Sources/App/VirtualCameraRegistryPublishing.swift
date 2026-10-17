@@ -26,11 +26,17 @@ extension VirtualCameraRegistrySnapshot {
       devices = [.program(displayName: "UltraStudio LUT · Program")]
     }
 
-    // A valid previous snapshot from another app-group cannot be used as a
-    // generation source.  This also makes tests and first launch deterministic
-    // when the local-development group changes.
-    let currentGeneration = previous?.appGroupIdentifier == appGroupIdentifier
-      ? (previous?.generation ?? 0) : 0
+    // A previous snapshot is only a generation source when it is itself a
+    // complete snapshot for this app group.  A malformed same-group value may
+    // have come from a partial write or an older schema and must not advance
+    // the rollback fence.
+    let currentGeneration: UInt64
+    if let previous, previous.appGroupIdentifier == appGroupIdentifier,
+       (try? previous.validate()) != nil {
+      currentGeneration = previous.generation
+    } else {
+      currentGeneration = 0
+    }
     return VirtualCameraRegistrySnapshot(
       generation: currentGeneration == UInt64.max ? UInt64.max : currentGeneration + 1,
       appGroupIdentifier: appGroupIdentifier,

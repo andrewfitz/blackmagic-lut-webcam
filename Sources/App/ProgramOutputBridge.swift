@@ -32,6 +32,12 @@ final class ProgramOutputBridge: @unchecked Sendable {
   private let sampleFactory = VideoSampleFactory()
   private var connected = false
   private var demand = false
+  // Keep the most recent negotiated contract so a transient CMIO enqueue
+  // failure can be recovered while the camera client is still demanding the
+  // route. Without this, `connected` becomes false and every subsequent pump
+  // silently returns until a new demand transition arrives.
+  private var demandConfiguration: PipelineConfiguration?
+  private var demandPassthroughFormat: OSType?
   private var statistics = Statistics()
 
   /// The production bridge uses the dedicated Program CMIO destination.
@@ -80,9 +86,13 @@ final class ProgramOutputBridge: @unchecked Sendable {
       guard active else {
         if connected { disconnectSink() }
         connected = false
+        demandConfiguration = nil
+        demandPassthroughFormat = nil
         drainLocked()
         return
       }
+      demandConfiguration = configuration
+      demandPassthroughFormat = passthroughFormat
       guard !connected else {
         pumpLocked()
         return
@@ -105,7 +115,20 @@ final class ProgramOutputBridge: @unchecked Sendable {
   /// hardware or GPU work is started in the background.
   func pump() {
     sync {
-      guard demand, connected else { return }
+      guard demand else { return }
+      if !connected {
+        guard let configuration = demandConfiguration,
+          let passthroughFormat = demandPassthroughFormat else { return }
+        do {
+          try connectSink(configuration, passthroughFormat)
+          connected = true
+        } catch {
+          // Keep demand asserted. The next frame gives the bridge another
+          // opportunity to reconnect without requiring a second CMIO client
+          // transition, while retaining queued frames for the eventual sink.
+          return
+        }
+      }
       pumpLocked()
     }
   }
@@ -117,6 +140,8 @@ final class ProgramOutputBridge: @unchecked Sendable {
       demand = false
       if connected { disconnectSink() }
       connected = false
+      demandConfiguration = nil
+      demandPassthroughFormat = nil
       drainLocked()
     }
   }
@@ -143,9 +168,8 @@ final class ProgramOutputBridge: @unchecked Sendable {
       } catch {
         statistics.sendErrors &+= 1
         // A failed enqueue usually means the CMIO client released the
-        // virtual camera between our demand check and this send. Stop
-        // hammering a dead queue on every frame; the next explicit demand
-        // transition can reconnect it cleanly.
+        // virtual camera between our demand check and this send. Keep demand
+        // asserted so the next demanded frame can reconnect the sink.
         if connected { disconnectSink() }
         connected = false
         drainLocked()

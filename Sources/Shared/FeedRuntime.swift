@@ -26,6 +26,7 @@ final class ProgramOutputRoute {
 
   var selectedFeedID: FeedID? { switcher.selectedFeedID }
   var pendingFeedID: FeedID? { switcher.pendingCut }
+  var pendingCutTime: CMTime? { switcher.pendingCutTime }
   var hasPendingCut: Bool { switcher.hasPendingCut }
 
   func updateFeeds(_ feedIDs: [FeedID]) {
@@ -55,6 +56,14 @@ final class ProgramOutputRoute {
   func requestCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
     switcher.requestManualCut(to: feedID)
   }
+
+  @discardableResult
+  func requestCut(to feedID: FeedID, noEarlierThan: CMTime?)
+    -> ProgramCutRequestResult<FeedID> {
+    switcher.requestManualCut(to: feedID, at: noEarlierThan)
+  }
+
+  func cancelPendingCut() { switcher.cancelPendingCut() }
 
   @discardableResult
   func evaluate(at mediaTime: CMTime) -> SwitcherEvaluation {
@@ -106,7 +115,12 @@ final class ProgramOutputRoute {
     try fanOut.addRoute(id: id, capacity: capacity, policy: policy)
   }
 
-  func reset() { switcher.reset() }
+  func reset() {
+    // Resetting the scheduler starts a new Program timeline. Any queued
+    // leases belong to the old timeline and must not be delivered afterward.
+    fanOut.drain()
+    switcher.reset()
+  }
 }
 
 /// The lifecycle owned by one configured feed. Capture and camera transport
@@ -213,13 +227,19 @@ final class FeedCoordinator {
   private var programBridge: ProgramOutputBridge?
   private var demandCoordinator: RouteDemandCoordinator
   private var programConsumerActive = false
+  var onProgramCutApplied: ((FeedID, CMTime, CMTime) -> Void)?
 
   init(snapshot: AppSettingsSnapshot = AppSettingsSnapshot(),
        capturePool: FeedCapturePool = FeedCapturePool(),
        registryStore: VirtualCameraRegistryStore? = nil) {
     let safe = snapshot.validated() ?? AppSettingsSnapshot()
     descriptors = safe.feeds
-    selectedFeedID = safe.selectedFeedID
+    // A persisted selection can point at a disabled descriptor. Keep the
+    // collection and the live Program route on the same usable source so a
+    // restart cannot select a feed that `start` is guaranteed to reject.
+    selectedFeedID = safe.feeds.first(where: { $0.id == safe.selectedFeedID && $0.enabled })?.id
+      ?? safe.feeds.first(where: \.enabled)?.id
+      ?? safe.feeds[0].id
     outputMode = safe.outputMode
     switcher = safe.switcher
     virtualCameraRegistryVersion = safe.virtualCameraRegistryVersion
@@ -233,8 +253,13 @@ final class FeedCoordinator {
     let initialDevices = Self.registryDevices(for: safe.outputMode, feeds: safe.feeds)
     let stored = registryStore?.load()
     let generation = max(stored?.generation ?? 0, UInt64(max(1, safe.virtualCameraRegistryVersion)))
+    // The registry store can be pointed at a test or staging app group. Keep
+    // the in-memory baseline on that same suite when it has no valid slots;
+    // otherwise the first publication would fail the store's app-group fence.
+    let registryGroup = registryStore?.groupIdentifier
+      ?? VirtualCameraRegistrySnapshot.defaultAppGroupIdentifier
     virtualCameraRegistrySnapshot = VirtualCameraRegistrySnapshot(generation: generation,
-      devices: initialDevices)
+      appGroupIdentifier: registryGroup, devices: initialDevices)
     if registryStore != nil { publishVirtualCameraRegistry() }
   }
 
@@ -252,6 +277,10 @@ final class FeedCoordinator {
   /// changes or reuses another feed's UDLBackend.
   func capture(for id: FeedID) -> CaptureController {
     capturePool.controller(for: id)
+  }
+
+  func isFeedRunning(_ id: FeedID) -> Bool {
+    sessions[id]?.isRunning == true
   }
 
   /// Installs the single consumer for the Program CMIO stream. The route is
@@ -279,7 +308,24 @@ final class FeedCoordinator {
 
   func setProcessedFrameHandler(feedID: FeedID,
                                 handler: ((ProcessedFrame<CVPixelBuffer>) -> Void)?) {
-    capture(for: feedID).onProcessedFrame = handler
+    guard let handler else {
+      capture(for: feedID).onProcessedFrame = nil
+      return
+    }
+    capture(for: feedID).onProcessedFrame = { [weak self] frame, generation in
+      guard let self else { return }
+      // Capture callbacks run off-main and may already be in flight when a
+      // feed is stopped/restarted. Re-check the native controller generation
+      // on the coordinator actor immediately before handing the frame to
+      // consumers. The controller token is authoritative because teardown
+      // can invoke stop more than once for a single FeedSession.
+      Task { @MainActor [weak self] in
+        guard let self, let session = self.sessions[feedID], session.isRunning,
+          self.capture(for: feedID).isAccepting(feedID: feedID),
+          self.capture(for: feedID).generationToken == generation else { return }
+        handler(frame)
+      }
+    }
   }
 
   func setCameraOutputEnabled(feedID: FeedID, enabled: Bool) {
@@ -298,7 +344,7 @@ final class FeedCoordinator {
 
   @discardableResult
   func select(_ id: FeedID) -> Bool {
-    guard descriptors.contains(where: { $0.id == id }) else { return false }
+    guard descriptors.contains(where: { $0.id == id && $0.enabled }) else { return false }
     selectedFeedID = id
     if switcher.selectedFeedID == nil {
       switcher.selectedFeedID = id
@@ -311,14 +357,32 @@ final class FeedCoordinator {
   func update(_ descriptor: FeedDescriptor) {
     guard let index = descriptors.firstIndex(where: { $0.id == descriptor.id }) else {
       descriptors.append(descriptor)
+      if !descriptor.enabled {
+        capturePool.stop(descriptor.id)
+      }
       programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
       syncSwitcherMirror()
       publishVirtualCameraRegistry()
       return
     }
     descriptors[index] = descriptor
+    // A descriptor can be disabled while its session is idle (for example,
+    // when a capture owner was started directly by a camera demand callback).
+    // Stopping only the FeedSession in that case leaves the native capture
+    // owner active and allows late frames to outlive the descriptor.
+    if !descriptor.enabled {
+      capturePool.stop(descriptor.id)
+      if selectedFeedID == descriptor.id {
+        selectedFeedID = descriptors.first(where: \.enabled)?.id ?? descriptor.id
+      }
+    }
     sessions[descriptor.id]?.update(descriptor: descriptor)
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
+    if programConsumerActive {
+      let selected = outputMode == .program ? programOutput.selectedFeedID?.rawValue : nil
+      demandCoordinator.selectProgram(feedID: selected)
+      _ = demandCoordinator.drainTransitions()
+    }
     syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }
@@ -343,10 +407,17 @@ final class FeedCoordinator {
       return false
     }
     guard sessions[id]?.isRunning != true else { return false }
+    // Dedicated/manual consumers represent external owners of this feed. A
+    // topology removal must wait until those owners release their demand;
+    // otherwise the demand coordinator retains an orphaned source ID.
+    let demand = demandCoordinator.snapshot(for: id.rawValue)
+    guard !demand.dedicatedCamera, !demand.manualOutput else { return false }
     guard capturePool.remove(id) else { return false }
     sessions.removeValue(forKey: id)?.stop()
     descriptors.remove(at: index)
-    if selectedFeedID == id { selectedFeedID = descriptors[0].id }
+    if selectedFeedID == id {
+      selectedFeedID = descriptors.first(where: \.enabled)?.id ?? descriptors[0].id
+    }
     if switcher.selectedFeedID == id { switcher.selectedFeedID = selectedFeedID }
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
     syncSwitcherMirror()
@@ -359,9 +430,13 @@ final class FeedCoordinator {
   }
 
   @discardableResult
-  func start(_ id: FeedID) -> Bool { session(for: id).start() }
+  func start(_ id: FeedID) -> Bool {
+    guard descriptors.contains(where: { $0.id == id }) else { return false }
+    return session(for: id).start()
+  }
 
   func stop(_ id: FeedID) {
+    guard descriptors.contains(where: { $0.id == id }) else { return }
     capturePool.stop(id)
     session(for: id).stop()
   }
@@ -380,6 +455,7 @@ final class FeedCoordinator {
   }
 
   func stopCapture(feedID: FeedID) {
+    guard descriptors.contains(where: { $0.id == feedID }) else { return }
     capturePool.stop(feedID)
     session(for: feedID).stop()
   }
@@ -423,6 +499,14 @@ final class FeedCoordinator {
       programOutput.selectedFeedID != requested {
       _ = programOutput.requestCut(to: requested)
     }
+    // A Program consumer is a source-demand route. Release it when leaving
+    // Program mode and rebind it to the live scheduler when entering Program
+    // mode, so a mode toggle cannot leave a removed/old feed running.
+    if programConsumerActive {
+      let selected = mode == .program ? programOutput.selectedFeedID?.rawValue : nil
+      demandCoordinator.selectProgram(feedID: selected)
+      _ = demandCoordinator.drainTransitions()
+    }
     syncSwitcherMirror()
     publishVirtualCameraRegistry()
   }
@@ -451,6 +535,19 @@ final class FeedCoordinator {
   }
 
   @discardableResult
+  func requestProgramCut(to feedID: FeedID, noEarlierThan: CMTime?)
+    -> ProgramCutRequestResult<FeedID> {
+    let result = programOutput.requestCut(to: feedID, noEarlierThan: noEarlierThan)
+    syncSwitcherMirror()
+    return result
+  }
+
+  func cancelProgramCut() {
+    programOutput.cancelPendingCut()
+    syncSwitcherMirror()
+  }
+
+  @discardableResult
   func evaluateSwitcher(at mediaTime: CMTime) -> SwitcherEvaluation {
     let result = programOutput.evaluate(at: mediaTime)
     syncSwitcherMirror()
@@ -468,8 +565,12 @@ final class FeedCoordinator {
     let result = programOutput.ingest(feedID: feedID, frame: frame)
     syncSwitcherMirror()
     if programConsumerActive { programBridge?.pump() }
-    if case .cutApplied = result.decision {
-      selectedFeedID = feedID
+    if case let .cutApplied(mapped, _) = result.decision {
+      // Program routing selection is owned by ProgramOutputRoute. Keep the
+      // app's selected feed/UI editing identity stable across an automatic
+      // A→B cut; changing it here makes status callbacks and persisted device
+      // settings switch to the wrong source.
+      onProgramCutApplied?(feedID, mapped.sourceTime, mapped.programTime)
       if programConsumerActive {
         demandCoordinator.selectProgram(feedID: feedID.rawValue)
       }
@@ -490,7 +591,9 @@ final class FeedCoordinator {
   func setProgramConsumer(_ active: Bool, at time: TimeInterval? = nil)
     -> [SourceDemandTransition] {
     programConsumerActive = active
-    demandCoordinator.selectProgram(feedID: active ? (switcherCoordinator.selectedFeedID?.rawValue) : nil,
+    let selected = active && outputMode == .program
+      ? programOutput.selectedFeedID?.rawValue : nil
+    demandCoordinator.selectProgram(feedID: selected,
       at: time)
     return demandCoordinator.drainTransitions()
   }
@@ -499,6 +602,12 @@ final class FeedCoordinator {
   func setDedicatedCameraConsumer(feedID: FeedID, active: Bool,
                                   ownerID: String? = nil, at time: TimeInterval? = nil)
     -> [SourceDemandTransition] {
+    // Releases must remain possible after a descriptor is disabled so an
+    // existing consumer can relinquish its lease before topology removal.
+    let known = descriptors.contains(where: { $0.id == feedID })
+    guard known && (!active || descriptors.contains(where: { $0.id == feedID && $0.enabled })) else {
+      return []
+    }
     if active {
       _ = demandCoordinator.acquire(feedID: feedID.rawValue, route: .dedicatedCamera,
         ownerID: ownerID, at: time)
@@ -514,7 +623,9 @@ final class FeedCoordinator {
     demandCoordinator.advance(to: time)
   }
 
-  var activeDemandFeedIDs: Set<String> { demandCoordinator.activeFeedIDs }
+  /// Feed IDs that currently keep a source capture demanded. Preview-only
+  /// leases are intentionally omitted from this runtime-facing view.
+  var activeDemandFeedIDs: Set<String> { demandCoordinator.activeSourceFeedIDs }
 
   /// ProgramOutputRoute owns the live scheduler. Keep the public mirror used
   /// by persistence and diagnostics synchronized after every route mutation.

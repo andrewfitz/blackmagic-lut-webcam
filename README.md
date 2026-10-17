@@ -100,11 +100,18 @@ third-party tools. Metal shader source is bundled and compiled through Metal at
 runtime, so the separate downloadable Xcode Metal toolchain is not required.
 
 The app is built unsigned with Release optimization by default. Use
-`bash scripts/build.sh --debug` for a debugger build. The default app is at:
+`bash scripts/build.sh --debug` for a debugger build. The stable app-bundle
+alias, overwritten on every build, is at:
 
 ```text
-/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut/Build/Products/Release/UltraStudio LUT.app
+/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/UltraStudio LUT.app
 ```
+
+Xcode derived data and test objects use a unique UTC timestamp/PID directory
+under `/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut/`
+so overlapping builds and test runs cannot overwrite one another. The stable
+`build.log`, `test-compile.log`, and `tests.log` aliases point to the latest
+run; timestamped logs remain in the `logs/` directory.
 
 ## Install the camera
 
@@ -167,6 +174,20 @@ and any HDMI display LUT disabled. Optionally load the matching LUT here. Select
 processing checkboxes and start the
 feed. In Zoom, choose **UltraStudio LUT**. Zoom determines transmitted quality
 and frame rate from its own supported features, settings, and meeting conditions.
+
+## Natural talking-head auto-switcher
+
+Program mode includes a **Natural talking head** strategy. When enabled, the
+app feeds live audio cues to the Rust director in `Tools/auto-switcher`, queues
+decisions at Program frame boundaries, and acknowledges them only after the
+target frame is applied. The hard shot maximum forces a bounded cut, preferring
+the nearest speech gap and using the configured grace period only when no safe
+gap arrives. The standalone package also accepts realtime JSONL or PCM16LE and
+can analyze complete audio/video files offline; see
+[Tools/auto-switcher/README.md](Tools/auto-switcher/README.md).
+Recorded source movies use the stable feed identifier plus a UTC datetime in
+their filenames, while each switcher session writes a matching datetime JSON
+sidecar in the recording folder.
 
 ## Qualification status and boundaries
 

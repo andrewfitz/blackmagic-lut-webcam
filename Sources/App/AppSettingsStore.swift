@@ -35,7 +35,131 @@ enum FeedOutputMode: String, Codable, Equatable, Hashable, Sendable {
 enum SwitcherStrategy: String, Codable, Equatable, Hashable, Sendable {
   case manual
   case fixedInterval
+  case naturalTalkingHead
   case dynamicAnalysis
+}
+
+struct NaturalTalkingHeadSettings: Codable, Equatable, Sendable {
+  var enabled = false
+  var anchorFeedID: FeedID?
+  var emphasisFeedID: FeedID?
+  var mode: TalkingHeadDirectorMode = .transcriptAssisted
+  var minimumShotDuration = 10.0
+  var cooldown = 1.5
+  var emphasisHold = 5.0
+  var softMaximumShotDuration = 20.0
+  var maximumShotDuration = 30.0
+  var forcedCutGracePeriod = 2.0
+  var forcedBoundaryLookback = 1.0
+  var boundaryWindow = 0.24
+  var candidateDwell = 0.30
+  var transcriptConfidenceThreshold: Float = 0.72
+  var pauseBoundaryDuration = 0.22
+  var cutThreshold: Float = 0.68
+  var hysteresisMargin: Float = 0.12
+  var transcriptOutputDelay = 0.35
+  var manualHold = false
+
+  private enum CodingKeys: String, CodingKey {
+    case enabled, anchorFeedID, emphasisFeedID, mode, minimumShotDuration, cooldown,
+      emphasisHold, softMaximumShotDuration, maximumShotDuration, forcedCutGracePeriod,
+      forcedBoundaryLookback, boundaryWindow, candidateDwell, transcriptConfidenceThreshold,
+      pauseBoundaryDuration, cutThreshold, hysteresisMargin, transcriptOutputDelay, manualHold
+  }
+
+  init(enabled: Bool = false, anchorFeedID: FeedID? = nil, emphasisFeedID: FeedID? = nil,
+       mode: TalkingHeadDirectorMode = .transcriptAssisted, minimumShotDuration: Double = 10,
+       cooldown: Double = 1.5, emphasisHold: Double = 5,
+       softMaximumShotDuration: Double = 20, maximumShotDuration: Double = 30,
+       forcedCutGracePeriod: Double = 2, forcedBoundaryLookback: Double = 1,
+       boundaryWindow: Double = 0.24, candidateDwell: Double = 0.30,
+       transcriptConfidenceThreshold: Float = 0.72, pauseBoundaryDuration: Double = 0.22,
+       cutThreshold: Float = 0.68, hysteresisMargin: Float = 0.12,
+       transcriptOutputDelay: Double = 0.35, manualHold: Bool = false) {
+    self.enabled = enabled
+    self.anchorFeedID = anchorFeedID
+    self.emphasisFeedID = emphasisFeedID
+    self.mode = mode
+    self.minimumShotDuration = minimumShotDuration
+    self.cooldown = cooldown
+    self.emphasisHold = emphasisHold
+    self.softMaximumShotDuration = softMaximumShotDuration
+    self.maximumShotDuration = maximumShotDuration
+    self.forcedCutGracePeriod = forcedCutGracePeriod
+    self.forcedBoundaryLookback = forcedBoundaryLookback
+    self.boundaryWindow = boundaryWindow
+    self.candidateDwell = candidateDwell
+    self.transcriptConfidenceThreshold = transcriptConfidenceThreshold
+    self.pauseBoundaryDuration = pauseBoundaryDuration
+    self.cutThreshold = cutThreshold
+    self.hysteresisMargin = hysteresisMargin
+    self.transcriptOutputDelay = transcriptOutputDelay
+    self.manualHold = manualHold
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+    anchorFeedID = try values.decodeIfPresent(FeedID.self, forKey: .anchorFeedID)
+    emphasisFeedID = try values.decodeIfPresent(FeedID.self, forKey: .emphasisFeedID)
+    mode = try values.decodeIfPresent(TalkingHeadDirectorMode.self, forKey: .mode)
+      ?? .transcriptAssisted
+    let storedMinimumShotDuration = try values.decodeIfPresent(Double.self,
+      forKey: .minimumShotDuration) ?? 10
+    minimumShotDuration = max(10, storedMinimumShotDuration)
+    cooldown = try values.decodeIfPresent(Double.self, forKey: .cooldown) ?? 1.5
+    emphasisHold = try values.decodeIfPresent(Double.self, forKey: .emphasisHold) ?? 5
+    softMaximumShotDuration = try values.decodeIfPresent(Double.self,
+      forKey: .softMaximumShotDuration) ?? 20
+    maximumShotDuration = try values.decodeIfPresent(Double.self,
+      forKey: .maximumShotDuration) ?? 30
+    forcedCutGracePeriod = try values.decodeIfPresent(Double.self,
+      forKey: .forcedCutGracePeriod) ?? 2
+    forcedBoundaryLookback = try values.decodeIfPresent(Double.self,
+      forKey: .forcedBoundaryLookback) ?? 1
+    boundaryWindow = try values.decodeIfPresent(Double.self, forKey: .boundaryWindow) ?? 0.24
+    candidateDwell = try values.decodeIfPresent(Double.self, forKey: .candidateDwell) ?? 0.30
+    transcriptConfidenceThreshold = try values.decodeIfPresent(Float.self,
+      forKey: .transcriptConfidenceThreshold) ?? 0.72
+    pauseBoundaryDuration = try values.decodeIfPresent(Double.self,
+      forKey: .pauseBoundaryDuration) ?? 0.22
+    cutThreshold = try values.decodeIfPresent(Float.self, forKey: .cutThreshold) ?? 0.68
+    hysteresisMargin = try values.decodeIfPresent(Float.self, forKey: .hysteresisMargin) ?? 0.12
+    transcriptOutputDelay = try values.decodeIfPresent(Double.self,
+      forKey: .transcriptOutputDelay) ?? 0.35
+    manualHold = try values.decodeIfPresent(Bool.self, forKey: .manualHold) ?? false
+  }
+}
+
+extension NaturalTalkingHeadSettings {
+  /// Produces finite, ordered values before crossing the Rust configuration
+  /// boundary. Preferences are user-editable JSON, so runtime validation must
+  /// not depend on the UI having already visited every field.
+  mutating func normalizeForRuntime() {
+    func nonNegative(_ value: Double, _ fallback: Double) -> Double {
+      value.isFinite ? max(0, value) : fallback
+    }
+    minimumShotDuration = nonNegative(minimumShotDuration, 10)
+    cooldown = nonNegative(cooldown, 1.5)
+    emphasisHold = nonNegative(emphasisHold, 5)
+    softMaximumShotDuration = nonNegative(softMaximumShotDuration, 20)
+    maximumShotDuration = nonNegative(maximumShotDuration, 30)
+    maximumShotDuration = max(maximumShotDuration,
+      max(minimumShotDuration + 0.001, cooldown + 0.001))
+    softMaximumShotDuration = min(softMaximumShotDuration, maximumShotDuration)
+    forcedCutGracePeriod = nonNegative(forcedCutGracePeriod, 2)
+    forcedBoundaryLookback = nonNegative(forcedBoundaryLookback, 1)
+    boundaryWindow = nonNegative(boundaryWindow, 0.24)
+    candidateDwell = nonNegative(candidateDwell, 0.30)
+    pauseBoundaryDuration = nonNegative(pauseBoundaryDuration, 0.22)
+    transcriptOutputDelay = nonNegative(transcriptOutputDelay, 0.35)
+    func unit(_ value: Float, _ fallback: Float) -> Float {
+      value.isFinite ? min(1, max(0, value)) : fallback
+    }
+    transcriptConfidenceThreshold = unit(transcriptConfidenceThreshold, 0.72)
+    cutThreshold = unit(cutThreshold, 0.68)
+    hysteresisMargin = unit(hysteresisMargin, 0.12)
+  }
 }
 
 struct SwitcherSettings: Codable, Equatable, Sendable {
@@ -43,17 +167,20 @@ struct SwitcherSettings: Codable, Equatable, Sendable {
   var automatic = false
   var intervalSeconds = 5.0
   var strategy: SwitcherStrategy = .manual
+  var naturalTalkingHead = NaturalTalkingHeadSettings()
 
   init(selectedFeedID: FeedID? = nil, automatic: Bool = false,
-    intervalSeconds: Double = 5.0, strategy: SwitcherStrategy = .manual) {
+    intervalSeconds: Double = 5.0, strategy: SwitcherStrategy = .manual,
+    naturalTalkingHead: NaturalTalkingHeadSettings = .init()) {
     self.selectedFeedID = selectedFeedID
     self.automatic = automatic
     self.intervalSeconds = intervalSeconds
     self.strategy = strategy
+    self.naturalTalkingHead = naturalTalkingHead
   }
 
   private enum CodingKeys: String, CodingKey {
-    case selectedFeedID, automatic, intervalSeconds, strategy
+    case selectedFeedID, automatic, intervalSeconds, strategy, naturalTalkingHead
   }
 
   init(from decoder: Decoder) throws {
@@ -62,6 +189,8 @@ struct SwitcherSettings: Codable, Equatable, Sendable {
     automatic = try values.decodeIfPresent(Bool.self, forKey: .automatic) ?? false
     intervalSeconds = try values.decodeIfPresent(Double.self, forKey: .intervalSeconds) ?? 5.0
     strategy = try values.decodeIfPresent(SwitcherStrategy.self, forKey: .strategy) ?? .manual
+    naturalTalkingHead = try values.decodeIfPresent(NaturalTalkingHeadSettings.self,
+      forKey: .naturalTalkingHead) ?? .init()
   }
 }
 
@@ -212,12 +341,11 @@ struct AppSettingsSnapshot: Codable, Equatable, Sendable {
     for feed in feeds {
       guard feed.version == 1, !feed.id.rawValue.isEmpty, seen.insert(feed.id).inserted else { return nil }
     }
-    var result = self
-    if !seen.contains(selectedFeedID) { result.selectedFeedID = feeds[0].id }
-    if let switcherID = switcher.selectedFeedID, !seen.contains(switcherID) {
-      result.switcher.selectedFeedID = result.selectedFeedID
-    }
-    return result
+    // Persistence preserves a valid descriptor ID even when that feed is
+    // currently disabled. Runtime coordinators choose an enabled fallback
+    // when they start; rewriting the snapshot here would lose the user's
+    // stable selection and break round-trip fidelity.
+    return self
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -271,8 +399,12 @@ final class AppSettingsStore {
   }
 
   func saveSnapshot(_ snapshot: AppSettingsSnapshot) {
-    let snapshot = snapshot.validated() ?? AppSettingsSnapshot()
-    guard let data = try? JSONEncoder().encode(snapshot) else { return }
+    // Never replace a valid on-disk configuration with a fresh default when a
+    // caller hands us malformed data. The old behavior silently reset all
+    // feeds and routing after a validation failure, which is data loss and
+    // makes a transient/corrupt update indistinguishable from a user reset.
+    guard let snapshot = snapshot.validated(),
+      let data = try? JSONEncoder().encode(snapshot) else { return }
     defaults.set(data, forKey: Self.snapshotKey)
   }
 

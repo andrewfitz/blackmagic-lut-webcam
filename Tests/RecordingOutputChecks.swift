@@ -25,7 +25,8 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
 
     XCTAssertEqual(session.paths.feedDirectory.lastPathComponent, "camera-a")
     XCTAssertEqual(session.paths.finalFile.pathExtension, "mov")
-    XCTAssertTrue(session.paths.finalFile.lastPathComponent.contains(id.uuidString.lowercased()))
+    XCTAssertNotNil(session.paths.finalFile.lastPathComponent.range(
+      of: #"^camera-a-\d{8}-\d{6}-\d{3}(?:-\d+)?\.mov$"#, options: .regularExpression))
     XCTAssertTrue(FileManager.default.fileExists(atPath: session.temporaryURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: session.finalURL.path))
 
@@ -103,7 +104,7 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     XCTAssertEqual(accepted.state, .finished)
   }
 
-  func testSessionIDCollisionDoesNotReplaceExistingOutput() throws {
+  func testRepeatedSessionDoesNotReplaceExistingOutput() throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0,
@@ -112,10 +113,11 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     let first = try manager.beginSession(feedID: "camera", sessionID: id)
     try first.append(Data([1]))
     _ = try first.finish()
-    XCTAssertThrowsError(try manager.makeSession(feedID: "camera", sessionID: id)) { error in
-      XCTAssertEqual(error as? RecordingOutputError, .destinationExists)
-    }
+    let second = try manager.makeSession(feedID: "camera", sessionID: id)
+    XCTAssertNotEqual(first.finalURL, second.finalURL)
+    XCTAssertNotEqual(first.finalURL.lastPathComponent, second.finalURL.lastPathComponent)
     XCTAssertEqual(try Data(contentsOf: first.finalURL), Data([1]))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: second.finalURL.path))
   }
 
   func testExternalWriterSessionLeavesPathForContainerAndFinalizesAtomically() throws {
@@ -153,13 +155,29 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     XCTAssertFalse(FileManager.default.fileExists(atPath: session.finalURL.path))
   }
 
+  func testExternalWriterPauseAndResumePreservesSession() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0,
+      diskSpace: FixedRecordingOutputDiskSpace(bytes: 10_000))
+    let session = try manager.beginExternalWriterSession(feedID: "camera-c")
+    try Data([0x66, 0x74, 0x79, 0x70]).write(to: session.temporaryURL, options: [.atomic])
+
+    try session.pause()
+    XCTAssertEqual(session.state, .paused)
+    try session.resume()
+    XCTAssertEqual(session.state, .recording)
+    XCTAssertEqual(try session.finish(), session.finalURL)
+  }
+
   static let allTests = [
     ("per-feed paths and atomic finalization", testPerFeedPathsAndAtomicFinalization),
     ("pause preserves temporary file and sessions are independent", testPausePreservesTemporaryFileAndSessionsAreIndependent),
     ("reject traversal and escaping symlink", testRejectsTraversalAndEscapingSymlink),
     ("admission rejects insufficient space", testAdmissionRejectsInsufficientSpaceAndReleasesReservation),
-    ("session ID collision does not replace output", testSessionIDCollisionDoesNotReplaceExistingOutput),
+    ("repeated session does not replace output", testRepeatedSessionDoesNotReplaceExistingOutput),
     ("external writer atomic finalization", testExternalWriterSessionLeavesPathForContainerAndFinalizesAtomically),
     ("external writer rejects empty output", testExternalWriterWithoutContainerCannotCreateEmptyFinalFile),
+    ("external writer pause and resume", testExternalWriterPauseAndResumePreservesSession),
   ]
 }

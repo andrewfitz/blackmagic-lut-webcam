@@ -26,6 +26,7 @@ struct ProgramOutput<SourceID: Hashable> {
 
   var selectedSource: SourceID? { scheduler.selectedSource }
   var pendingCut: SourceID? { scheduler.pendingCut }
+  var pendingCutTime: CMTime? { scheduler.pendingCutTime }
   var hasPendingCut: Bool { scheduler.hasPendingCut }
   var selectedFeedID: SourceID? { selectedSource }
   var pendingFeedID: SourceID? { pendingCut }
@@ -44,6 +45,15 @@ struct ProgramOutput<SourceID: Hashable> {
 
   mutating func requestCut(to sourceID: SourceID) -> ProgramCutRequestResult<SourceID> {
     scheduler.requestCut(to: sourceID)
+  }
+
+  mutating func requestCut(to sourceID: SourceID,
+                           noEarlierThan: CMTime?) -> ProgramCutRequestResult<SourceID> {
+    scheduler.requestCut(to: sourceID, noEarlierThan: noEarlierThan)
+  }
+
+  mutating func cancelPendingCut() {
+    scheduler.cancelPendingCut()
   }
 
   mutating func ingest(_ frame: ProgramSourceFrame<SourceID>)
@@ -78,8 +88,8 @@ struct SwitcherCoordinator {
   private var pendingDirectorDecision: CutDecision?
   private var fixedIntervalOrigin: TimeInterval?
   private var automaticRequestPending = false
-  private let anchorFeedID: FeedID?
-  private let emphasisFeedID: FeedID?
+  private var anchorFeedID: FeedID?
+  private var emphasisFeedID: FeedID?
 
   init(settings: SwitcherSettings = .init(), feedIDs: [FeedID] = [],
     anchorFeedID: FeedID? = nil, emphasisFeedID: FeedID? = nil,
@@ -95,8 +105,10 @@ struct SwitcherCoordinator {
     self.selectedFeedID = initial
     self.programOutput = ProgramOutput(selectedSource: initial)
     self.director = NaturalTalkingHeadDirector(settings: directorSettings)
-    self.anchorFeedID = anchorFeedID ?? self.feedIDs.first
-    self.emphasisFeedID = emphasisFeedID ?? self.feedIDs.dropFirst().first
+    self.anchorFeedID = anchorFeedID ?? settings.naturalTalkingHead.anchorFeedID
+      ?? self.feedIDs.first
+    self.emphasisFeedID = emphasisFeedID ?? settings.naturalTalkingHead.emphasisFeedID
+      ?? self.feedIDs.dropFirst().first
   }
 
   init(settings: SwitcherSettings = .init(), feeds: [FeedDescriptor],
@@ -117,6 +129,7 @@ struct SwitcherCoordinator {
   var emphasisID: FeedID? { emphasisFeedID }
 
   var pendingCut: FeedID? { programOutput.pendingCut }
+  var pendingCutTime: CMTime? { programOutput.pendingCutTime }
   var hasPendingCut: Bool { programOutput.hasPendingCut }
   var pendingDirectorCut: CutDecision? { pendingDirectorDecision }
 
@@ -131,7 +144,17 @@ struct SwitcherCoordinator {
   }
 
   mutating func updateSettings(_ settings: SwitcherSettings) {
+    let changed = self.settings != settings
     self.settings = settings
+    if changed {
+      anchorFeedID = settings.naturalTalkingHead.anchorFeedID
+        .flatMap { feedIDs.contains($0) ? $0 : nil } ?? feedIDs.first
+      emphasisFeedID = settings.naturalTalkingHead.emphasisFeedID
+        .flatMap { feedIDs.contains($0) ? $0 : nil } ?? feedIDs.dropFirst().first
+      director.reset()
+      pendingDirectorDecision = nil
+      programOutput.cancelPendingCut()
+    }
     fixedIntervalOrigin = nil
     automaticRequestPending = false
   }
@@ -145,12 +168,11 @@ struct SwitcherCoordinator {
   @discardableResult
   mutating func requestManualCut(to feedID: FeedID, at: CMTime? = nil)
     -> ProgramCutRequestResult<FeedID> {
-    _ = at
     guard feedIDs.contains(feedID), isFeedHealthy(feedID) else {
       return .rejectedMissingSource
     }
     automaticRequestPending = false
-    return programOutput.requestCut(to: feedID)
+    return programOutput.requestCut(to: feedID, noEarlierThan: at)
   }
 
   @discardableResult
@@ -163,6 +185,8 @@ struct SwitcherCoordinator {
     -> ProgramCutRequestResult<FeedID> {
     let result = requestManualCut(to: feedID, at: time)
     if case .queued = result {
+      director.manualOverride(cameraID: feedID.rawValue, at: time)
+    } else if case .coalesced = result {
       director.manualOverride(cameraID: feedID.rawValue, at: time)
     }
     return result
@@ -252,7 +276,10 @@ struct SwitcherCoordinator {
     guard let decision = director.evaluate(input) else { return nil }
     let target = FeedID(rawValue: decision.targetCameraID)
     guard feedIDs.contains(target), isFeedHealthy(target) else { return nil }
-    let result = programOutput.requestCut(to: target)
+    // Preserve the director's editorial boundary. Requesting a cut without
+    // the lower bound lets the first queued target frame win, which can land
+    // the switch before the safe transcript/audio boundary.
+    let result = programOutput.requestCut(to: target, noEarlierThan: decision.cutTime)
     switch result {
     case .queued, .coalesced:
       pendingDirectorDecision = decision
@@ -340,6 +367,12 @@ struct SwitcherCoordinator {
     director.reset()
     pendingDirectorDecision = nil
     fixedIntervalOrigin = nil
+    automaticRequestPending = false
+  }
+
+  mutating func cancelPendingCut() {
+    programOutput.cancelPendingCut()
+    pendingDirectorDecision = nil
     automaticRequestPending = false
   }
 

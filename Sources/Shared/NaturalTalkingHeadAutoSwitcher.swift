@@ -37,13 +37,13 @@ struct CutDecision: Equatable {
   let reason: String
 }
 
-enum TalkingHeadDirectorMode: Equatable {
+enum TalkingHeadDirectorMode: String, Codable, Equatable, Sendable {
   case lowLatency
   case transcriptAssisted
 }
 
 struct NaturalTalkingHeadDirectorSettings: Equatable {
-  var minimumShotDuration: TimeInterval = 5
+  var minimumShotDuration: TimeInterval = 10
   var cooldown: TimeInterval = 1.5
   var emphasisHold: TimeInterval = 5
   var softMaximumShotDuration: TimeInterval = 20
@@ -240,6 +240,7 @@ struct NaturalTalkingHeadDirector {
 
     ingest(audio: input.audioCues)
     ingest(transcript: input.transcriptCues)
+    prune(now: now)
     guard pendingOutput == nil else { return nil }
 
     let current = input.currentCameraID
@@ -442,12 +443,12 @@ struct NaturalTalkingHeadDirector {
   }
 
   private func timestampKey(_ time: CMTime) -> TimestampKey? {
-    guard time.isValid, time.isNumeric, time.epoch == 0 else { return nil }
+    guard time.isValid, time.isNumeric, time.epoch == 0, time.timescale > 0 else { return nil }
     return TimestampKey(value: time.value, timescale: time.timescale, epoch: time.epoch)
   }
 
   private func validSeconds(_ time: CMTime) -> TimeInterval? {
-    guard time.isValid, time.isNumeric, time.epoch == 0, time.timescale != 0 else { return nil }
+    guard time.isValid, time.isNumeric, time.epoch == 0, time.timescale > 0 else { return nil }
     let seconds = time.seconds
     return seconds.isFinite && seconds >= 0 ? seconds : nil
   }
@@ -457,4 +458,14 @@ struct NaturalTalkingHeadDirector {
   }
 
   private func clamp(_ value: Float) -> Float { min(1, max(0, value)) }
+
+  private mutating func prune(now: TimeInterval) {
+    let cutoff = max(0, now - max(60, settings.softMaximumShotDuration * 4))
+    audioByTime = audioByTime.filter { validSeconds($0.value.time).map { $0 >= cutoff } ?? false }
+    transcriptByStart = transcriptByStart.filter {
+      validSeconds($0.value.timeRange.end).map { $0 >= cutoff } ?? false
+    }
+    committedBoundaryTimes.removeAll { $0.seconds < cutoff }
+    committedBoundaries = committedBoundaries.filter { transcriptByStart[$0] != nil }
+  }
 }

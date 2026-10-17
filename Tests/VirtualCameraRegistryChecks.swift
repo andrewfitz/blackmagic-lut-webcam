@@ -53,6 +53,18 @@ import XCTest
     }
   }
 
+  func testApplyingRejectsZeroGenerationCandidate() throws {
+    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let current = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
+      devices: [.feed(feedID: "feed-1")])
+    let candidate = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
+      devices: [.feed(feedID: "feed-2")])
+
+    XCTAssertThrowsError(try current.applying(candidate)) { error in
+      XCTAssertEqual(error as? VirtualCameraRegistryError, .invalidGeneration)
+    }
+  }
+
   func testStoreKeepsBackupAndRollsBackCorruptPrimary() throws {
     let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -96,5 +108,38 @@ import XCTest
         .appGroupMismatch(expected: appGroup, actual: "group.other"))
     }
     XCTAssertEqual(store.load(), current)
+  }
+
+  func testStoreRejectsZeroGenerationWithoutWriting() throws {
+    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
+    let baseline = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
+      devices: [.feed(feedID: "feed-1")])
+
+    XCTAssertThrowsError(try store.save(baseline)) { error in
+      XCTAssertEqual(error as? VirtualCameraRegistryError, .invalidGeneration)
+    }
+    XCTAssertNil(defaults.data(forKey: VirtualCameraRegistryStore.key))
+    XCTAssertNil(defaults.data(forKey: VirtualCameraRegistryStore.backupKey))
+  }
+
+  func testStoreDoesNotBackUpCorruptPrimaryBytes() throws {
+    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
+    defaults.set(Data("truncated".utf8), forKey: VirtualCameraRegistryStore.key)
+
+    let snapshot = VirtualCameraRegistrySnapshot(generation: 1,
+      appGroupIdentifier: appGroup, devices: [.feed(feedID: "feed-1")])
+    try store.save(snapshot)
+
+    XCTAssertEqual(store.load(), snapshot)
+    XCTAssertNil(defaults.data(forKey: VirtualCameraRegistryStore.backupKey),
+      "A corrupt primary must not be copied into the backup slot")
   }
 }

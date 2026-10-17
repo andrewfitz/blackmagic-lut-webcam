@@ -129,7 +129,8 @@ public struct RecordingAVDriftTracker: Sendable {
   public private(set) var latestAudioEnd: CMTime?
 
   public init(maximumDrift: CMTime = CMTime(value: 1, timescale: 10)) {
-    precondition(maximumDrift.isValid && maximumDrift.isNumeric && maximumDrift.value >= 0,
+    precondition(maximumDrift.isValid && maximumDrift.isNumeric && maximumDrift.epoch == 0 &&
+      maximumDrift.timescale > 0 && maximumDrift.value >= 0,
       "A/V drift limit must be finite and non-negative")
     self.maximumDrift = maximumDrift
   }
@@ -268,7 +269,7 @@ public struct FileManagerRecordingDiskSpaceProvider: RecordingDiskSpaceProvider 
 
   public func availableBytes(at directory: URL) throws -> Int64 {
     let values = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-    guard let available = values.volumeAvailableCapacityForImportantUsage else {
+    guard let available = values.volumeAvailableCapacityForImportantUsage, available >= 0 else {
       throw RecordingError.diskSpaceUnavailable
     }
     return available
@@ -318,7 +319,9 @@ public struct LongRunRecordingConfiguration: Sendable {
   fileprivate func validate() throws {
     guard timescale > 0, maximumSegmentDuration.isValid,
       maximumSegmentDuration.isNumeric, maximumSegmentDuration.value > 0,
+      maximumSegmentDuration.timescale > 0, maximumSegmentDuration.epoch == 0,
       maximumAVDrift.isValid, maximumAVDrift.isNumeric, maximumAVDrift.value >= 0,
+      maximumAVDrift.timescale > 0, maximumAVDrift.epoch == 0,
       queueCapacity > 0, maximumQueueBytes > 0, minimumFreeBytes >= 0, outputDirectory.isFileURL,
       !outputDirectory.path.isEmpty else {
       throw RecordingError.invalidConfiguration
@@ -626,7 +629,9 @@ public final class LongRunRecordingSession: @unchecked Sendable {
   }
 
   private func checkDiskSpace(reserve: Int64) throws {
-    let required = max(0, configuration.minimumFreeBytes) + max(0, reserve)
+    let minimum = max(0, configuration.minimumFreeBytes)
+    let additional = max(0, reserve)
+    let (required, overflow) = minimum.addingReportingOverflow(additional)
     let available: Int64
     do {
       available = try disk.availableBytes(at: configuration.outputDirectory)
@@ -635,7 +640,10 @@ public final class LongRunRecordingSession: @unchecked Sendable {
     } catch {
       throw RecordingError.diskSpaceUnavailable
     }
-    guard available >= required else {
+    guard !overflow, available >= required else {
+      if overflow {
+        throw RecordingError.insufficientDiskSpace(required: Int64.max, available: available)
+      }
       throw RecordingError.insufficientDiskSpace(required: required, available: available)
     }
   }
@@ -668,6 +676,10 @@ public final class AtomicRecordingSegmentWriter: RecordingSegmentWriter {
   }
 
   public func beginSegment(index: Int, startTime: CMTime) throws {
+    guard index >= 0, startTime.isValid, startTime.isNumeric,
+      startTime.epoch == 0, startTime.timescale > 0, startTime.value >= 0 else {
+      throw RecordingError.invalidState
+    }
     guard handle == nil else { throw RecordingError.invalidState }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let safeSessionID = sessionID.map { character in
@@ -677,6 +689,9 @@ public final class AtomicRecordingSegmentWriter: RecordingSegmentWriter {
     let stem = "recording-\(safeSessionID.isEmpty ? "session" : safeSessionID)-segment-\(String(format: "%06d", index))"
     let temporary = directory.appendingPathComponent(stem + ".part", isDirectory: false)
     let final = directory.appendingPathComponent(stem + ".media", isDirectory: false)
+    guard !FileManager.default.fileExists(atPath: temporary.path) else {
+      throw RecordingError.writer("Refusing to replace an unfinished segment \(temporary.lastPathComponent).")
+    }
     guard !FileManager.default.fileExists(atPath: final.path) else {
       throw RecordingError.writer("Refusing to replace finalized segment \(final.lastPathComponent).")
     }
@@ -707,7 +722,15 @@ public final class AtomicRecordingSegmentWriter: RecordingSegmentWriter {
   }
 
   public func append(_ packet: NormalizedRecordingPacket) throws {
-    guard let handle else { throw RecordingError.invalidState }
+    guard let handle, let segmentStart else { throw RecordingError.invalidState }
+    guard packet.presentationTime.isValid, packet.presentationTime.isNumeric,
+      packet.presentationTime.epoch == 0, packet.presentationTime.timescale > 0,
+      packet.duration.isValid, packet.duration.isNumeric,
+      packet.duration.epoch == 0, packet.duration.timescale > 0,
+      packet.duration.value > 0,
+      CMTimeCompare(packet.presentationTime, segmentStart) >= 0 else {
+      throw RecordingError.writer("Invalid packet timing for segment.")
+    }
     var record = Data()
     record.append(packet.packet.mediaKind.rawValue)
     appendInt64(packet.presentationTime.value, to: &record)
@@ -726,6 +749,10 @@ public final class AtomicRecordingSegmentWriter: RecordingSegmentWriter {
   public func finalizeSegment(endTime: CMTime) throws -> RecordingSegmentInfo {
     guard let handle, let temporaryURL, let finalURL,
       let segmentIndex, let segmentStart else { throw RecordingError.invalidState }
+    guard endTime.isValid, endTime.isNumeric, endTime.epoch == 0,
+      endTime.timescale > 0, CMTimeCompare(endTime, segmentStart) >= 0 else {
+      throw RecordingError.writer("Invalid segment end time.")
+    }
     handle.synchronizeFile()
     handle.closeFile()
     self.handle = nil

@@ -76,6 +76,34 @@ import XCTest
     XCTAssertFalse(loaded.feeds[1].enabled)
   }
 
+  func testNaturalTalkingHeadSwitcherSettingsRoundTrip() throws {
+    let profile = NaturalTalkingHeadSettings(
+      enabled: true, anchorFeedID: FeedID(rawValue: "wide"),
+      emphasisFeedID: FeedID(rawValue: "tight"), mode: .lowLatency,
+      maximumShotDuration: 18, forcedCutGracePeriod: 3)
+    let switcher = SwitcherSettings(selectedFeedID: FeedID(rawValue: "wide"),
+      automatic: true, strategy: .naturalTalkingHead, naturalTalkingHead: profile)
+    let data = try JSONEncoder().encode(switcher)
+    let loaded = try JSONDecoder().decode(SwitcherSettings.self, from: data)
+    XCTAssertEqual(loaded, switcher)
+    XCTAssertEqual(loaded.naturalTalkingHead.maximumShotDuration, 18)
+  }
+
+  func testPartialNaturalTalkingHeadProfileUsesSafeDefaults() throws {
+    let data = Data(#"{"naturalTalkingHead":{"enabled":true}}"#.utf8)
+    let loaded = try JSONDecoder().decode(SwitcherSettings.self, from: data)
+    XCTAssertTrue(loaded.naturalTalkingHead.enabled)
+    XCTAssertEqual(loaded.naturalTalkingHead.minimumShotDuration, 10)
+    XCTAssertEqual(loaded.naturalTalkingHead.maximumShotDuration, 30)
+    XCTAssertEqual(loaded.naturalTalkingHead.mode, .transcriptAssisted)
+  }
+
+  func testOlderShortMinimumShotDurationIsRaisedToSafeFloor() throws {
+    let data = Data(#"{"naturalTalkingHead":{"minimumShotDuration":5}}"#.utf8)
+    let loaded = try JSONDecoder().decode(SwitcherSettings.self, from: data)
+    XCTAssertEqual(loaded.naturalTalkingHead.minimumShotDuration, 10)
+  }
+
   func testInvalidV2SnapshotFallsBackToV1Migration() throws {
     let suiteName = "org.ultrastudiolut.tests.settings.v2-fallback.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -92,6 +120,27 @@ import XCTest
     XCTAssertEqual(migrated.feeds.count, 1)
     XCTAssertEqual(migrated.feeds[0].selectedDevice, legacy.selectedDevice)
     XCTAssertEqual(migrated.feeds[0].lutBookmark, legacy.lutBookmark)
+  }
+
+  func testInvalidSnapshotSaveDoesNotResetExistingConfiguration() throws {
+    let suiteName = "org.ultrastudiolut.tests.settings.v2-save-validation.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let original = AppSettingsSnapshot(feeds: [
+      FeedDescriptor(id: FeedID(rawValue: "wide"), name: "Wide", selectedDevice: "decklink-1")
+    ], selectedFeedID: FeedID(rawValue: "wide"), outputMode: .program)
+    let store = AppSettingsStore(defaults: defaults)
+    store.saveSnapshot(original)
+    let before = try XCTUnwrap(defaults.data(forKey: AppSettingsStore.snapshotKey))
+
+    let invalid = AppSettingsSnapshot(feeds: [
+      FeedDescriptor(id: FeedID(rawValue: "duplicate")),
+      FeedDescriptor(id: FeedID(rawValue: "duplicate"))
+    ])
+    store.saveSnapshot(invalid)
+
+    XCTAssertEqual(defaults.data(forKey: AppSettingsStore.snapshotKey), before)
+    XCTAssertEqual(store.loadSnapshot(), original)
   }
 
   func testCorruptOrUnsupportedPreferencesUseSafeDefaults() throws {

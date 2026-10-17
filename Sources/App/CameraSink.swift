@@ -94,7 +94,13 @@ final class CameraFrameStager {
       CVPixelBufferUnlockBaseAddress(image, [])
       warmImages.append(image)
     }
-    withExtendedLifetime(warmImages) { prepared = true }
+    // If the pool was already under pressure, warming can legitimately stop
+    // before all reserved images are available. Do not mark the layout as
+    // prepared in that case; a later call after consumers release frames can
+    // finish the warm-up instead of silently running cold forever.
+    withExtendedLifetime(warmImages) {
+      prepared = warmImages.count == VideoContract.warmBufferCount
+    }
   }
 
   private func configurePool(width: Int, height: Int, type: OSType) throws -> CVPixelBufferPool {
@@ -109,6 +115,10 @@ final class CameraFrameStager {
       pool = next
       dimensions = (width, height, type)
       prepared = false
+      // A new pool may use a different plane layout/stride. Never reuse a
+      // staged CMVideoFormatDescription from the previous geometry, even when
+      // Core Media happens to report equivalent source extensions.
+      cachedFormat = nil
     }
     guard let pool else { throw VideoError.message("Camera staging pool is unavailable.") }
     return pool
@@ -232,7 +242,11 @@ final class CameraFrameStager {
 
   private func copyRows(source: UnsafeMutableRawPointer, sourceStride: Int,
     destination: UnsafeMutableRawPointer, destinationStride: Int, rowBytes: Int, rows: Int) throws {
-    guard sourceStride >= rowBytes, destinationStride >= rowBytes, rows > 0 else {
+    let (_, totalOverflow) = rowBytes.multipliedReportingOverflow(by: rows)
+    let (_, sourceOffsetOverflow) = sourceStride.multipliedReportingOverflow(by: rows)
+    let (_, destinationOffsetOverflow) = destinationStride.multipliedReportingOverflow(by: rows)
+    guard rowBytes > 0, sourceStride >= rowBytes, destinationStride >= rowBytes,
+      rows > 0, !totalOverflow, !sourceOffsetOverflow, !destinationOffsetOverflow else {
       throw VideoError.message("Captured camera row stride is too short for its pixel format.")
     }
     if sourceStride == rowBytes && destinationStride == rowBytes {
@@ -394,6 +408,10 @@ final class CameraSink {
       let expected = CMVideoFormatDescriptionGetDimensions(negotiatedFormat)
       let time = CMSampleBufferGetPresentationTimeStamp(sample)
       guard CMSampleBufferDataIsReady(sample), let image = CMSampleBufferGetImageBuffer(sample),
+        let sampleFormat = CMSampleBufferGetFormatDescription(sample),
+        CMFormatDescriptionGetMediaSubType(sampleFormat) == CMFormatDescriptionGetMediaSubType(negotiatedFormat),
+        CMVideoFormatDescriptionGetDimensions(sampleFormat).width == expected.width,
+        CMVideoFormatDescriptionGetDimensions(sampleFormat).height == expected.height,
         CVPixelBufferGetWidth(image) == expected.width,
         CVPixelBufferGetHeight(image) == expected.height,
         CVPixelBufferGetPixelFormatType(image) == CMFormatDescriptionGetMediaSubType(negotiatedFormat),

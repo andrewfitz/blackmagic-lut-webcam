@@ -39,6 +39,15 @@ enum VideoContract {
     guard tenBit422.contains(pixelFormat) || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else {
       throw VideoError.message("Unsupported video pixel format.")
     }
+    // Core Media accepts odd dimensions when creating a description, but the
+    // advertised bi-planar Y'CbCr layouts cannot represent them: 4:2:2 needs
+    // paired luma samples and 4:2:0 additionally needs paired rows. Packed
+    // v210 is handled separately and permits a final partial six-pixel group.
+    let is420 = pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    let isPacked422 = pixelFormat == kCVPixelFormatType_422YpCbCr10
+    guard isPacked422 || width.isMultiple(of: 2), !is420 || height.isMultiple(of: 2) else {
+      throw VideoError.message("Invalid video dimensions for pixel format.")
+    }
     let fullRange = pixelFormat == kCVPixelFormatType_422YpCbCr10BiPlanarFullRange
     var format: CMVideoFormatDescription?
     let status = CMVideoFormatDescriptionCreate(

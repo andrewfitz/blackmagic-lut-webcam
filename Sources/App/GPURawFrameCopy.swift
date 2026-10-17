@@ -47,12 +47,26 @@ final class GPURawFrameCopy {
 #endif
     let width = CVPixelBufferGetWidth(input), height = CVPixelBufferGetHeight(input)
     let stride = CVPixelBufferGetBytesPerRow(input)
+    let (paddedWidth, paddedWidthOverflow) = width.addingReportingOverflow(5)
+    let (packedGroups, packedGroupsOverflow) = (paddedWidth / 6).multipliedReportingOverflow(by: 16)
+    // `size` is passed through the Metal API as an Int.  A malformed or
+    // adversarial CVPixelBuffer can advertise a stride/height product that
+    // overflows Swift's checked arithmetic (or exceeds the device's maximum
+    // buffer length) before SharedMetalBuffer gets a chance to reject it.
+    // Validate the full byte count before forming the blit command so a bad
+    // capture frame cannot trap the capture queue.
+    let (byteCount, byteCountOverflow) = stride.multipliedReportingOverflow(by: height)
+    guard width > 0, height > 0, !paddedWidthOverflow, !packedGroupsOverflow,
+      stride > 0, height > 0, !byteCountOverflow, byteCount > 0,
+      byteCount <= device.maxBufferLength else {
+      return false
+    }
     // The fast path copies only active media bytes. Unsupported/padded layouts
     // use the existing validated CPU row copy, including deterministic padding.
     guard CVPixelBufferGetPixelFormatType(input) == kCVPixelFormatType_422YpCbCr10,
       CVPixelBufferGetPixelFormatType(output) == kCVPixelFormatType_422YpCbCr10,
       width == CVPixelBufferGetWidth(output), height == CVPixelBufferGetHeight(output),
-      stride == ((width + 5) / 6) * 16,
+      stride == packedGroups,
       stride == CVPixelBufferGetBytesPerRow(output),
       let source = SharedMetalBuffer.make(pixelBuffer: input, device: device, readOnly: true),
       let destination = SharedMetalBuffer.make(pixelBuffer: output, device: device, readOnly: false),
@@ -62,7 +76,7 @@ final class GPURawFrameCopy {
     lastTiming.mode = "gpuBlit"
 #endif
     encoder.copy(from: source, sourceOffset: 0, to: destination, destinationOffset: 0,
-      size: stride * height)
+      size: byteCount)
     encoder.endEncoding()
     command.commit()
     command.waitUntilCompleted()

@@ -16,10 +16,12 @@ enum SharedMetalBuffer {
     let (paddedWidth, widthOverflow) = width.addingReportingOverflow(5)
     let (minimumStride, strideOverflow) = (paddedWidth / 6).multipliedReportingOverflow(by: 16)
     let (length, lengthOverflow) = stride.multipliedReportingOverflow(by: height)
+    let dataSize = CVPixelBufferGetDataSize(pixelBuffer)
     let pageSize = Int(getpagesize())
     guard width > 0, height > 0, !widthOverflow, !strideOverflow, !lengthOverflow,
       stride >= minimumStride, stride.isMultiple(of: 4), length > 0,
-      length <= device.maxBufferLength, length.isMultiple(of: pageSize),
+      length <= device.maxBufferLength, dataSize <= 0 || length <= dataSize,
+      length.isMultiple(of: pageSize),
       let lease = PixelBufferLease(pixelBuffer, readOnly: readOnly),
       let base = CVPixelBufferGetBaseAddress(pixelBuffer),
       UInt(bitPattern: base).isMultiple(of: UInt(pageSize)),

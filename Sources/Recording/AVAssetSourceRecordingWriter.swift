@@ -22,6 +22,11 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var sessionStarted = false
   private var finishing = false
   private var finished = false
+  // VideoToolbox delivers encoded samples asynchronously. Preserve a fatal
+  // callback/append error until `finish()` so the owning recorder cannot
+  // publish a partial movie after the synchronous `appendVideo` call already
+  // returned successfully.
+  private var terminalError: SourceRecordingError?
   private var lastVideoPTS: CMTime?
   private var lastAudioPTS: CMTime?
   private var pendingAudio: [CMSampleBuffer] = []
@@ -61,6 +66,10 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   }
 
   func appendVideo(_ sample: CMSampleBuffer) throws {
+    guard Self.hasValidTiming(sample) else {
+      throw SourceRecordingError.unsupportedSample(
+        "A video sample must have a non-negative epoch-zero PTS and positive duration.")
+    }
     guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else {
       throw SourceRecordingError.unsupportedSample("A video sample has no image buffer.")
     }
@@ -93,10 +102,11 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   }
 
   func appendAudio(_ sample: CMSampleBuffer) throws {
-    let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-    guard pts.isNumeric else {
-      throw SourceRecordingError.unsupportedSample("An audio sample has no numeric presentation time.")
+    guard Self.hasValidTiming(sample) else {
+      throw SourceRecordingError.unsupportedSample(
+        "An audio sample must have a non-negative epoch-zero PTS and positive duration.")
     }
+    let pts = CMSampleBufferGetPresentationTimeStamp(sample)
     try lock.withLock {
       try ensureCanAppend()
       if let lastAudioPTS, CMTimeCompare(pts, lastAudioPTS) < 0 {
@@ -165,6 +175,9 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     semaphore.wait()
     if writer.status == .failed {
       throw Self.writerError(writer, fallback: "AVAssetWriter finish failed.")
+    }
+    if let callbackError = lock.withLock({ self.terminalError }) {
+      throw callbackError
     }
   }
 
@@ -319,6 +332,14 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     (input.value(forKey: "readyForMoreMediaData") as? NSNumber)?.boolValue ?? false
   }
 
+  private static func hasValidTiming(_ sample: CMSampleBuffer) -> Bool {
+    let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+    let duration = CMSampleBufferGetDuration(sample)
+    return CMSampleBufferDataIsReady(sample) &&
+      pts.isValid && pts.isNumeric && pts.epoch == 0 && pts.value >= 0 &&
+      duration.isValid && duration.isNumeric && duration.epoch == 0 && duration.value > 0
+  }
+
   private static func append(_ sample: CMSampleBuffer, to input: AVAssetWriterInput) -> Bool {
     let selector = NSSelectorFromString("appendSampleBuffer:")
     guard let implementation = input.method(for: selector) else { return false }
@@ -334,7 +355,11 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     lock.withLock {
       telemetryValue.droppedEncodedVideo &+= 1
       telemetryValue.encoderErrors &+= 1
-      telemetryValue.lastError = "VideoToolbox callback failed (OSStatus \(status))."
+      let message = status == noErr
+        ? "VideoToolbox returned no encoded sample."
+        : "VideoToolbox callback failed (OSStatus \(status))."
+      telemetryValue.lastError = message
+      terminalError = .writerFailure(message)
     }
   }
 
@@ -351,7 +376,16 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         try ensureWriter(videoFormat: format)
         guard let videoInput else { throw SourceRecordingError.writerFailure("Video writer input is unavailable.") }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-        try ensureSession(at: pts)
+        // Audio is intentionally allowed to arrive before the first encoded
+        // video frame while VideoToolbox establishes its format hint. Start
+        // the AVAssetWriter session at the earliest admitted media timestamp;
+        // starting at the video PTS would make a valid leading audio packet
+        // appear to precede the writer session and be rejected.
+        let sessionTime = pendingAudio.first.map { audio in
+          let audioPTS = CMSampleBufferGetPresentationTimeStamp(audio)
+          return CMTimeCompare(audioPTS, pts) < 0 ? audioPTS : pts
+        } ?? pts
+        try ensureSession(at: sessionTime)
         guard Self.inputIsReady(videoInput) else {
           telemetryValue.droppedEncodedVideo &+= 1
           telemetryValue.encoderErrors &+= 1
@@ -376,6 +410,16 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         telemetryValue.droppedEncodedVideo &+= 1
         telemetryValue.encoderErrors &+= 1
         telemetryValue.lastError = error.localizedDescription
+        // A writer-not-ready result is a bounded backpressure drop and may
+        // recover on a later callback. Other failures invalidate the movie's
+        // media contract and must be surfaced during finalization.
+        if let sourceError = error as? SourceRecordingError,
+          case .writerNotReady = sourceError {
+          // Keep recording; telemetry already records the dropped frame.
+        } else {
+          terminalError = (error as? SourceRecordingError)
+            ?? .writerFailure(error.localizedDescription)
+        }
       }
     }
   }

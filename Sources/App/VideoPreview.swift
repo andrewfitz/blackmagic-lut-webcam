@@ -395,8 +395,12 @@ final class VideoPreviewRenderer: @unchecked Sendable {
       guard status == noErr, let preview else { throw VideoError.message("Cannot copy preview sample (\(status)).") }
       // Independent sample attachments leave the camera's original sample and
       // media timing untouched. A live preview always shows the newest image.
-      let attachments = CMSampleBufferGetSampleAttachmentsArray(preview, createIfNecessary: true)! as NSArray
-      let attachment = unsafeBitCast(attachments[0] as AnyObject, to: CFMutableDictionary.self)
+      guard let attachmentArray = CMSampleBufferGetSampleAttachmentsArray(
+        preview, createIfNecessary: true), CFArrayGetCount(attachmentArray) > 0 else {
+        throw VideoError.message("Preview sample attachments are unavailable.")
+      }
+      let attachment = unsafeBitCast(CFArrayGetValueAtIndex(attachmentArray, 0),
+        to: CFMutableDictionary.self)
       CFDictionarySetValue(attachment, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
         Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
       lock.withLock {

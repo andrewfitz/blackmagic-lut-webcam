@@ -447,7 +447,13 @@ final class SourceRecorderCore: @unchecked Sendable {
   private static func isReady(_ sample: CMSampleBuffer, kind: SampleKind) -> Bool {
     guard CMSampleBufferDataIsReady(sample),
       CMSampleBufferGetPresentationTimeStamp(sample).isValid,
-      CMSampleBufferGetPresentationTimeStamp(sample).isNumeric else { return false }
+      CMSampleBufferGetPresentationTimeStamp(sample).isNumeric,
+      CMSampleBufferGetPresentationTimeStamp(sample).epoch == 0,
+      CMSampleBufferGetPresentationTimeStamp(sample).value >= 0,
+      CMSampleBufferGetDuration(sample).isValid,
+      CMSampleBufferGetDuration(sample).isNumeric,
+      CMSampleBufferGetDuration(sample).epoch == 0,
+      CMSampleBufferGetDuration(sample).value > 0 else { return false }
     switch kind {
     case .video:
       return CMSampleBufferGetImageBuffer(sample) != nil &&

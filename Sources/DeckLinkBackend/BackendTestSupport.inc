@@ -203,6 +203,13 @@ BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
       CMTimeCompare(packetTime, CMTimeMake(48000 * 3 + 17, 48000)) != 0 ||
       sampleFrames != 2 || channels != 2 || bytesPerSample != sizeof(int32_t) || received.length != sizeof(expectedSamples))
       return fail(error, @"Raw embedded audio callback did not copy exact 48 kHz packet metadata and bytes.");
+    // During HDMI reconnect Desktop Video may provide an audio packet without a
+    // paired video frame. Audio has its own clock and must remain observable.
+    auto audioOnly = new FakeRawAudioPacket({1, 2});
+    callback->VideoInputFrameArrived(nullptr, audioOnly);
+    if (!received || sampleFrames != 1 || channels != 2 || bytesPerSample != sizeof(int32_t))
+      return fail(error, @"Raw audio was dropped when the paired video frame was nil.");
+    audioOnly->Release();
     callback->accepting = false;
     audio->Release(); frame->Release(); callback->Release();
 

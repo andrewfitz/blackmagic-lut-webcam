@@ -41,7 +41,12 @@ public struct RecordingPerformanceBudget: Equatable, Sendable {
     guard !pixels.overflow else { return nil }
     switch storage {
     case .packedV210:
-      let groups = (width + 5) / 6
+      // Avoid overflowing the width while rounding up to a six-pixel v210
+      // group. The initializer intentionally accepts very large dimensions
+      // so callers can query the budget without allocating a buffer.
+      let (roundedWidth, widthOverflow) = width.addingReportingOverflow(5)
+      guard !widthOverflow else { return nil }
+      let groups = roundedWidth / 6
       let row = Int64(groups).multipliedReportingOverflow(by: 16)
       guard !row.overflow else { return nil }
       let total = row.partialValue.multipliedReportingOverflow(by: Int64(height))

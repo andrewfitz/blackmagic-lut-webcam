@@ -59,6 +59,18 @@ import XCTest
       equals: .sourceTimebaseChanged(expected: 60_000, actual: 30_000))
   }
 
+  func testFailedFirstFrameDoesNotConsumeSourceOrProgramOrigin() {
+    var mapper = ProgramTimestampMapper<String>(programTimescale: 60_000,
+      selectedSource: "A")
+    // One microsecond rounds to zero at the Program timescale, so this frame
+    // is rejected. The next valid frame must still become the timeline origin.
+    failure(mapper.map(frame("A", 1_000, duration: 1, timescale: 1_000_000)),
+      equals: .programTimestampNotMonotonic)
+    let accepted = mapped(mapper.map(frame("A", 2_000, duration: 1_000,
+      timescale: 1_000_000)))!
+    XCTAssertEqual(accepted.programTime, time(0))
+  }
+
   func testCutAppliesAtTargetBoundaryAndRequestsStaleFlush() {
     var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
     guard case .queued = scheduler.requestCut(to: "B") else {
@@ -124,13 +136,62 @@ import XCTest
     XCTAssertFalse(scheduler.hasPendingCut)
   }
 
+  func testUnavailablePendingTargetClearsItsEarliestCutTime() {
+    var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
+    guard case .queued = scheduler.requestCut(to: "B", noEarlierThan: time(10)) else {
+      return XCTFail("A valid target should queue")
+    }
+    XCTAssertEqual(scheduler.pendingCutTime, time(10))
+    scheduler.setSource("B", available: false)
+    _ = scheduler.ingest(frame("A", 0))
+    XCTAssertNil(scheduler.pendingCutTime)
+  }
+
+  func testInvalidEarliestCutTimeCannotBlockTargetFrame() {
+    var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
+    guard case .queued = scheduler.requestCut(to: "B", noEarlierThan: .invalid) else {
+      return XCTFail("An invalid lower bound must not reject a valid target")
+    }
+    guard case .cutApplied = scheduler.ingest(frame("B", 0)) else {
+      return XCTFail("Invalid timing metadata should be ignored safely")
+    }
+  }
+
+  func testNegativeTargetTimestampIsInvalidRatherThanStale() {
+    var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
+    guard case .queued = scheduler.requestCut(to: "B", noEarlierThan: time(10)) else {
+      return XCTFail("A valid target should queue")
+    }
+    guard case .skipped(.invalidTimestamp(.invalidSourceTimestamp)) =
+      scheduler.ingest(frame("B", -1)) else {
+      return XCTFail("Negative target timestamps are malformed, not stale")
+    }
+    XCTAssertTrue(scheduler.hasPendingCut)
+  }
+
+  func testEpochTargetTimestampIsReportedBeforeCutBoundaryComparison() {
+    var scheduler = ProgramCutScheduler<String>(selectedSource: "A")
+    guard case .queued = scheduler.requestCut(to: "B", noEarlierThan: time(10)) else {
+      return XCTFail("A valid target should queue")
+    }
+    guard case .skipped(.invalidTimestamp(.sourceEpochUnsupported(1))) =
+      scheduler.ingest(frame("B", 0, epoch: 1)) else {
+      return XCTFail("Foreign timestamp epochs must not be classified as stale")
+    }
+    XCTAssertTrue(scheduler.hasPendingCut)
+  }
+
   static let allTests = [
     ("first frame and monotonic source timeline", testFirstFrameAndSourceTimelineRemainMonotonic),
     ("cut resets source origin", testCutResetsSourceOriginAtNextProgramBoundary),
     ("invalid source timing", testRejectsForeignEpochTimebaseBackwardsAndInvalidDuration),
+    ("failed first frame is transactional", testFailedFirstFrameDoesNotConsumeSourceOrProgramOrigin),
     ("cut flushes stale frames", testCutAppliesAtTargetBoundaryAndRequestsStaleFlush),
     ("rapid cuts coalesce", testRapidCutsCoalesceToLatestTarget),
     ("invalid target preserves selection", testInvalidPendingTargetDoesNotSwitchSelection),
     ("missing sources", testMissingSourcesAreRejectedAndPendingTargetIsDropped),
+    ("unavailable target clears cut time", testUnavailablePendingTargetClearsItsEarliestCutTime),
+    ("negative target timestamp", testNegativeTargetTimestampIsInvalidRatherThanStale),
+    ("epoch target timestamp", testEpochTargetTimestampIsReportedBeforeCutBoundaryComparison),
   ]
 }

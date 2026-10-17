@@ -22,11 +22,16 @@ import XCTest
     let preview = coordinator.acquirePreview(feedID: "A")
     XCTAssertFalse(coordinator.sourceDemand(for: "A"), "Preview alone cannot start capture")
     XCTAssertTrue(coordinator.snapshot(for: "A").isPreviewOnly)
+    XCTAssertEqual(coordinator.activeFeedIDs, Set(["A"]),
+      "Route diagnostics include preview-only leases")
+    XCTAssertTrue(coordinator.activeSourceFeedIDs.isEmpty,
+      "Preview-only leases must not report source demand")
     XCTAssertEqual(coordinator.drainTransitions(), [])
 
     let dedicated = coordinator.acquireDedicatedCamera(feedID: "A")
     XCTAssertEqual(coordinator.drainTransitions(), [.start(feedID: "A")])
     XCTAssertTrue(coordinator.sourceDemand(for: "A"))
+    XCTAssertEqual(coordinator.activeSourceFeedIDs, Set(["A"]))
     XCTAssertTrue(coordinator.snapshot(for: "A").dedicatedCamera)
 
     coordinator.selectProgram(feedID: "A")

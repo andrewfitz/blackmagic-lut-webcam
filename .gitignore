@@ -3,4 +3,5 @@ xcuserdata/
 *.xcuserstate
 build/
 .build/
+Tools/auto-switcher/target/
 Config/Signing.xcconfig

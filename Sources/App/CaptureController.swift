@@ -9,6 +9,7 @@ struct CaptureUpdate: @unchecked Sendable {
   var output = ""
   var inputFast: Bool?
   var sourceDuration: CMTime?
+  var mediaTime: CMTime?
   var pipelineEnabledApplied: Bool?
   var frames: UInt64 = 0
   var dropped: UInt64 = 0
@@ -37,6 +38,7 @@ struct CaptureUpdate: @unchecked Sendable {
   var audioRMSRight: Double = 0
   var audioBitrateKbps: Double = 0
   var audioPresent = false
+  var audioPacketTime: CMTime?
   var videoBitrateMbps: Double = 0
   var videoDrops: UInt64 = 0
   var cameraOutputActive = false
@@ -70,6 +72,7 @@ struct CaptureRawAudio: @unchecked Sendable {
 // Preview visibility never controls camera processing.
 final class CaptureController: @unchecked Sendable {
   private let queue = DispatchQueue(label: "org.ultrastudiolut.capture", qos: .userInteractive)
+  private let queueKey = DispatchSpecificKey<UInt8>()
   private let lock = NSLock()
   private var generation: UInt64 = 0
   private var accepting = false
@@ -157,24 +160,35 @@ final class CaptureController: @unchecked Sendable {
   private var cameraOutputEnabled = true
 
   var onUpdate: (@Sendable (CaptureUpdate) -> Void)?
-  var onProcessedFrame: ((ProcessedFrame<CVPixelBuffer>) -> Void)?
+  /// Carries the capture generation that produced the frame. Consumers that
+  /// hop to another queue must compare this token before publishing so a
+  /// callback already in flight cannot enter a later start session.
+  var onProcessedFrame: ((ProcessedFrame<CVPixelBuffer>, UInt64) -> Void)?
 
   var activeFeed: FeedID? { lock.withLock { activeFeedID } }
+
+  /// Identifies the latest start/stop generation for lifecycle consumers.
+  /// This is separate from FeedSession's state generation because callers may
+  /// stop the native controller more than once during one session teardown.
+  var generationToken: UInt64 { lock.withLock { generation } }
 
   init(services: CaptureServices = .live(), previewRenderer: VideoPreviewRenderer? = nil,
     additionalPreviewRenderers: [VideoPreviewRenderer] = []) {
     self.services = services
     previewRenderers = (previewRenderer.map { [$0] } ?? []) + additionalPreviewRenderers
+    queue.setSpecific(key: queueKey, value: 1)
   }
 
   deinit {
     // Every executing controller operation retains self. Final release has
     // exclusive resource access, even if its owner omitted an explicit Stop.
-    stopResources()
+    // Keep teardown on the capture queue; services and renderer state are
+    // queue-owned and deinit may run on an arbitrary owner thread.
+    syncOnQueue { stopResources() }
   }
 
   func setCameraOutputEnabled(_ enabled: Bool) {
-    queue.sync {
+    syncOnQueue {
       cameraOutputEnabled = enabled
       if enabled {
         reconnectRequested = true
@@ -184,6 +198,15 @@ final class CaptureController: @unchecked Sendable {
       services.disconnect()
       cameraConnected = false
     }
+  }
+
+  /// Camera output toggles are normally called from the main actor, but a
+  /// service callback can also request one while capture work is executing on
+  /// the capture queue. Avoid synchronously waiting on our own serial queue in
+  /// that case; DispatchQueue.sync would deadlock the capture pipeline.
+  private func syncOnQueue<T>(_ body: () throws -> T) rethrows -> T {
+    if DispatchQueue.getSpecific(key: queueKey) != nil { return try body() }
+    return try queue.sync(execute: body)
   }
 
   func load(_ cube: CubeLUT, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
@@ -216,6 +239,12 @@ final class CaptureController: @unchecked Sendable {
     let token = lock.withLock {
       generation &+= 1
       accepting = false
+      // Any callbacks admitted for the previous generation are stale once a
+      // new start is requested. Their queued work still releases its token,
+      // but the old counters must not survive across runs if that work is
+      // delayed or cancelled during teardown.
+      inFlight.removeAll(keepingCapacity: true)
+      mediaInFlight.removeAll(keepingCapacity: true)
       activeFeedID = feedID
       return generation
     }
@@ -425,6 +454,8 @@ final class CaptureController: @unchecked Sendable {
     let token = lock.withLock {
       generation &+= 1
       accepting = false
+      inFlight.removeAll(keepingCapacity: true)
+      mediaInFlight.removeAll(keepingCapacity: true)
       activeFeedID = nil
       return generation
     }
@@ -481,6 +512,7 @@ final class CaptureController: @unchecked Sendable {
     deliveryStager = CameraFrameStager()
     processor?.releaseIdleResources()
     preparedConfiguration = nil
+    lock.withLock { recordingCallbacks.removeAll(keepingCapacity: true) }
   }
 
   private func clearSignal() {
@@ -793,7 +825,7 @@ final class CaptureController: @unchecked Sendable {
           width: CVPixelBufferGetWidth(rendered),
           height: CVPixelBufferGetHeight(rendered),
           pixelFormat: UInt32(CVPixelBufferGetPixelFormatType(rendered)))
-        onProcessedFrame(ProcessedFrame(payload: rendered, metadata: metadata))
+        onProcessedFrame(ProcessedFrame(payload: rendered, metadata: metadata), token)
       }
       let time = hostTime(for: frame.pts, duration: effective.duration)
       let original = try sampleFactory.sample(rendered, at: time, duration: effective.duration)
@@ -912,6 +944,7 @@ final class CaptureController: @unchecked Sendable {
     let visiblePreview = previewEnabled && (previewRenderers.contains { $0.isVisible } || services.preview != nil)
     let update = CaptureUpdate(message: message, input: inputLabel, output: outputLabel,
       inputFast: detected.map { $0.duration == VideoContract.fastDuration }, sourceDuration: detected?.duration,
+      mediaTime: stopped ? nil : lastDeliveredSourceTime,
       pipelineEnabledApplied: applied, frames: frames, dropped: losses.0 + losses.1 + poolDrops + cameraDrops,
       processingMS: processingMS, previewDelivered: visiblePreview && !outputLabel.isEmpty && !stopped,
       sourceDrops: losses.0, captureDrops: losses.1, poolDrops: poolDrops, cameraDrops: cameraDrops,
@@ -926,6 +959,7 @@ final class CaptureController: @unchecked Sendable {
       audioPeakLeft: stopped ? 0 : audioPeakLeft, audioPeakRight: stopped ? 0 : audioPeakRight,
       audioRMSLeft: stopped ? 0 : audioRMSLeft, audioRMSRight: stopped ? 0 : audioRMSRight,
       audioBitrateKbps: stopped ? 0 : audioBitrateKbps, audioPresent: stopped ? false : audioPresent,
+      audioPacketTime: stopped ? nil : lastAudioPacketTime,
       videoBitrateMbps: stopped ? 0 : videoBitrateMbps,
       videoDrops: stopped ? 0 : losses.0 + losses.1 + poolDrops + cameraDrops,
       cameraOutputActive: cameraConnected, cameraMessage: cameraMessage, stopped: stopped)

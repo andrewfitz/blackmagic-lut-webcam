@@ -43,10 +43,25 @@ func syntheticRamp() throws -> CVPixelBuffer {
     XCTAssertEqual(Array(cube.rgba[8..<12]), [0, 1, 0, 1])
     XCTAssertEqual(Array(cube.rgba[16..<20]), [0, 0, 1, 1])
   }
+  func testUTF8BOMIsIgnored() throws {
+    let cube = try CubeLUT(text: "\u{FEFF}" + cubeText(), fallbackTitle: "fallback")
+    XCTAssertEqual(cube.dimension, 2)
+    XCTAssertEqual(cube.title, "Synthetic test LUT")
+  }
+  func testTitlePreservesQuotedTextAndRejectsMisplacement() throws {
+    let source = cubeText().replacingOccurrences(of: "TITLE \"Synthetic test LUT\"",
+      with: "TITLE \"  Look #1  \" # inline comment")
+    XCTAssertEqual(try CubeLUT(text: source).title, "  Look #1  ")
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "TITLE \"Synthetic test LUT\"",
+      with: "TITLE unquoted")))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText() + "\nTITLE \"again\""))
+  }
   func testRejectIncompleteOversizedAndNonFinite() {
     XCTAssertThrowsError(try CubeLUT(text: "LUT_3D_SIZE 2\n0 0 0"))
     XCTAssertThrowsError(try CubeLUT(text: "LUT_3D_SIZE 256"))
     XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "0.0 0.0 0.0", with: "nan 0 0")))
+    XCTAssertThrowsError(try CubeLUT(text: cubeText().replacingOccurrences(of: "0.0 0.0 0.0", with: "1e38 0 0")))
+    XCTAssertThrowsError(try CubeLUT(text: String(repeating: "#", count: 251)))
     XCTAssertThrowsError(try CubeLUT(text: cubeText() + "\n0 0 0"))
     XCTAssertThrowsError(try CubeLUT(text: "LUT_1D_SIZE 2\n0 0 0\n1 1 1"))
   }
@@ -63,6 +78,8 @@ func syntheticRamp() throws -> CVPixelBuffer {
   }
   static let allTests = [
     ("ordering and whitespace", testOrderingAndWhitespace),
+    ("UTF-8 BOM", testUTF8BOMIsIgnored),
+    ("title parsing", testTitlePreservesQuotedTextAndRejectsMisplacement),
     ("invalid LUT rejection", testRejectIncompleteOversizedAndNonFinite),
     ("domain validation", testDomain),
   ]
@@ -225,6 +242,7 @@ suite.addTest(XCTestSuite(forTestCaseClass: ProgramOutputRouteChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: AutomaticFeedChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: EmbeddedAudioRecordingChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RecordingChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: RecordingOutputChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: ProResRecordingConfigurationChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RecordingEndToEndChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RouteDemandCoordinatorChecks.self))
@@ -233,6 +251,8 @@ suite.addTest(XCTestSuite(forTestCaseClass: ProgramTimestampMapperChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: SwitcherCoordinatorChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: ProcessedFrameChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: FeedRuntimeChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: AutoSwitcherBridgeChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: AutoSwitcherTimelineChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: InstallerChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: MulticamRuntimeChecks.self))
 #if CAPTURE_LIFECYCLE_TESTS

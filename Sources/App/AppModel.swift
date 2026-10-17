@@ -32,6 +32,43 @@ final class AppModel {
   var switcherPendingFeedID: FeedID? { feedCoordinator.programOutput.pendingFeedID }
   var switcherStatus: String { feedCoordinator.switcherCoordinator.statusMessage }
 
+  var naturalTalkingHeadEnabled: Bool {
+    get { feedCoordinator.switcher.naturalTalkingHead.enabled }
+    set {
+      guard !newValue || !running || outputMode == .program else { return }
+      var settings = feedCoordinator.switcher
+      if newValue, outputMode != .program { setOutputMode(.program) }
+      settings.automatic = newValue
+      settings.strategy = newValue ? .naturalTalkingHead : .manual
+      settings.naturalTalkingHead.enabled = newValue
+      updateSwitcher(settings)
+    }
+  }
+
+  var naturalAnchorFeedID: FeedID? {
+    get { feedCoordinator.switcher.naturalTalkingHead.anchorFeedID }
+    set {
+      var settings = feedCoordinator.switcher
+      settings.naturalTalkingHead.anchorFeedID = newValue
+      updateSwitcher(settings)
+    }
+  }
+
+  var naturalEmphasisFeedID: FeedID? {
+    get { feedCoordinator.switcher.naturalTalkingHead.emphasisFeedID }
+    set {
+      var settings = feedCoordinator.switcher
+      settings.naturalTalkingHead.emphasisFeedID = newValue
+      updateSwitcher(settings)
+    }
+  }
+
+  var naturalDirectorStatus: String {
+    if !naturalTalkingHeadEnabled { return "Disabled" }
+    if autoSwitcherBridge != nil { return "Active · Rust director" }
+    return running ? "Waiting for two enabled feeds" : "Starts with Program output"
+  }
+
   var canEditFeedTopology: Bool { !running && !loading }
   var selectedFeedName: String {
     feedCoordinator.selectedDescriptor.name
@@ -70,6 +107,10 @@ final class AppModel {
       cameraDemandError = nil
       if automaticFeedEnabled { demandMonitor.start() }
       else { demandMonitor.stop() }
+      // Turning automatic mode off must release a capture that was started
+      // for camera demand; otherwise the feed keeps running with no owner and
+      // the UI toggle appears to have no effect until the user presses Stop.
+      if !automaticFeedEnabled { reconcileAutomaticFeed() }
     }
   }
   private(set) var cameraDemandError: String?
@@ -84,7 +125,10 @@ final class AppModel {
   let installer = ExtensionInstaller()
   let previewRenderer: VideoPreviewRenderer
   let miniPreviewRenderer: VideoPreviewRenderer
-  private let capture: CaptureController
+  // The selected feed owns the capture controller used by the app-level
+  // controls. This used to be permanently bound to the primary controller,
+  // which left selection changes publishing frames from the wrong feed.
+  private var capture: CaptureController
   let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
@@ -93,9 +137,18 @@ final class AppModel {
   private var restoringSettings = true
   private var lutBookmark: Data?
   private var rememberedLUTEnabled = false
+  // LUT parsing and GPU uploads are asynchronous. Invalidate an operation
+  // whenever the selected feed or a newer load changes, so an old completion
+  // cannot overwrite the current feed's settings.
+  private var lutLoadGeneration: UInt64 = 0
   private let demandMonitor = CameraDemandMonitor()
   private var automaticPolicy = AutomaticFeedPolicy()
   private var persistedSnapshot = AppSettingsSnapshot()
+  private var autoSwitcherBridge: AutoSwitcherBridge?
+  private var autoSwitcherTimeline: AutoSwitcherTimelineRecorder?
+  private var recordingTimelines: [FeedID: AutoSwitcherTimelineRecorder] = [:]
+  private var pendingAutoDecisionID: UUID?
+  private var pendingAutoTargetFeedID: FeedID?
 
   init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader(),
        registryStore: VirtualCameraRegistryStore? = nil) {
@@ -107,8 +160,15 @@ final class AppModel {
 
     let renderer = VideoPreviewRenderer()
     let miniRenderer = VideoPreviewRenderer()
-    let primaryCapture = CaptureController(previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
-    let capturePool = FeedCapturePool(initial: [snapshot.selectedFeedID: primaryCapture])
+    let initialFeedID = snapshot.feeds.first(where: { $0.id == snapshot.selectedFeedID && $0.enabled })?.id
+      ?? snapshot.feeds.first(where: \.enabled)?.id
+      ?? snapshot.feeds[0].id
+    let primaryCapture = CaptureController(services: .live(feedID: initialFeedID),
+      previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
+    let capturePool = FeedCapturePool(initial: [initialFeedID: primaryCapture], factory: { feedID in
+      CaptureController(services: .live(feedID: feedID), previewRenderer: renderer,
+        additionalPreviewRenderers: [miniRenderer])
+    })
     feedCoordinator = FeedCoordinator(snapshot: snapshot, capturePool: capturePool)
     let coordinator = feedCoordinator
     previewRenderer = renderer
@@ -119,7 +179,31 @@ final class AppModel {
       driver: NativeRecordingSessionDriver(capture: primaryCapture, rawAudioCallbackAvailable: true,
         captureForFeed: { id in coordinator.capture(for: id) }))
     self.lutLoader = lutLoader
-    let savedFeed = snapshot.selectedFeed ?? FeedDescriptor()
+    recordingModel.onOutputFolderChanged = { [weak self] folder in
+      self?.autoSwitcherTimeline?.setOutputFolder(folder)
+    }
+    recordingModel.onRecordingStarted = { [weak self] feedID, url in
+      guard let self, let timeline = self.autoSwitcherTimeline else { return }
+      self.recordingTimelines[feedID] = timeline
+      timeline.recordingStarted(feedID: feedID, url: url, mediaStart: self.update.mediaTime)
+    }
+    recordingModel.onRecordingFinished = { [weak self] feedID, url in
+      guard let self, let timeline = self.recordingTimelines.removeValue(forKey: feedID) else { return }
+      timeline.recordingFinished(feedID: feedID, url: url, mediaEnd: self.update.mediaTime)
+    }
+    feedCoordinator.onProgramCutApplied = { [weak self] feedID, sourceTime, programTime in
+      guard let self, let decisionID = self.pendingAutoDecisionID,
+        self.pendingAutoTargetFeedID == feedID else { return }
+      self.pendingAutoDecisionID = nil
+      self.pendingAutoTargetFeedID = nil
+      self.autoSwitcherTimeline?.recordApplied(decisionID: decisionID, target: feedID,
+        sourceTime: sourceTime, programTime: programTime)
+      // Rust's director decision clock is source media time. Program time is
+      // retained in the timeline as a separate mapped value and must not be
+      // used to acknowledge a source-clock cut.
+      self.autoSwitcherBridge?.acknowledge(decisionID: decisionID, appliedAt: sourceTime)
+    }
+    let savedFeed = snapshot.feeds.first(where: { $0.id == initialFeedID }) ?? FeedDescriptor()
     selectedDevice = savedFeed.selectedDevice
     configuration = savedFeed.configuration
     rememberedLUTEnabled = savedFeed.applyLUT
@@ -134,27 +218,10 @@ final class AppModel {
     publishVirtualCameraRegistry(snapshot)
     capture.setPreviewEnabled(previewEnabled)
     demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
-    feedCoordinator.setCameraOutputEnabled(feedID: snapshot.selectedFeedID,
+    feedCoordinator.setCameraOutputEnabled(feedID: initialFeedID,
       enabled: snapshot.outputMode != .program)
-    installProcessedFrameHandler(for: snapshot.selectedFeedID)
-    capture.onUpdate = { [weak self] update in
-      MainActor.assumeIsolated {
-        guard let self else { return }
-        self.update = update
-        let previewReady = self.previewEnabled && update.previewDelivered
-        if self.previewReady != previewReady { self.previewReady = previewReady }
-        if let inputFast = update.inputFast, self.configuration.inputFast != inputFast {
-          self.restoringSettings = true
-          self.configuration.inputFast = inputFast
-          self.restoringSettings = false
-        }
-        if update.stopped {
-          self.feedCoordinator.selectedSession.stop()
-          self.recordingModel.stopAll()
-          self.running = false
-        }
-      }
-    }
+    installProcessedFrameHandler(for: initialFeedID)
+    installCaptureUpdateHandler(for: initialFeedID)
     refresh()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
     demandMonitor.onRouteChange = { [weak self] change in
@@ -189,11 +256,14 @@ final class AppModel {
     guard panel.runModal() == .OK, let url = panel.url else { return }
     lutError = nil
     loading = true
+    lutLoadGeneration &+= 1
+    let loadGeneration = lutLoadGeneration
+    let feedID = selectedFeedID
     Task { [weak self, lutLoader] in
       do {
         let loaded = try await lutLoader.load(url: url)
-        self?.uploadLUT(loaded, enable: true)
-      } catch { self?.lutLoadFailed(error, restoring: false) }
+        self?.uploadLUT(loaded, enable: true, generation: loadGeneration, feedID: feedID)
+      } catch { self?.lutLoadFailed(error, restoring: false, generation: loadGeneration, feedID: feedID) }
     }
   }
 
@@ -201,19 +271,26 @@ final class AppModel {
     lutError = nil
     loading = true
     update.message = "Restoring saved LUT…"
+    lutLoadGeneration &+= 1
+    let loadGeneration = lutLoadGeneration
+    let feedID = selectedFeedID
     Task { [weak self, lutLoader] in
       do {
         let loaded = try await lutLoader.restore(bookmark: bookmark)
         guard let self else { return }
-        self.uploadLUT(loaded, enable: self.rememberedLUTEnabled, restoring: true)
-      } catch { self?.lutLoadFailed(error, restoring: true) }
+        self.uploadLUT(loaded, enable: self.rememberedLUTEnabled, restoring: true,
+          generation: loadGeneration, feedID: feedID)
+      } catch { self?.lutLoadFailed(error, restoring: true, generation: loadGeneration, feedID: feedID) }
     }
   }
 
-  private func uploadLUT(_ loaded: LoadedLUT, enable: Bool, restoring: Bool = false) {
+  private func uploadLUT(_ loaded: LoadedLUT, enable: Bool, restoring: Bool = false,
+                         generation: UInt64, feedID: FeedID) {
+    guard generation == lutLoadGeneration, feedID == selectedFeedID else { return }
     capture.load(loaded.cube) { [weak self] result in
       MainActor.assumeIsolated {
         guard let self else { return }
+        guard generation == self.lutLoadGeneration, feedID == self.selectedFeedID else { return }
         switch result {
         case .success:
           self.lutError = nil
@@ -227,13 +304,15 @@ final class AppModel {
           self.saveSettings()
           self.update.message = "LUT loaded. Confirm it expects \(self.gamut) and outputs Rec.709."
           self.reconcileAutomaticFeed()
-        case .failure(let error): self.lutLoadFailed(error, restoring: restoring)
+        case .failure(let error):
+          self.lutLoadFailed(error, restoring: restoring, generation: generation, feedID: feedID)
         }
       }
     }
   }
 
-  private func lutLoadFailed(_ error: Error, restoring: Bool) {
+  private func lutLoadFailed(_ error: Error, restoring: Bool, generation: UInt64, feedID: FeedID) {
+    guard generation == lutLoadGeneration, feedID == selectedFeedID else { return }
     loading = false
     // Keep the last saved bookmark and an already-loaded LUT. A missing moved
     // file is recoverable by choosing it again; it does not erase preferences.
@@ -253,10 +332,12 @@ final class AppModel {
       feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
     saveSettings()
     guard feedCoordinator.select(id) else { return false }
+    capture = feedCoordinator.capture(for: id)
     let descriptor = feedCoordinator.selectedDescriptor
     applySelectedDescriptor(descriptor)
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
+    installCaptureUpdateHandler(for: id)
     installProcessedFrameHandler(for: id)
     return true
   }
@@ -268,6 +349,7 @@ final class AppModel {
     guard canEditFeedTopology else { return nil }
     saveSettings()
     let id = feedCoordinator.add(name: name)
+    syncRecordingFeeds()
     guard selectFeed(id) else { return nil }
     saveSettings()
     return id
@@ -281,7 +363,13 @@ final class AppModel {
     let wasSelected = id == selectedFeedID
     saveSettings()
     guard feedCoordinator.remove(id) else { return false }
-    if wasSelected { applySelectedDescriptor(feedCoordinator.selectedDescriptor) }
+    syncRecordingFeeds()
+    if wasSelected {
+      capture = feedCoordinator.capture(for: feedCoordinator.selectedFeedID)
+      applySelectedDescriptor(feedCoordinator.selectedDescriptor)
+      installCaptureUpdateHandler(for: feedCoordinator.selectedFeedID)
+      installProcessedFrameHandler(for: feedCoordinator.selectedFeedID)
+    }
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
     return true
@@ -296,6 +384,7 @@ final class AppModel {
     var updated = existing
     updated.name = trimmed
     feedCoordinator.update(updated)
+    syncRecordingFeeds()
     saveSettings()
     return true
   }
@@ -305,25 +394,39 @@ final class AppModel {
     saveSettings()
     feedCoordinator.setOutputMode(mode)
     saveSettings()
+    reconcileAutoSwitcher()
   }
 
   /// Applies switcher controls atomically to the live Program route and its
   /// persisted snapshot. Invalid feed IDs are normalized by the coordinator.
   func updateSwitcher(_ settings: SwitcherSettings) {
     guard !restoringSettings else { return }
+    // The Rust bridge is configured immutably at creation time. Recreate it
+    // when a live setting changes so camera identities and timing thresholds
+    // cannot diverge from the UI's persisted policy.
+    if autoSwitcherBridge != nil { stopAutoSwitcher() }
     feedCoordinator.setSwitcher(settings)
     saveSettings()
+    reconcileAutoSwitcher()
   }
 
   @discardableResult
   func requestProgramCut(to feedID: FeedID) -> ProgramCutRequestResult<FeedID> {
+    let oldDecisionID = pendingAutoDecisionID
     let result = feedCoordinator.requestProgramCut(to: feedID)
     if case .rejectedMissingSource = result { return result }
+    if let oldDecisionID {
+      pendingAutoDecisionID = nil
+      pendingAutoTargetFeedID = nil
+      autoSwitcherTimeline?.recordRejected(decisionID: oldDecisionID)
+      autoSwitcherBridge?.reject(decisionID: oldDecisionID)
+    }
     saveSettings()
     return result
   }
 
   private func applySelectedDescriptor(_ descriptor: FeedDescriptor) {
+    lutLoadGeneration &+= 1
     restoringSettings = true
     selectedDevice = descriptor.selectedDevice
     configuration = descriptor.configuration
@@ -357,6 +460,12 @@ final class AppModel {
     settingsStore.saveSnapshot(persistedSnapshot)
     demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
     publishVirtualCameraRegistry(persistedSnapshot)
+  }
+
+  private func syncRecordingFeeds() {
+    recordingModel.updateFeeds(feedCoordinator.descriptors.map {
+      RecordingFeedDescriptor(id: $0.id, name: $0.name)
+    })
   }
 
   /// Publishes the complete feed topology in one transaction. The camera
@@ -402,6 +511,7 @@ final class AppModel {
       // sources run headless and publish only into the Program route.
       for descriptor in feedCoordinator.descriptors where descriptor.enabled &&
         descriptor.id != selectedFeedID && !descriptor.selectedDevice.isEmpty {
+        installCaptureUpdateHandler(for: descriptor.id)
         installProcessedFrameHandler(for: descriptor.id)
         feedCoordinator.setCameraOutputEnabled(feedID: descriptor.id, enabled: false)
         _ = feedCoordinator.startCapture(feedID: descriptor.id,
@@ -421,6 +531,7 @@ final class AppModel {
       } catch {
         update.message = "Program camera unavailable: \(error.localizedDescription)"
       }
+      reconcileAutoSwitcher()
     } else {
       feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: true)
     }
@@ -430,6 +541,7 @@ final class AppModel {
 
   func stop() {
     running = false
+    previewReady = false
     if feedCoordinator.outputMode == .program {
       try? feedCoordinator.setProgramOutputDemand(false, configuration: effectiveConfiguration,
         passthroughFormat: kCVPixelFormatType_422YpCbCr10)
@@ -439,16 +551,189 @@ final class AppModel {
     }
     feedCoordinator.stop(selectedFeedID)
     recordingModel.stopAll()
-    capture.stop()
+    stopAutoSwitcher()
+  }
+
+  private func reconcileAutoSwitcher() {
+    guard feedCoordinator.outputMode == .program,
+      running,
+      feedCoordinator.switcherCoordinator.settings.naturalTalkingHead.enabled,
+      feedCoordinator.switcherCoordinator.settings.automatic,
+      feedCoordinator.switcherCoordinator.settings.strategy == .naturalTalkingHead else {
+      stopAutoSwitcher()
+      return
+    }
+    var settings = feedCoordinator.switcherCoordinator.settings.naturalTalkingHead
+    settings.normalizeForRuntime()
+    let feeds = feedCoordinator.descriptors.filter {
+      $0.enabled && !$0.selectedDevice.isEmpty && feedCoordinator.isFeedRunning($0.id)
+    }
+    let enabledIDs = Set(feeds.map(\.id))
+    let anchor = settings.anchorFeedID.flatMap { enabledIDs.contains($0) ? $0 : nil }
+      ?? feeds.first?.id
+    let emphasis = settings.emphasisFeedID.flatMap { enabledIDs.contains($0) ? $0 : nil }
+      ?? feeds.first(where: { $0.id != anchor })?.id
+    guard let anchor, let emphasis, anchor != emphasis else {
+      stopAutoSwitcher()
+      return
+    }
+    if autoSwitcherBridge != nil { return }
+    guard let bridge = AutoSwitcherBridge(settings: settings, anchor: anchor, emphasis: emphasis) else {
+      update.message = "Natural Talking Head could not start its Rust director."
+      return
+    }
+    autoSwitcherTimeline = AutoSwitcherTimelineRecorder(settings: settings, anchor: anchor,
+      emphasis: emphasis, outputFolder: recordingModel.outputFolder)
+    guard let timeline = autoSwitcherTimeline else { return }
+    timeline.onError = { [weak self] message in
+      self?.update.message = "Auto-switcher timeline: \(message)"
+    }
+    bridge.onAudioCue = { [weak self, weak timeline, weak bridge] cue in
+      Task { @MainActor in
+        guard let self, let bridge, self.autoSwitcherBridge === bridge else { return }
+        timeline?.recordAudioCue(cue)
+      }
+    }
+    bridge.onTranscriptCue = { [weak self, weak timeline, weak bridge] cue in
+      Task { @MainActor in
+        guard let self, let bridge, self.autoSwitcherBridge === bridge else { return }
+        timeline?.recordTranscript(cue)
+      }
+    }
+    bridge.onInstruction = { [weak self, weak bridge] instruction in
+      Task { @MainActor [weak self] in
+        guard let self, self.autoSwitcherBridge === bridge, self.running,
+          self.feedCoordinator.outputMode == .program else { return }
+        self.autoSwitcherTimeline?.recordInstruction(instruction,
+          from: self.switcherSelectedFeedID)
+        let result = self.feedCoordinator.requestProgramCut(to: instruction.targetCameraID,
+          noEarlierThan: instruction.cutTime)
+        switch result {
+        case .queued, .coalesced:
+          self.pendingAutoDecisionID = instruction.decisionID
+          self.pendingAutoTargetFeedID = instruction.targetCameraID
+        case .ignoredSameSource, .rejectedMissingSource:
+          self.autoSwitcherTimeline?.recordRejected(decisionID: instruction.decisionID)
+          bridge?.reject(decisionID: instruction.decisionID)
+        }
+      }
+    }
+    bridge.onError = { [weak self, weak bridge] message in
+      Task { @MainActor [weak self] in
+        guard let self, let bridge, self.autoSwitcherBridge === bridge else { return }
+        self.autoSwitcherTimeline?.recordError(message)
+        self.update.message = "Auto director: \(message)"
+      }
+    }
+    bridge.onDecisionExpired = { [weak self, weak bridge] decisionID in
+      Task { @MainActor [weak self] in
+        guard let self, let bridge, self.autoSwitcherBridge === bridge,
+          self.pendingAutoDecisionID == decisionID else { return }
+        self.pendingAutoDecisionID = nil
+        self.pendingAutoTargetFeedID = nil
+        self.autoSwitcherTimeline?.recordExpired(decisionID: decisionID)
+        self.feedCoordinator.cancelProgramCut()
+      }
+    }
+    autoSwitcherBridge = bridge
+    if let current = feedCoordinator.programOutput.selectedFeedID,
+      (current == anchor || current == emphasis) {
+      bridge.manualOverride(cameraID: current, at: update.mediaTime ?? .zero)
+    }
+  }
+
+  private func stopAutoSwitcher() {
+    pendingAutoDecisionID = nil
+    pendingAutoTargetFeedID = nil
+    // Stopping or reconfiguring the director must not leave its queued target
+    // in the Program scheduler to switch after the UI has disabled automation.
+    feedCoordinator.cancelProgramCut()
+    autoSwitcherBridge?.stop()
+    autoSwitcherBridge = nil
+    autoSwitcherTimeline?.finish()
+    autoSwitcherTimeline = nil
+  }
+
+  private func feedAutoSwitcherAudio(_ update: CaptureUpdate) {
+    guard feedCoordinator.outputMode == .program,
+      let time = update.mediaTime ?? update.audioPacketTime else { return }
+    if autoSwitcherBridge == nil {
+      _ = feedCoordinator.evaluateSwitcher(at: time)
+      return
+    }
+    if update.audioPresent {
+      autoSwitcherBridge?.ingestAudio(time: update.audioPacketTime ?? time,
+        rms: Float(max(update.audioRMSLeft, update.audioRMSRight)),
+        peak: Float(max(update.audioPeakLeft, update.audioPeakRight)),
+        sampleRate: update.audioSampleRate, present: true)
+    } else {
+      autoSwitcherTimeline?.recordTick(time: time)
+      autoSwitcherBridge?.tick(time: time)
+    }
+  }
+
+  /// Delivers a timestamped ASR boundary to the active transcript-assisted
+  /// director.  The app currently has no built-in speech recognizer, so an
+  /// ASR adapter can call this entry point from its own callback pipeline.
+  /// Validation and queue handoff are owned by `AutoSwitcherBridge`.
+  @MainActor
+  func ingestAutoSwitcherTranscript(segmentID: String, revision: UInt32,
+                                    start: CMTime, end: CMTime, kind: String,
+                                    confidence: Float, isFinal: Bool) {
+    guard feedCoordinator.outputMode == .program, running,
+      let bridge = autoSwitcherBridge else { return }
+    bridge.ingestTranscript(segmentID: segmentID, revision: revision, start: start,
+      end: end, kind: kind, confidence: confidence, isFinal: isFinal)
+  }
+
+  /// Routes status updates from the currently selected controller into the
+  /// app model. Controllers can outlive a selection change while their stop
+  /// work drains, so stale updates are ignored by feed identity.
+  private func installCaptureUpdateHandler(for feedID: FeedID) {
+    let controller = feedCoordinator.capture(for: feedID)
+    controller.onUpdate = { [weak self] update in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        if update.stopped {
+          self.feedCoordinator.stopCapture(feedID: feedID)
+          if self.selectedFeedID == feedID {
+            for descriptor in self.feedCoordinator.descriptors where descriptor.id != feedID {
+              self.feedCoordinator.stopCapture(feedID: descriptor.id)
+            }
+            self.recordingModel.stopAll()
+            self.running = false
+            self.previewReady = false
+          } else {
+            // A headless Program source can fail independently. Stop only its
+            // recording; stopping every recording here would interrupt healthy
+            // sources that are still producing Program frames.
+            self.recordingModel.stop(feedID: feedID)
+          }
+          self.stopAutoSwitcher()
+          return
+        }
+        guard self.selectedFeedID == feedID else { return }
+        self.update = update
+        self.feedAutoSwitcherAudio(update)
+        let previewReady = self.previewEnabled && update.previewDelivered
+        if self.previewReady != previewReady { self.previewReady = previewReady }
+        if let inputFast = update.inputFast, self.configuration.inputFast != inputFast {
+          self.restoringSettings = true
+          self.configuration.inputFast = inputFast
+          self.restoringSettings = false
+        }
+      }
+    }
   }
 
   private func installProcessedFrameHandler(for feedID: FeedID) {
     feedCoordinator.setProcessedFrameHandler(feedID: feedID) { [weak self] frame in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        _ = self.feedCoordinator.publish(frame, to: feedID)
-        self.feedCoordinator.pumpProgramOutput()
-      }
+      // FeedCoordinator invokes this handler on MainActor after validating
+      // the capture generation, so publishing stays ordered with stop/start
+      // transitions and cannot admit a stale frame into a new session.
+      guard let self else { return }
+      _ = self.feedCoordinator.publish(frame, to: feedID)
+      self.feedCoordinator.pumpProgramOutput()
     }
   }
 

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+EXTERNAL_ROOT = Path("/Volumes/8TB/cinesomatic-director-work").resolve(strict=False)
 objects = {}
 
 
@@ -37,7 +38,26 @@ def source_type(path):
     if path.endswith((".h", ".inc")): return "sourcecode.c.h"
     return "sourcecode.swift"
 source_refs = {path: file(path, source_type(path)) for path in sorted(set(app + camera))}
-sdk_dir = os.environ.get("DECKLINK_SDK_DIR", "/Volumes/8TB/cinesomatic-director-work/cache/ultrastudio-lut/decklink-sdk")
+
+
+def contained_path(value, root, label):
+    candidate = Path(value).expanduser().resolve(strict=False)
+    if candidate == root or not candidate.is_relative_to(root):
+        raise SystemExit(f"{label} must be inside {root}.")
+    return str(candidate)
+
+
+sdk_dir = contained_path(
+    os.environ.get("DECKLINK_SDK_DIR", str(EXTERNAL_ROOT / "cache/ultrastudio-lut/decklink-sdk")),
+    EXTERNAL_ROOT,
+    "DECKLINK_SDK_DIR",
+)
+auto_switcher_lib_dir = os.environ.get(
+    "AUTO_SWITCHER_LIB_DIR",
+    "$(SRCROOT)/Tools/auto-switcher/target/release",
+)
+if "$(" not in auto_switcher_lib_dir:
+    auto_switcher_lib_dir = contained_path(auto_switcher_lib_dir, ROOT, "AUTO_SWITCHER_LIB_DIR")
 dispatch_path = str(Path(sdk_dir) / "DeckLinkAPIDispatch.cpp")
 source_refs[dispatch_path] = add("sdk-dispatch-reference", "PBXFileReference", lastKnownFileType="sourcecode.cpp.cpp", path=dispatch_path, sourceTree="<absolute>")
 app.append(dispatch_path)
@@ -69,7 +89,11 @@ def target(key, name, sources, product, product_type, bundle_id, plist, entitlem
         settings.update(PRODUCT_NAME=bundle_id, SKIP_INSTALL="YES")
     else:
         settings.update(SWIFT_OBJC_BRIDGING_HEADER="Sources/DeckLinkBackend/BridgingHeader.h", DECKLINK_SDK_DIR=sdk_dir,
-                        HEADER_SEARCH_PATHS=["$(inherited)", "$(DECKLINK_SDK_DIR)"])
+                        HEADER_SEARCH_PATHS=["$(inherited)", "$(DECKLINK_SDK_DIR)"],
+                        LIBRARY_SEARCH_PATHS=["$(inherited)", auto_switcher_lib_dir],
+                        OTHER_LDFLAGS=["$(inherited)", "-lauto_switcher", "-lc++", "-lz", "-liconv",
+                                       "-framework", "Security", "-framework", "CoreFoundation",
+                                       "-framework", "SystemConfiguration"])
     resources = [add(f"{key}-resource-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith(".metal")]
     resource_phase = add(f"{key}-resources", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, files=resources, dstPath="", dstSubfolderSpec=7, name="Copy GPU Shader Source", runOnlyForDeploymentPostprocessing=0)
     return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=[phase, frameworks, resource_phase], buildRules=[], dependencies=[], name=name, productName=name, productReference=product, productType=product_type)

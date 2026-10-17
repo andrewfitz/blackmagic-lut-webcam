@@ -319,10 +319,13 @@ final class LUTProcessor {
     command.waitUntilCompleted()
     withExtendedLifetime(wrappers) {}
     guard command.status == .completed else { throw VideoError.message(command.error?.localizedDescription ?? "GPU processing failed.") }
-    // Pool buffers can carry attachments from their previous use. A bypassed
-    // log frame must not inherit the preceding LUT frame's Rec.709 labels.
+    // Pool buffers can carry attachments from their previous use. Start from a
+    // clean attachment set, then carry the source's geometry/timing metadata
+    // into the new image. Color labels are overridden below after the exact
+    // decode/encode matrix is known; this avoids dropping pixel aspect ratio,
+    // clean aperture, and producer-specific metadata on LUT-processed frames.
     CVBufferRemoveAllAttachments(output)
-    if !configuration.applyLUT { CVBufferPropagateAttachments(input, output) }
+    CVBufferPropagateAttachments(input, output)
     // Encoders average each pair/block, producing centered chroma even if input
     // samples were left-cosited. Never carry the source's location onto output.
     CVBufferSetAttachment(output, kCVImageBufferChromaLocationTopFieldKey, kCVImageBufferChromaLocation_Center, .shouldPropagate)
@@ -331,8 +334,21 @@ final class LUTProcessor {
       CVBufferRemoveAttachment(output, kCVImageBufferCleanApertureKey)
       CVBufferRemoveAttachment(output, kCVImageBufferDisplayDimensionsKey)
     }
-    let outputMatrix = configuration.applyLUT ? kCVImageBufferYCbCrMatrix_ITU_R_709_2 :
-      (matrix.map { $0 as CFString } ?? kCVImageBufferYCbCrMatrix_ITU_R_709_2)
+    // Only preserve a matrix we actually decoded. An arbitrary attachment is
+    // not a valid color contract: the decode path intentionally falls back to
+    // Rec.709 for unknown values, so carrying that unknown value to the output
+    // would make downstream clients interpret the encoded pixels differently
+    // from the matrix used to produce them.
+    let outputMatrix: CFString
+    if configuration.applyLUT {
+      outputMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+    } else if matrix == kCVImageBufferYCbCrMatrix_ITU_R_2020 as String {
+      outputMatrix = kCVImageBufferYCbCrMatrix_ITU_R_2020
+    } else if matrix == kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String {
+      outputMatrix = kCVImageBufferYCbCrMatrix_ITU_R_601_4
+    } else {
+      outputMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2
+    }
     CVBufferSetAttachment(output, kCVImageBufferYCbCrMatrixKey, outputMatrix, .shouldPropagate)
     if configuration.applyLUT {
       CVBufferSetAttachment(output, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)

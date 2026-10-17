@@ -40,6 +40,18 @@ import XCTest
     XCTAssertEqual(next.generation, 1)
   }
 
+  func testInvalidSameGroupSnapshotDoesNotSupplyGeneration() {
+    let feed = FeedDescriptor(name: "Primary")
+    let group = "group.org.ultrastudiolut.publish.\(UUID().uuidString)"
+    let invalid = VirtualCameraRegistrySnapshot(generation: 99,
+      appGroupIdentifier: group, devices: [.program(), .program()])
+    let next = VirtualCameraRegistrySnapshot.forFeeds([feed], outputMode: .separateCameras,
+      previous: invalid, appGroupIdentifier: group)
+
+    XCTAssertEqual(next.generation, 1)
+    XCTAssertNoThrow(try next.validate())
+  }
+
   func testCameraProviderLoadsPublishedFeedDevicesAtStartup() throws {
     let suiteName = "org.ultrastudiolut.tests.camera-startup.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

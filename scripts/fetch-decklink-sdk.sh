@@ -10,15 +10,28 @@ if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
 fi
 export TMPDIR="$external_root/tmp"
 sdk_dir="${DECKLINK_SDK_DIR:-$external_root/cache/ultrastudio-lut/decklink-sdk}"
-if [[ "$sdk_dir" != "$external_root"/* ]]; then
-  echo 'DECKLINK_SDK_DIR must be inside the external project workspace.' >&2
-  exit 1
-fi
+sdk_dir="$(python3 - "$external_root" "$sdk_dir" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]).resolve(strict=True)
+candidate = Path(sys.argv[2]).expanduser()
+try:
+    resolved = candidate.resolve(strict=False)
+except OSError as error:
+    raise SystemExit(f"Cannot resolve DECKLINK_SDK_DIR: {error}")
+if resolved == root or not resolved.is_relative_to(root):
+    raise SystemExit("DECKLINK_SDK_DIR must be inside the external project workspace.")
+print(resolved)
+PY
+)"
 mkdir -p "$TMPDIR" "$sdk_dir"
 python3 - "$sdk_dir" <<'PYTHON'
 import hashlib
+import os
 import pathlib
 import sys
+import tempfile
 import urllib.request
 
 commit = "f082210c177a03572cace88c168d0f32d8cde39e"
@@ -35,8 +48,28 @@ files = {
     "DeckLinkAPIVersion.h": "db32f6be4188472ae9fd021527265d4d7893bf77e772f4cd4cf8fcb751cf1f6f",
 }
 destination = pathlib.Path(sys.argv[1])
+if destination.is_symlink():
+    raise SystemExit("DECKLINK_SDK_DIR must not be a symlink.")
+
+
+def atomic_write(path: pathlib.Path, payload: bytes) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as stream:
+            temporary = pathlib.Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
 for name, expected in files.items():
     target = destination / name
+    if target.is_symlink():
+        raise SystemExit(f"Refusing symlink in SDK cache: {target}")
     if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == expected:
         continue
     payload = urllib.request.urlopen(f"{base}/{name}", timeout=30).read()
@@ -45,14 +78,12 @@ for name, expected in files.items():
     # Retain the entire original copyright/license in every cached file.
     if b"-LICENSE-START-" not in payload or b"-LICENSE-END-" not in payload:
         raise SystemExit(f"Missing Blackmagic license in {name}; cache preserved.")
-    temporary = destination / (name + ".download")
-    temporary.write_bytes(payload)
-    temporary.replace(target)
-(destination / "SOURCE.txt").write_text(
+    atomic_write(target, payload)
+atomic_write((destination / "SOURCE.txt"), (
     f"Blackmagic Desktop Video SDK 12.0 interfaces\n"
     f"Source: https://github.com/obsproject/obs-studio/tree/{commit}/plugins/decklink/mac/decklink-sdk\n"
     "Each SDK file preserves its full Blackmagic copyright and permissive license.\n"
     "Versioned SDK interfaces are loaded from the user's installed Desktop Video framework.\n"
-)
+).encode())
 print(destination)
 PYTHON

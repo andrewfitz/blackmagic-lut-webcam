@@ -69,7 +69,14 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
   private(set) var latest: CVPixelBuffer?
   private(set) var receivedAt: CMTime = .invalid
   var consumers = 0
-  var inUse: Bool { consumers > 0 || sink?.consuming == true || sink?.client != nil }
+  // A source authorization callback can arrive before CMIO invokes
+  // startStream(). Keep a runtime published while that lease is pending: the
+  // stream source stores an unowned owner, so removing the runtime in this
+  // window would leave a later start callback with a dangling owner.
+  var inUse: Bool {
+    consumers > 0 || sink?.consuming == true || sink?.client != nil ||
+      source?.hasPendingStart == true
+  }
   private var black: CVPixelBuffer?
   private var timer: DispatchSourceTimer?
   private var lastOutput: CMTime = .invalid
@@ -103,7 +110,11 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
       }
       // CMIOExtensionProvider is a process singleton. In-process tests create
       // native streams/devices but omit a second native provider registration.
-      if createNativeProvider { provider = CMIOExtensionProvider(source: self, clientQueue: queue) }
+      // Always hand CMIO the resolved serialization queue.  The initializer's
+      // optional `queue` argument is nil for the normal/native path; passing it
+      // through would make CMIO choose its own callback queue while timers and
+      // stream state continue to run on `self.queue`.
+      if createNativeProvider { provider = CMIOExtensionProvider(source: self, clientQueue: self.queue) }
       device = CMIOExtensionDevice(localizedName: descriptor.displayName,
         deviceID: Self.deviceUUID(for: descriptor.id),
         legacyDeviceID: descriptor.deviceUID, source: deviceSource)
@@ -378,6 +389,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   private let automaticTimers: Bool
   private let clock: () -> CMTime
   private let output: ((CMSampleBuffer, CMIOExtensionStream.DiscontinuityFlags, UInt64) -> Void)?
+  private static let queueKey = DispatchSpecificKey<ObjectIdentifier>()
   let logger = Logger(subsystem: VideoContract.extensionID, category: "camera.registry")
 
   init(automaticTimers: Bool = true, createNativeProvider: Bool = true,
@@ -390,12 +402,18 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     self.automaticTimers = automaticTimers
     self.clock = clock
     self.output = output
-    let fallback = Self.fallbackSnapshot()
-    let selected = [registrySnapshot, registry, registryStore?.load(), store?.load()].compactMap { $0 }
-      .first(where: { (try? $0.validate()) != nil }) ?? fallback
+    let expectedGroup = registryStore?.groupIdentifier ?? store?.groupIdentifier
+    let fallback = Self.fallbackSnapshot(appGroupIdentifier: expectedGroup)
+    let selected = [registrySnapshot, registry, registryStore?.load(), store?.load()]
+      .compactMap { $0 }
+      .first(where: { candidate in
+        (try? candidate.validate()) != nil &&
+          (expectedGroup == nil || candidate.appGroupIdentifier == expectedGroup)
+      }) ?? fallback
     self.snapshot = selected
     self.descriptors = selected.devices.filter(\.enabled)
     super.init()
+    queue.setSpecific(key: Self.queueKey, value: ObjectIdentifier(self))
     do {
       if createNativeProvider { provider = CMIOExtensionProvider(source: self, clientQueue: queue) }
       for descriptor in descriptors { try publish(descriptor) }
@@ -404,9 +422,11 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     }
   }
 
-  private static func fallbackSnapshot() -> VirtualCameraRegistrySnapshot {
+  private static func fallbackSnapshot(appGroupIdentifier: String? = nil) -> VirtualCameraRegistrySnapshot {
     let descriptor = VirtualCameraDescriptor.feed(feedID: "default", displayName: VideoContract.cameraName)
-    return VirtualCameraRegistrySnapshot(generation: 0, devices: [descriptor])
+    return VirtualCameraRegistrySnapshot(generation: 0,
+      appGroupIdentifier: appGroupIdentifier ?? VirtualCameraRegistrySnapshot.defaultAppGroupIdentifier,
+      devices: [descriptor])
   }
 
   /// All currently published native devices, in registry order.
@@ -446,11 +466,12 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
 
   private func publish(_ descriptor: VirtualCameraDescriptor) throws {
     try descriptor.validate()
-    // Keep the legacy first runtime on the provider queue so existing callers
-    // that synchronize through CameraProvider.queue also synchronize its
-    // sample-completion work. Additional registry devices retain independent
-    // queues for feed isolation.
-    let runtimeQueue = runtimes.isEmpty ? queue : nil
+    // CMIO invokes every device/stream source callback on the provider's
+    // clientQueue. All runtimes therefore need to share that queue; giving
+    // additional feeds private queues would race stream state (client,
+    // consumption and generation) against their timers and sample callbacks.
+    // Feed isolation is provided by independent runtime state, not queues.
+    let runtimeQueue = queue
     let runtime = CameraDeviceRuntime(automaticTimers: automaticTimers, createNativeProvider: false,
       queue: runtimeQueue,
       clock: clock, output: output, descriptor: descriptor)
@@ -474,6 +495,14 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   /// published until their last source client disconnects.
   @discardableResult
   func reconcile(_ candidate: VirtualCameraRegistrySnapshot) throws -> VirtualCameraRegistrySnapshot {
+    if DispatchQueue.getSpecific(key: Self.queueKey) == ObjectIdentifier(self) {
+      return try reconcileOnQueue(candidate)
+    }
+    return try queue.sync { try reconcileOnQueue(candidate) }
+  }
+
+  @discardableResult
+  private func reconcileOnQueue(_ candidate: VirtualCameraRegistrySnapshot) throws -> VirtualCameraRegistrySnapshot {
     let next = try snapshot.applying(candidate)
     let nextDescriptors = next.devices.filter(\.enabled)
     let nextIDs = Set(nextDescriptors.map(\.id))
@@ -485,7 +514,10 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
         try publish(descriptor)
       }
     }
-    for (id, runtime) in runtimes where !nextIDs.contains(id) {
+    // Snapshot the dictionary before removeIfReleased mutates `runtimes`.
+    // Iterating the live dictionary while removing an idle runtime is
+    // undefined and can trap under Swift's copy-on-write exclusivity checks.
+    for (id, runtime) in Array(runtimes) where !nextIDs.contains(id) {
       pendingRemoval.insert(id)
       removeIfReleased(runtime)
     }
@@ -559,6 +591,8 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
   // demand and leave a different client pinned until provider teardown.
   private var activeSourceClientIDs: [UUID] = []
   private var anonymousSourceStarts = 0
+
+  var hasPendingStart: Bool { !pendingSourceClientIDs.isEmpty }
 
   init(owner: CameraDeviceRuntime, isSink: Bool, descriptor: VirtualCameraDescriptor) {
     self.owner = owner
@@ -721,6 +755,11 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
     timer.resume()
   }
   func stopConsumption() {
+    // CMIO may deliver a stop callback for a start that was rejected or never
+    // reached beginConsumption. Treat that callback as idempotent: clearing
+    // the producer's latest image here would interrupt an unrelated source
+    // viewer that is still consuming the device.
+    guard consuming || client != nil || request != nil else { return }
     consuming = false
     consumePending = false
     generation &+= 1

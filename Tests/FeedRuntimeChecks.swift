@@ -75,6 +75,20 @@ import XCTest
     coordinator.stop(active.id)
     XCTAssertTrue(coordinator.remove(active.id))
     XCTAssertEqual(coordinator.descriptors.map(\.id), [disabled.id])
+    XCTAssertFalse(coordinator.start(FeedID(rawValue: "missing")))
+    XCTAssertEqual(coordinator.descriptors.map(\.id), [disabled.id],
+      "Starting an unknown ID must not create a ghost descriptor")
+  }
+
+  func testRemovingSelectedFeedSelectsAnotherEnabledFeed() {
+    let disabled = FeedDescriptor(id: FeedID(rawValue: "disabled"), name: "Disabled", enabled: false)
+    let first = FeedDescriptor(id: FeedID(rawValue: "first"), name: "First")
+    let second = FeedDescriptor(id: FeedID(rawValue: "second"), name: "Second")
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
+      feeds: [disabled, first, second], selectedFeedID: first.id))
+
+    XCTAssertTrue(coordinator.remove(first.id))
+    XCTAssertEqual(coordinator.selectedFeedID, second.id)
   }
 
   func testCaptureOwnersAreStableAndIndependentPerFeed() {
@@ -102,10 +116,49 @@ import XCTest
     XCTAssertNotNil(pool.existingController(for: second))
   }
 
+  func testProgramDemandIsReleasedWhenLeavingProgramMode() {
+    let first = FeedDescriptor(id: FeedID(rawValue: "feed-a"), name: "Wide")
+    let second = FeedDescriptor(id: FeedID(rawValue: "feed-b"), name: "Tight")
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
+      feeds: [first, second], outputMode: .program))
+
+    XCTAssertEqual(coordinator.setProgramConsumer(true, at: 0), [.start(feedID: "feed-a")])
+    XCTAssertEqual(coordinator.activeDemandFeedIDs, Set(["feed-a"]))
+    coordinator.setOutputMode(.separateCameras)
+    XCTAssertTrue(coordinator.activeDemandFeedIDs.isEmpty)
+  }
+
+  func testDedicatedDemandRejectsDisabledAndUnknownFeeds() {
+    let enabled = FeedDescriptor(id: FeedID(rawValue: "enabled"), name: "Enabled")
+    let disabled = FeedDescriptor(id: FeedID(rawValue: "disabled"), name: "Disabled", enabled: false)
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(feeds: [enabled, disabled]))
+
+    XCTAssertTrue(coordinator.setDedicatedCameraConsumer(
+      feedID: disabled.id, active: true).isEmpty)
+    XCTAssertTrue(coordinator.setDedicatedCameraConsumer(
+      feedID: FeedID(rawValue: "missing"), active: true).isEmpty)
+    XCTAssertTrue(coordinator.activeDemandFeedIDs.isEmpty)
+  }
+
+  func testDisabledPersistedSelectionFallsBackToEnabledFeed() {
+    let disabled = FeedDescriptor(id: FeedID(rawValue: "disabled"), name: "Disabled", enabled: false)
+    let enabled = FeedDescriptor(id: FeedID(rawValue: "enabled"), name: "Enabled")
+    let coordinator = FeedCoordinator(snapshot: AppSettingsSnapshot(
+      feeds: [disabled, enabled], selectedFeedID: disabled.id))
+
+    XCTAssertEqual(coordinator.selectedFeedID, enabled.id)
+    XCTAssertEqual(coordinator.selectedDescriptor.id, enabled.id)
+    XCTAssertFalse(coordinator.select(disabled.id))
+  }
+
   static let allTests = [
     ("stable order and lazy sessions", testCoordinatorKeepsStableOrderAndLazilyCreatesSessions),
     ("independent session lifecycle", testSessionsHaveIndependentLifecycleAndRouteQueues),
     ("disabled and running guards", testDisabledOrRunningFeedsCannotBeStartedOrRemoved),
+    ("selected removal chooses enabled feed", testRemovingSelectedFeedSelectsAnotherEnabledFeed),
     ("independent native capture owners", testCaptureOwnersAreStableAndIndependentPerFeed),
+    ("Program demand follows output mode", testProgramDemandIsReleasedWhenLeavingProgramMode),
+    ("invalid dedicated demand is rejected", testDedicatedDemandRejectsDisabledAndUnknownFeeds),
+    ("disabled persisted selection fallback", testDisabledPersistedSelectionFallsBackToEnabledFeed),
   ]
 }

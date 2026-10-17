@@ -161,6 +161,12 @@ static DetectedInput describeInput(IDeckLinkDisplayMode *mode, BMDDetectedVideoI
     CMTIME_IS_NUMERIC(result.duration) &&
     (result.mode == bmdMode4K2160p2997 || result.mode == bmdMode4K2160p5994) &&
     supportedFrameDuration(duration, scale) &&
+    // Treat an omitted depth flag as unsupported.  The capture contract needs
+    // a provably 10/12-bit source; accepting "unreported bit depth" here
+    // would let an 8-bit/unknown signal through the auto reconfiguration path
+    // and silently promote it to a 10-bit output.
+    (flags & bmdDetectedVideoInputYCbCr422) &&
+    (flags & (bmdDetectedVideoInput10BitDepth | bmdDetectedVideoInput12BitDepth)) &&
     !(flags & (bmdDetectedVideoInputRGB444 | bmdDetectedVideoInput8BitDepth | bmdDetectedVideoInputDualStream3D));
   return result;
 }
@@ -379,15 +385,21 @@ class CaptureCallback final : public IDeckLinkInputCallback {
   }
   HRESULT VideoInputFrameArrived(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPacket *audioPacket) override {
     @autoreleasepool {
-      if (!accepting || !frame) return S_OK;
+      if (!accepting) return S_OK;
+      // Desktop Video can deliver an audio packet while the video input is
+      // absent (for example during a source reconnect).  Keep reporting that
+      // packet even when the paired video frame is nil; the media path owns
+      // its own clock and should not acquire an artificial audio hole merely
+      // because no video object was supplied for this callback.
+      reportMedia(frame, audioPacket, timeScale, mediaHandler, rawAudioHandler != nil);
+      reportRawAudio(audioPacket, rawAudioHandler);
+      if (!frame) return S_OK;
       bool valid = !(frame->GetFlags() & bmdFrameHasNoInputSource);
       int prior = signalState.exchange(valid ? 1 : 0);
       // Embedded audio has its own packet clock. Preserve it across video
       // signal loss and format reconfiguration so recordings do not acquire
       // an artificial audio hole merely because the paired video frame is
       // flagged invalid.
-      reportMedia(frame, audioPacket, timeScale, mediaHandler, rawAudioHandler != nil);
-      reportRawAudio(audioPacket, rawAudioHandler);
       if (!valid) {
         if (prior != 0) eventHandler(modeHandler ? @"No HDMI video signal — waiting for the camera to reconnect." :
           @"No video signal. Check the FX3 HDMI output and selected frame rate.");
@@ -915,6 +927,11 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
   auto invalidDetection = describeInput(&invalidMode, flags);
   if (invalidDetection.supported || ![invalidDetection.description containsString:@"unknown frame rate"])
     return fail(error, @"Failed native frame-rate query fabricated a supported cadence.");
+  FakeMode validMode;
+  auto unknownDepth = describeInput(&validMode, bmdDetectedVideoInputYCbCr422);
+  auto unknownColor = describeInput(&validMode, bmdDetectedVideoInput10BitDepth);
+  if (unknownDepth.supported || unknownColor.supported)
+    return fail(error, @"Auto detection accepted an input without explicit 10-bit YUV 4:2:2 metadata.");
 
   // Every partial driver reconfiguration failure keeps frames disabled.
   for (int scenario = 0; scenario != 4; ++scenario) {

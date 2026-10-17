@@ -4,6 +4,9 @@ import XCTest
 
 @MainActor @objcMembers final class ProgramOutputRouteChecks: XCTestCase {
   private func feed(_ id: String) -> FeedID { FeedID(rawValue: id) }
+  private func mediaTime(_ seconds: Double) -> CMTime {
+    CMTime(seconds: seconds, preferredTimescale: 60_000)
+  }
 
   private func frame(_ id: FeedID, at seconds: Double) throws -> ProcessedFrame<CVPixelBuffer> {
     var image: CVPixelBuffer?
@@ -45,6 +48,25 @@ import XCTest
       "The first frame after a cut starts at the next Program timeline boundary")
   }
 
+  func testProgramCutHonorsEarliestMediaTimeFromAutoDirector() throws {
+    let a = feed("alpha")
+    let b = feed("beta")
+    let route = ProgramOutputRoute(feedIDs: [a, b])
+    guard case .accepted = route.ingest(feedID: a, frame: try frame(a, at: 0)).decision else {
+      return XCTFail("Initial Program frame should be accepted")
+    }
+    guard case .queued = route.requestCut(to: b, noEarlierThan: mediaTime(1)) else {
+      return XCTFail("Timestamped cut should queue")
+    }
+    guard case .skipped(.staleQueuedFrame) = route.ingest(feedID: b,
+      frame: try frame(b, at: 0.5)).decision else {
+      return XCTFail("A target frame before cutTime must not apply the cut")
+    }
+    guard case .cutApplied = route.ingest(feedID: b, frame: try frame(b, at: 1)).decision else {
+      return XCTFail("The first target frame at cutTime should apply the cut")
+    }
+  }
+
   func testFeedCoordinatorMutatesTheLiveProgramScheduler() throws {
     let a = FeedDescriptor(id: feed("alpha"), name: "Wide")
     let b = FeedDescriptor(id: feed("beta"), name: "Tight")
@@ -73,6 +95,18 @@ import XCTest
     route.updateFeeds([b])
     XCTAssertEqual(route.selectedFeedID, b)
     XCTAssertFalse(route.hasPendingCut)
+  }
+
+  func testProgramRouteResetDrainsOldTimelineFrames() throws {
+    let source = feed("alpha")
+    let route = ProgramOutputRoute(feedIDs: [source])
+    let consumer = try route.addConsumerRoute(capacity: 4)
+    guard case .accepted = route.ingest(feedID: source, frame: try frame(source, at: 0)).decision else {
+      return XCTFail("Initial Program frame should be accepted")
+    }
+    XCTAssertEqual(consumer.pendingCount, 1)
+    route.reset()
+    XCTAssertEqual(consumer.pendingCount, 0)
   }
 
   func testFeedCoordinatorPublishesSeparateOrProgramRegistryAndProgramDemand() throws {
@@ -144,12 +178,45 @@ import XCTest
     XCTAssertFalse(bridge.isConnected)
   }
 
+  func testProgramBridgeReconnectsAfterTransientSinkFailure() throws {
+    let source = feed("alpha")
+    let route = ProgramOutputRoute(feedIDs: [source])
+    let consumer = try route.addConsumerRoute(capacity: 4)
+    var connects = 0
+    var sends = 0
+    let bridge = ProgramOutputBridge(route: consumer,
+      connect: { _, _ in connects += 1 }, disconnect: {}, send: { _ in
+        sends += 1
+        if sends == 1 { throw SinkFailure.disconnected }
+        return true
+      })
+
+    try bridge.setDemand(true, configuration: PipelineConfiguration(),
+      passthroughFormat: kCVPixelFormatType_32BGRA)
+    _ = route.ingest(feedID: source, frame: try frame(source, at: 0))
+    bridge.pump()
+    XCTAssertEqual(bridge.currentStatistics.sendErrors, 1)
+    XCTAssertTrue(bridge.isDemanded, "A transient enqueue error must preserve active demand")
+    XCTAssertFalse(bridge.isConnected)
+
+    _ = route.ingest(feedID: source, frame: try frame(source, at: 1.0 / 30.0))
+    bridge.pump()
+    XCTAssertEqual(connects, 2, "The next demanded frame should reconnect the sink")
+    XCTAssertEqual(bridge.currentStatistics.delivered, 1)
+    XCTAssertTrue(bridge.isConnected)
+  }
+
   static let allTests = [
     ("selected feed and boundary cut", testProgramRoutePublishesSelectedFeedOnlyAndCutsAtBoundary),
+    ("timestamped auto cut boundary", testProgramCutHonorsEarliestMediaTimeFromAutoDirector),
     ("coordinator uses live Program scheduler", testFeedCoordinatorMutatesTheLiveProgramScheduler),
     ("enabled feed reconfiguration", testProgramRouteReconfigurationKeepsOnlyEnabledFeeds),
+    ("Program reset drains old timeline", testProgramRouteResetDrainsOldTimelineFrames),
     ("registry modes and Program demand", testFeedCoordinatorPublishesSeparateOrProgramRegistryAndProgramDemand),
     ("program mode honors persisted selection", testEnteringProgramModeQueuesPersistedSwitcherSelection),
     ("Program bridge lifecycle and timing", testProgramBridgePreservesImageAndTimingAndOwnsDemandLifecycle),
+    ("Program bridge reconnects after sink failure", testProgramBridgeReconnectsAfterTransientSinkFailure),
   ]
 }
+
+private enum SinkFailure: Error { case disconnected }

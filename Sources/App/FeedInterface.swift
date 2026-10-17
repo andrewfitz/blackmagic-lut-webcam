@@ -206,6 +206,7 @@ struct MultiCameraControls: View {
     Binding(get: { model.switcherSettings.strategy }, set: {
       var settings = model.switcherSettings
       settings.strategy = $0
+      settings.naturalTalkingHead.enabled = settings.automatic && $0 == .naturalTalkingHead
       model.updateSwitcher(settings)
     })
   }
@@ -214,6 +215,7 @@ struct MultiCameraControls: View {
     Binding(get: { model.switcherSettings.automatic }, set: {
       var settings = model.switcherSettings
       settings.automatic = $0
+      settings.naturalTalkingHead.enabled = $0 && settings.strategy == .naturalTalkingHead
       model.updateSwitcher(settings)
     })
   }
@@ -280,6 +282,7 @@ struct MultiCameraControls: View {
         Picker("Strategy", selection: strategyBinding) {
           Text("Manual").tag(SwitcherStrategy.manual)
           Text("Fixed interval").tag(SwitcherStrategy.fixedInterval)
+          Text("Natural talking head").tag(SwitcherStrategy.naturalTalkingHead)
           Text("Dynamic analysis (later)").tag(SwitcherStrategy.dynamicAnalysis)
         }
         .disabled(!model.switcherSettings.automatic)
@@ -289,6 +292,33 @@ struct MultiCameraControls: View {
               .font(.caption2).foregroundStyle(.secondary)
             Slider(value: intervalBinding, in: 1...30, step: 0.5)
           }
+        }
+        if model.switcherSettings.automatic && model.switcherSettings.strategy == .naturalTalkingHead {
+          Picker("Anchor", selection: Binding(
+            get: { model.switcherSettings.naturalTalkingHead.anchorFeedID },
+            set: { value in
+              var settings = model.switcherSettings
+              settings.naturalTalkingHead.anchorFeedID = value
+              model.updateSwitcher(settings)
+            })) {
+            Text("Automatic anchor").tag(Optional<FeedID>.none)
+            ForEach(model.feedDescriptors.filter(\.enabled)) { feed in
+              Text(feed.name).tag(Optional(feed.id))
+            }
+          }
+          Picker("Emphasis", selection: Binding(
+            get: { model.switcherSettings.naturalTalkingHead.emphasisFeedID },
+            set: { value in
+              var settings = model.switcherSettings
+              settings.naturalTalkingHead.emphasisFeedID = value
+              model.updateSwitcher(settings)
+            })) {
+            Text("Automatic emphasis").tag(Optional<FeedID>.none)
+            ForEach(model.feedDescriptors.filter(\.enabled)) { feed in
+              Text(feed.name).tag(Optional(feed.id))
+            }
+          }
+          Text(model.naturalDirectorStatus).font(.caption2).foregroundStyle(.secondary)
         }
         HStack(spacing: 5) {
           ForEach(model.feedDescriptors.filter(\.enabled)) { feed in

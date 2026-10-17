@@ -152,7 +152,13 @@ enum VirtualCameraRegistryError: Error, Equatable, LocalizedError, Sendable {
 /// individual descriptor writes.
 struct VirtualCameraRegistrySnapshot: Codable, Equatable, Sendable {
   static let currentSchemaVersion = 1
+#if UDL_LOCAL_DEVELOPMENT
+  /// The staged ad-hoc build rewrites both bundle entitlements to this group.
+  /// Keep the runtime suite name in lockstep with that signing step.
+  static let defaultAppGroupIdentifier = "group.org.ultrastudiolut.local"
+#else
   static let defaultAppGroupIdentifier = "group.org.ultrastudiolut.shared"
+#endif
 
   var schemaVersion: Int
   var generation: UInt64
@@ -239,6 +245,13 @@ struct VirtualCameraRegistrySnapshot: Codable, Equatable, Sendable {
   func applying(_ candidate: VirtualCameraRegistrySnapshot) throws -> VirtualCameraRegistrySnapshot {
     try validate()
     try candidate.validate()
+    // Generation zero is the in-memory baseline used by the extension's
+    // legacy fallback. It must never cross the publication/reconciliation
+    // boundary, because it would allow a reset snapshot to bypass the
+    // monotonic rollback fence.
+    guard candidate.generation > 0 else {
+      throw VirtualCameraRegistryError.invalidGeneration
+    }
     guard candidate.appGroupIdentifier == appGroupIdentifier else {
       throw VirtualCameraRegistryError.appGroupMismatch(expected: appGroupIdentifier,
         actual: candidate.appGroupIdentifier)
@@ -258,6 +271,11 @@ final class VirtualCameraRegistryStore {
 
   private let defaults: UserDefaults
   private let appGroupIdentifier: String
+
+  /// The suite this store publishes to.  Keeping this available lets a host
+  /// construct an in-memory baseline with the same app-group identity when a
+  /// store is empty or both persistence slots are corrupt.
+  var groupIdentifier: String { appGroupIdentifier }
 
   init(appGroupIdentifier: String = VirtualCameraRegistrySnapshot.defaultAppGroupIdentifier,
     defaults: UserDefaults? = nil) {
@@ -287,21 +305,43 @@ final class VirtualCameraRegistryStore {
       throw VirtualCameraRegistryError.appGroupMismatch(expected: appGroupIdentifier,
         actual: snapshot.appGroupIdentifier)
     }
-    if let current = load() {
+    // A zero-generation snapshot is a local fallback baseline, not a
+    // publishable registry state. Reject it before touching either slot.
+    guard snapshot.generation > 0 else {
+      throw VirtualCameraRegistryError.invalidGeneration
+    }
+    let current = load()
+    if let current {
       guard snapshot.generation > current.generation else {
         if snapshot == current { return }
         throw VirtualCameraRegistryError.staleGeneration(current: current.generation,
           candidate: snapshot.generation)
       }
     }
+    // Preserve only a decodable, same-group primary value. Copying arbitrary
+    // bytes here would turn a corrupt or foreign primary into the backup and
+    // leave both slots unusable if the replacement write fails.
     let previousData = defaults.data(forKey: Self.key)
-    if let previousData { defaults.set(previousData, forKey: Self.backupKey) }
-    else { defaults.removeObject(forKey: Self.backupKey) }
+    // `load()` above may have selected a newer, valid backup while the primary
+    // is stale (for example after a torn write).  Back up that selected
+    // snapshot rather than blindly copying the primary bytes; otherwise a
+    // failed write would roll back past the newest known registry generation.
+    let previousSnapshot = current ?? decode(data: previousData)
+    if let previousSnapshot,
+       let backupData = try? JSONEncoder().encode(previousSnapshot) {
+      defaults.set(backupData, forKey: Self.backupKey)
+    } else {
+      defaults.removeObject(forKey: Self.backupKey)
+    }
     let encoded = try JSONEncoder().encode(snapshot)
     defaults.set(encoded, forKey: Self.key)
     guard decode(data: defaults.data(forKey: Self.key)) == snapshot else {
-      if let previousData { defaults.set(previousData, forKey: Self.key) }
-      else { defaults.removeObject(forKey: Self.key) }
+      if let previousSnapshot,
+         let previousEncoded = try? JSONEncoder().encode(previousSnapshot) {
+        defaults.set(previousEncoded, forKey: Self.key)
+      } else {
+        defaults.removeObject(forKey: Self.key)
+      }
       throw VirtualCameraRegistryError.writeVerificationFailed
     }
   }

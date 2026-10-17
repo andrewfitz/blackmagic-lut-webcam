@@ -47,6 +47,12 @@ final class DeckLinkChecks: XCTestCase {
       pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange))
     XCTAssertThrowsError(try VideoContract.formatDescription(width: 1920, height: 1080,
       pixelFormat: kCVPixelFormatType_32BGRA))
+    XCTAssertThrowsError(try VideoContract.formatDescription(width: 1919, height: 1080,
+      pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange),
+      "4:2:2 bi-planar descriptions require paired luma samples")
+    XCTAssertThrowsError(try VideoContract.formatDescription(width: 1920, height: 1079,
+      pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+      "4:2:0 bi-planar descriptions require paired rows")
 
     let videoRange = try VideoContract.formatDescription(width: 1920, height: 1080,
       pixelFormat: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange)

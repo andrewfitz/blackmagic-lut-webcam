@@ -223,11 +223,13 @@ public final class ProResTimecodeTrack {
       throw ProResRecordingError.invalidTimecodeFrame(frameNumber)
     }
     guard presentationTime.isValid, presentationTime.isNumeric,
+      presentationTime.epoch == 0, presentationTime.timescale > 0,
       presentationTime.value >= 0 else {
       throw ProResRecordingError.invalidTimecodeTimestamp
     }
     let sampleDuration = duration ?? frameRate.frameDuration
     guard sampleDuration.isValid, sampleDuration.isNumeric,
+      sampleDuration.epoch == 0, sampleDuration.timescale > 0,
       sampleDuration.value > 0 else {
       throw ProResRecordingError.invalidTimecodeDuration
     }
