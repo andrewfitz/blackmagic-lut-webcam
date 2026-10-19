@@ -134,6 +134,41 @@ import XCTest
     }
   }
 
+  func testPCTimeAnchorSamplesTheComputerClockAndKeepsExplicitDates() throws {
+    let explicit = utc(12, 34, 56, 500_000_000)
+    let now = utc(8, 15, 30, 250_000_000)
+    let anchored = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("pc-time"),
+      outputURL: URL(fileURLWithPath: "/tmp/pc-time.mov"),
+      width: 1_920, height: 1_080,
+      timecodePolicy: .wallClock, timecodeStartDate: explicit,
+      timecodeSamplesComputerClockAtFirstFrame: true)
+    XCTAssertEqual(AVAssetSourceRecordingWriter.timecodeAnchorDate(for: anchored, now: now), now)
+
+    let preserved = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("explicit-clock"),
+      outputURL: URL(fileURLWithPath: "/tmp/explicit-clock.mov"),
+      width: 1_920, height: 1_080,
+      timecodePolicy: .wallClock, timecodeStartDate: explicit)
+    XCTAssertFalse(preserved.timecodeSamplesComputerClockAtFirstFrame)
+    XCTAssertEqual(AVAssetSourceRecordingWriter.timecodeAnchorDate(for: preserved, now: now), explicit)
+
+    let recordStart = try SourceRecordingConfiguration(
+      feedID: SourceRecordingFeedID("record-start"),
+      outputURL: URL(fileURLWithPath: "/tmp/record-start.mov"),
+      width: 1_920, height: 1_080,
+      timecodePolicy: .recordStart, timecodeStartDate: explicit,
+      timecodeSamplesComputerClockAtFirstFrame: true)
+    XCTAssertEqual(AVAssetSourceRecordingWriter.timecodeAnchorDate(for: recordStart, now: now), explicit)
+
+    let firstFrame = sourceFrame(100, rate: .fps5994)
+    let session = RecordingTimecodeSession(frameRate: .fps5994, dropFrame: true,
+      policy: .wallClock, startDate: now, sourceStartTime: firstFrame, calendar: utcCalendar)
+    XCTAssertEqual(session.timecode(for: firstFrame)?.stringValue, session.startTimecode.stringValue)
+    XCTAssertEqual(session.timecode(for: sourceFrame(101, rate: .fps5994))?.frameNumber,
+      session.startTimecode.frameNumber + 1)
+  }
+
   static let allTests = [
     ("wall clock NDF and independent feeds", testWallClockNDFUsesNominalFramesAndSeparatelyStartedFeeds),
     ("drop frame boundaries and midnight", testDropFrameBoundariesAtTenMinutesAndMidnight),
@@ -142,5 +177,6 @@ import XCTest
     ("timecode parsing", testTimecodeParsingAndInvalidDropLabels),
     ("QuickTime TimeCode32 sample", testQuickTimeTimecodeTrackWritesBigEndianTimeCode32Sample),
     ("source writer timecode tracks", testSourceWriterCreatesWallClockAndRecordStartTracksAtBothRates),
+    ("PC time first-frame anchor", testPCTimeAnchorSamplesTheComputerClockAndKeepsExplicitDates),
   ]
 }

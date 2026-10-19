@@ -2,7 +2,7 @@
 
 ## Goal
 
-Extend UltraStudio LUT from one Blackmagic input and one virtual camera to a reusable multi-feed system. Each feed can have its own LUT, effects, preview, audio/video telemetry, and saved settings. Feeds can be exposed as separate virtual cameras or routed through one Program virtual camera with manual or fixed-interval switching.
+Extend Ultracam from one Blackmagic input and one virtual camera to a reusable multi-feed system. Each feed can have its own LUT, effects, preview, audio/video telemetry, and saved settings. Feeds can be exposed as separate virtual cameras or routed through one Program virtual camera with manual or fixed-interval switching.
 
 The design stores an arbitrary number of feed descriptors. It does not impose a four-feed limit. The UI can recommend four active feeds for the intended Mac Studio workflow, while the runtime resource governor reports when the hardware cannot sustain the requested active pipelines.
 
@@ -118,9 +118,9 @@ The idle path must release capture timers, working GPU resources, processing que
 In Separate Cameras mode, each enabled feed publishes its own virtual camera, for example:
 
 ```text
-UltraStudio LUT · Camera 1
-UltraStudio LUT · Camera 2
-UltraStudio LUT · Camera N
+Ultracam · Camera 1
+Ultracam · Camera 2
+Ultracam · Camera N
 ```
 
 Each feed independently reports:
@@ -156,7 +156,7 @@ Program output uses one virtual device:
 
 ```text
 Camera 1 ─┐
-Camera 2 ─┼─> Switcher → UltraStudio LUT · Program
+Camera 2 ─┼─> Switcher → Ultracam · Program
 Camera N ─┘
 ```
 
@@ -229,7 +229,7 @@ Before calling the refactor complete, test:
 The current implementation is still single-feed. These are prerequisites,
 not assumed existing capabilities:
 
-- `AppModel`, `AppSettingsStore`, and the `ultrastudio.settings.v1` key currently
+- `AppModel`, `AppSettingsStore`, and the `ultracam.settings.v1` key currently
   hold one selected device, one `CaptureController`, and one automatic-feed flag.
   Define the v1-to-v2 migration explicitly: decode the old JSON, create Feed 1
   with a deterministic UUID, move the old LUT bookmark/effects into it, write a

@@ -30,8 +30,7 @@ struct RecordingControls: View {
             Text(mode.title).tag(mode)
           }
         }
-        .labelsHidden()
-        .help("Timecode written into new recordings")
+        .help(model.timecodeMode.help)
       }
 
       HStack(spacing: 8) {

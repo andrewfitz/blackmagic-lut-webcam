@@ -1,4 +1,4 @@
-#import "UDLBackend.h"
+#import "UltracamBackend.h"
 #include <atomic>
 #include <memory>
 #include <cstring>
@@ -13,35 +13,35 @@
 #include "DeckLinkAPI.h"
 #include "DeckLinkAPIConfiguration.h"
 #include "DeckLinkAPIVersion.h"
-#define UDL_HAS_SDK 1
+#define ULTRACAM_HAS_SDK 1
 #else
-#define UDL_HAS_SDK 0
+#define ULTRACAM_HAS_SDK 0
 #endif
 
-@interface UDLMode ()
+@interface UltracamMode ()
 @property(nonatomic) NSInteger width;
 @property(nonatomic) NSInteger height;
 @property(nonatomic) CMTime frameDuration;
 @property(nonatomic, copy) NSString *name;
 @end
-@implementation UDLMode
+@implementation UltracamMode
 @end
 
-@interface UDLDevice ()
+@interface UltracamDevice ()
 @property(nonatomic, copy) NSString *identifier;
 @property(nonatomic, copy) NSString *name;
-@property(nonatomic, copy) NSArray<UDLMode *> *modes;
+@property(nonatomic, copy) NSArray<UltracamMode *> *modes;
 @end
-@implementation UDLDevice
+@implementation UltracamDevice
 @end
 
 static BOOL fail(NSError **error, NSString *message, NSInteger code = 1) {
-  if (error) *error = [NSError errorWithDomain:@"org.ultrastudiolut.decklink" code:code
+  if (error) *error = [NSError errorWithDomain:@"org.ultracam.decklink" code:code
     userInfo:@{NSLocalizedDescriptionKey: message}];
   return NO;
 }
 
-#if UDL_HAS_SDK
+#if ULTRACAM_HAS_SDK
 // Own exactly one COM reference. Discovery/start failure paths release partial
 // resources automatically; callback/frame references have independent lives.
 template <typename T> struct ComRef {
@@ -93,8 +93,8 @@ static NSString *deviceIdentifier(IDeckLink *device, NSUInteger index) {
   return result;
 }
 
-static NSArray<UDLMode *> *supportedModes(IDeckLinkInput *input) {
-  NSMutableArray<UDLMode *> *result = [NSMutableArray array];
+static NSArray<UltracamMode *> *supportedModes(IDeckLinkInput *input) {
+  NSMutableArray<UltracamMode *> *result = [NSMutableArray array];
   ComRef<IDeckLinkDisplayModeIterator> iterator;
   if (input->GetDisplayModeIterator(iterator.out()) != S_OK) return result;
   IDeckLinkDisplayMode *raw = nullptr;
@@ -108,7 +108,7 @@ static NSArray<UDLMode *> *supportedModes(IDeckLinkInput *input) {
     bool supported = false;
     if (input->DoesSupportVideoMode(bmdVideoConnectionHDMI, mode->GetDisplayMode(),
       bmdFormat10BitYUV, bmdNoVideoInputConversion, bmdSupportedVideoModeDefault, nullptr, &supported) != S_OK || !supported) continue;
-    UDLMode *description = [UDLMode new];
+    UltracamMode *description = [UltracamMode new];
     description.width = mode->GetWidth(); description.height = mode->GetHeight();
     description.frameDuration = CMTimeMake(duration, (int32_t)scale);
     CFStringRef name = nullptr; mode->GetName(&name);
@@ -221,7 +221,7 @@ struct AutoModeMailbox {
 // count and the configured stream format.  Keep this helper bounded: a bad
 // driver packet must never make the callback walk an untrusted allocation.
 static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPacket *audio,
-  CMTimeScale videoScale, UDLMediaStatsHandler handler, bool rawAudio = false) {
+  CMTimeScale videoScale, UltracamMediaStatsHandler handler, bool rawAudio = false) {
   if (!handler) return;
   NSString *timecodeString = nil;
   ComRef<IDeckLinkTimecode> timecode;
@@ -292,7 +292,7 @@ static void reportMedia(IDeckLinkVideoInputFrame *frame, IDeckLinkAudioInputPack
 // with bmdAudioSampleType32bitInteger, and every packet is copied before the
 // callback returns. Keep the same conservative frame bound as the stats path
 // so malformed driver metadata cannot produce an oversized allocation.
-static void reportRawAudio(IDeckLinkAudioInputPacket *audio, UDLRawAudioHandler handler) {
+static void reportRawAudio(IDeckLinkAudioInputPacket *audio, UltracamRawAudioHandler handler) {
   if (!handler) return;
   constexpr NSUInteger channels = 2;
   constexpr NSUInteger bytesPerSample = sizeof(int32_t);
@@ -332,14 +332,14 @@ class CaptureCallback final : public IDeckLinkInputCallback {
   std::atomic<uint64_t> lastDetection{UINT64_MAX};
   CMTimeScale timeScale;
   void (^frameHandler)(CVPixelBufferRef, CMTime, BOOL);
-  UDLMediaStatsHandler mediaHandler;
-  UDLRawAudioHandler rawAudioHandler;
+  UltracamMediaStatsHandler mediaHandler;
+  UltracamRawAudioHandler rawAudioHandler;
   void (^eventHandler)(NSString *);
   void (^autoFrameHandler)(CVPixelBufferRef, CMTime, CMTime, BOOL) = nil;
   void (^modeHandler)(DetectedInput) = nil;
   CaptureCallback(BMDDisplayMode mode, CMTimeScale scale,
     void (^frames)(CVPixelBufferRef, CMTime, BOOL), void (^events)(NSString *),
-    UDLMediaStatsHandler media = nil, UDLRawAudioHandler rawAudio = nil)
+    UltracamMediaStatsHandler media = nil, UltracamRawAudioHandler rawAudio = nil)
     : requestedMode(mode), timeScale(scale), frameHandler([frames copy]), mediaHandler([media copy]),
       rawAudioHandler([rawAudio copy]), eventHandler([events copy]) {
     // The automatic-format path intentionally leaves the ordinary frame
@@ -506,22 +506,22 @@ static HRESULT reconfigureInput(IDeckLinkInput *input, CaptureCallback *callback
   return status;
 }
 
-#if defined(UDL_BACKEND_TESTING)
+#if defined(ULTRACAM_BACKEND_TESTING)
 #include "BackendTestSupport.inc"
 #endif
 
 #endif
 
-static const void *UDLControlQueueKey = &UDLControlQueueKey;
+static const void *UltracamControlQueueKey = &UltracamControlQueueKey;
 
-@implementation UDLBackend {
+@implementation UltracamBackend {
   dispatch_queue_t _controlQueue;
-#if UDL_HAS_SDK
+#if ULTRACAM_HAS_SDK
   IDeckLinkInput *_input;
   CaptureCallback *_callback;
   std::unique_ptr<HDMILease> _connection;
   std::shared_ptr<AutoModeMailbox> _autoMode;
-#if defined(UDL_BACKEND_TESTING)
+#if defined(ULTRACAM_BACKEND_TESTING)
   BOOL _scheduledOffControlQueue;
 #endif
 #endif
@@ -529,29 +529,29 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (instancetype)init {
   if ((self = [super init])) {
-    _controlQueue = dispatch_queue_create("org.ultrastudiolut.decklink.control", DISPATCH_QUEUE_SERIAL);
-    dispatch_queue_set_specific(_controlQueue, UDLControlQueueKey, (__bridge void *)self, nullptr);
+    _controlQueue = dispatch_queue_create("org.ultracam.decklink.control", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_set_specific(_controlQueue, UltracamControlQueueKey, (__bridge void *)self, nullptr);
   }
   return self;
 }
 
 - (void)onControlQueue:(void (^)(void))action {
-  if (dispatch_get_specific(UDLControlQueueKey) == (__bridge void *)self) action();
+  if (dispatch_get_specific(UltracamControlQueueKey) == (__bridge void *)self) action();
   else dispatch_sync(_controlQueue, action);
 }
 
-+ (NSArray<UDLDevice *> *)devicesWithError:(NSError **)error {
-#if UDL_HAS_SDK
++ (NSArray<UltracamDevice *> *)devicesWithError:(NSError **)error {
+#if ULTRACAM_HAS_SDK
   ComRef<IDeckLinkIterator> iterator; iterator.value = CreateDeckLinkIteratorInstance();
   if (!iterator) { fail(error, @"Blackmagic Desktop Video is not available. Install the compatible Desktop Video driver."); return nil; }
-  NSMutableArray<UDLDevice *> *result = [NSMutableArray array];
+  NSMutableArray<UltracamDevice *> *result = [NSMutableArray array];
   IDeckLink *raw = nullptr; NSUInteger index = 0;
   while (iterator->Next(&raw) == S_OK) {
     ComRef<IDeckLink> device; device.value = raw;
     NSString *identifier = deviceIdentifier(device.value, index++);
     ComRef<IDeckLinkInput> input;
     if (device->QueryInterface(IID_IDeckLinkInput, reinterpret_cast<void **>(input.out())) != S_OK) continue;
-    UDLDevice *description = [UDLDevice new]; description.identifier = identifier;
+    UltracamDevice *description = [UltracamDevice new]; description.identifier = identifier;
     CFStringRef name = nullptr; device->GetDisplayName(&name);
     description.name = name ? (__bridge NSString *)name : @"Blackmagic capture device";
     if (name) CFRelease(name);
@@ -566,7 +566,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
-  mediaHandler:(UDLMediaStatsHandler)mediaHandler
+  mediaHandler:(UltracamMediaStatsHandler)mediaHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -579,7 +579,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
-  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  rawAudioHandler:(UltracamRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -592,8 +592,8 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startWithDeviceID:(NSString *)deviceID inputFast:(BOOL)inputFast
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
-  mediaHandler:(UDLMediaStatsHandler)mediaHandler
-  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  mediaHandler:(UltracamMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UltracamRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -613,7 +613,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler
-  mediaHandler:(UDLMediaStatsHandler)mediaHandler
+  mediaHandler:(UltracamMediaStatsHandler)mediaHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -626,7 +626,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler
-  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  rawAudioHandler:(UltracamRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -639,8 +639,8 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (BOOL)startAutoWithDeviceID:(NSString *)deviceID
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler
-  mediaHandler:(UDLMediaStatsHandler)mediaHandler
-  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  mediaHandler:(UltracamMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UltracamRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   __block BOOL result = NO;
   __block NSError *localError = nil;
@@ -661,11 +661,11 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 - (BOOL)startOnQueue:(NSString *)deviceID inputFast:(BOOL)inputFast
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, BOOL))frameHandler
   autoFrameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))autoFrameHandler
-  mediaHandler:(UDLMediaStatsHandler)mediaHandler
-  rawAudioHandler:(UDLRawAudioHandler)rawAudioHandler
+  mediaHandler:(UltracamMediaStatsHandler)mediaHandler
+  rawAudioHandler:(UltracamRawAudioHandler)rawAudioHandler
   eventHandler:(void (^)(NSString *))eventHandler error:(NSError **)error {
   [self stopOnQueue];
-#if UDL_HAS_SDK
+#if ULTRACAM_HAS_SDK
   ComRef<IDeckLinkIterator> iterator; iterator.value = CreateDeckLinkIteratorInstance();
   if (!iterator) return fail(error, @"Blackmagic Desktop Video is not available.");
   ComRef<IDeckLinkInput> input; IDeckLink *raw = nullptr; NSUInteger index = 0;
@@ -720,13 +720,13 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 #endif
 }
 
-#if UDL_HAS_SDK
+#if ULTRACAM_HAS_SDK
 - (void)configureAutoCallback:(CaptureCallback *)callback
   frameHandler:(void (^)(CVPixelBufferRef, CMTime, CMTime, BOOL))frameHandler {
   _autoMode = std::make_shared<AutoModeMailbox>();
   auto mailbox = _autoMode;
   callback->autoFrameHandler = [frameHandler copy];
-  __weak UDLBackend *weakSelf = self;
+  __weak UltracamBackend *weakSelf = self;
   dispatch_queue_t nativeQueue = _controlQueue;
   callback->modeHandler = ^(DetectedInput detected) {
     if (mailbox->push(detected, &callback->framesEnabled)) {
@@ -734,7 +734,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
       // its final reference there could run dealloc/StopStreams inside the
       // very callback StopStreams is waiting to finish.
       dispatch_async(nativeQueue, ^{
-        UDLBackend *owner = weakSelf;
+        UltracamBackend *owner = weakSelf;
         if (owner) [owner performDetection:mailbox];
         else mailbox->cancel();
       });
@@ -743,12 +743,12 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 }
 
 - (void)scheduleDetection:(std::shared_ptr<AutoModeMailbox>)mailbox {
-#if defined(UDL_BACKEND_TESTING)
-  if (dispatch_get_specific(UDLControlQueueKey) != (__bridge void *)self) _scheduledOffControlQueue = YES;
+#if defined(ULTRACAM_BACKEND_TESTING)
+  if (dispatch_get_specific(UltracamControlQueueKey) != (__bridge void *)self) _scheduledOffControlQueue = YES;
 #endif
-  __weak UDLBackend *weakSelf = self;
+  __weak UltracamBackend *weakSelf = self;
   dispatch_async(_controlQueue, ^{
-    UDLBackend *owner = weakSelf;
+    UltracamBackend *owner = weakSelf;
     if (owner) [owner performDetection:mailbox];
     else mailbox->cancel();
   });
@@ -782,7 +782,7 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 - (void)stop { [self onControlQueue:^{ [self stopOnQueue]; }]; }
 
 - (void)stopOnQueue {
-#if UDL_HAS_SDK
+#if ULTRACAM_HAS_SDK
   if (_autoMode) { _autoMode->cancel(); _autoMode.reset(); }
   stopInput(_input, _callback);
   if (_input) { _input->Release(); _input = nullptr; }
@@ -791,13 +791,13 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 #endif
 }
 
-#if defined(UDL_BACKEND_TESTING) && UDL_HAS_SDK && BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
+#if defined(ULTRACAM_BACKEND_TESTING) && ULTRACAM_HAS_SDK && BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
 - (BOOL)runAutoChecks:(NSError **)error {
   // Uses the production queue, callback adapter and reconfiguration method.
   // No real device is enumerated or opened by this fixture.
   FakeInput input;
   struct StopGuard {
-    __unsafe_unretained UDLBackend *owner;
+    __unsafe_unretained UltracamBackend *owner;
     ~StopGuard() { [owner stop]; }
   } stopGuard{self};
   FakeInput *inputPointer = &input;
@@ -958,16 +958,16 @@ static const void *UDLControlQueueKey = &UDLControlQueueKey;
 
 - (void)dealloc {
   // A synchronous cleanup must not retain self in a block during deallocation.
-  __unsafe_unretained UDLBackend *owner = self;
-  if (dispatch_get_specific(UDLControlQueueKey) == (__bridge void *)self) [self stopOnQueue];
+  __unsafe_unretained UltracamBackend *owner = self;
+  if (dispatch_get_specific(UltracamControlQueueKey) == (__bridge void *)self) [self stopOnQueue];
   else dispatch_sync(_controlQueue, ^{ [owner stopOnQueue]; });
 }
 @end
 
-#if defined(UDL_BACKEND_TESTING)
-BOOL UDLRunAutoSyntheticChecks(NSError **error) {
-#if UDL_HAS_SDK && BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
-  UDLBackend *backend = [UDLBackend new];
+#if defined(ULTRACAM_BACKEND_TESTING)
+BOOL UltracamRunAutoSyntheticChecks(NSError **error) {
+#if ULTRACAM_HAS_SDK && BLACKMAGIC_DECKLINK_API_VERSION < 0x0e030000
+  UltracamBackend *backend = [UltracamBackend new];
   return [backend runAutoChecks:error];
 #else
   return fail(error, @"Auto SDK mocks require the pinned SDK12 interfaces.");

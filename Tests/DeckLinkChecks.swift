@@ -4,26 +4,26 @@ import XCTest
 final class DeckLinkChecks: XCTestCase {
   func testAutomaticInputDetectionAndTransitions() {
     var error: NSError?
-    XCTAssertTrue(UDLRunAutoSyntheticChecks(&error), error?.localizedDescription ?? "Native auto detection failed")
+    XCTAssertTrue(UltracamRunAutoSyntheticChecks(&error), error?.localizedDescription ?? "Native auto detection failed")
   }
   func testNativeSDKCallbacksAndLifecycle() {
     var error: NSError?
-    XCTAssertTrue(UDLRunSyntheticChecks(&error), error?.localizedDescription ?? "Native SDK checks failed")
+    XCTAssertTrue(UltracamRunSyntheticChecks(&error), error?.localizedDescription ?? "Native SDK checks failed")
   }
 
   func testRawEmbeddedAudioBridge() {
     var error: NSError?
-    XCTAssertTrue(UDLRunRawAudioSyntheticChecks(&error), error?.localizedDescription ?? "Raw embedded audio bridge failed")
+    XCTAssertTrue(UltracamRunRawAudioSyntheticChecks(&error), error?.localizedDescription ?? "Raw embedded audio bridge failed")
   }
 
   func testStopBeforeStartIsIdempotent() {
-    let backend = UDLBackend()
+    let backend = UltracamBackend()
     backend.stop()
     backend.stop()
   }
 
   func testMissingAutoDeviceFailsCleanly() {
-    let backend = UDLBackend()
+    let backend = UltracamBackend()
     XCTAssertThrowsError(try backend.startAuto(deviceID: "synthetic:missing-device",
       frameHandler: { _, _, _, _ in XCTFail("Missing auto device delivered a frame") },
       eventHandler: { _ in XCTFail("Missing auto device started a callback") }))
@@ -31,7 +31,7 @@ final class DeckLinkChecks: XCTestCase {
   }
 
   func testMissingDeviceFailsCleanlyAndCanStop() {
-    let backend = UDLBackend()
+    let backend = UltracamBackend()
     XCTAssertThrowsError(try backend.start(deviceID: "synthetic:missing-device", inputFast: true,
       frameHandler: { _, _, _ in XCTFail("Missing device delivered a frame") },
       eventHandler: { _ in XCTFail("Missing device unexpectedly started its callback") }))

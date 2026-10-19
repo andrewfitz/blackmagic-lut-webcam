@@ -7,8 +7,8 @@ struct MenuBarStatusIcon: View {
   var body: some View {
     let established = model.running && model.update.pipelineEnabledApplied != nil
     Image(systemName: established ? (model.update.pipelineEnabledApplied == true ? "video.fill" : "arrow.right.square") : "video")
-      .accessibilityLabel(!established ? "UltraStudio LUT feed is stopped or starting"
-        : model.update.pipelineEnabledApplied == true ? "UltraStudio LUT processing is active" : "UltraStudio LUT complete bypass is active")
+      .accessibilityLabel(!established ? "Ultracam feed is stopped or starting"
+        : model.update.pipelineEnabledApplied == true ? "Ultracam processing is active" : "Ultracam complete bypass is active")
   }
 }
 
@@ -61,6 +61,10 @@ struct MenuBarInterface: View {
       }
       .scrollBounceBehavior(.basedOnSize)
       Divider()
+      Toggle("Hide from Dock", isOn: $model.hideFromDock)
+        .toggleStyle(.checkbox)
+        .font(.caption)
+        .help("Keep Ultracam in the menu bar without showing its Dock icon.")
       HStack {
         Button("Open window", systemImage: "macwindow") {
           openWindow(id: "main")

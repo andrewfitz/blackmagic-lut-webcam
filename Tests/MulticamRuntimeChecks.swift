@@ -79,7 +79,7 @@ import XCTest
 
   private func configuration(for feedID: String) throws -> SourceRecordingConfiguration {
     try SourceRecordingConfiguration(feedID: SourceRecordingFeedID(feedID),
-      outputURL: URL(fileURLWithPath: "/tmp/ultrastudio-lut-\(feedID).mov"),
+      outputURL: URL(fileURLWithPath: "/tmp/ultracam-\(feedID).mov"),
       width: 2, height: 2, queueCapacity: 2)
   }
 

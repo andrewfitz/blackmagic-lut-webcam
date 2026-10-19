@@ -100,7 +100,7 @@ private struct PreviewPlaceholder: View {
         Text(!model.previewEnabled
           ? (model.running && model.update.cameraOutputActive ? "Camera output continues with your selected settings." : "Show preview to monitor the output.")
           : model.running ? "The preview appears when a supported HDMI signal arrives." : model.automaticFeedEnabled
-            ? "Open UltraStudio LUT in Zoom or another camera app to start the feed." : "Start the feed to view the HDMI input.")
+            ? "Open Ultracam in Zoom or another camera app to start the feed." : "Start the feed to view the HDMI input.")
           .font(.caption).foregroundStyle(.white.opacity(0.45))
           .multilineTextAlignment(.center).padding(.horizontal, 24)
       }
@@ -413,7 +413,7 @@ struct AutomaticFeedControl: View {
     VStack(alignment: .leading, spacing: 5) {
       Toggle("Start when camera is in use", isOn: $model.automaticFeedEnabled)
         .toggleStyle(.switch).controlSize(.mini).font(.caption)
-        .help("Automatically start for Zoom or another camera app, then stop capture and GPU work when the last app closes the camera. Keep UltraStudio LUT open in the menu bar. Turn off to manage the feed manually.")
+        .help("Automatically start for Zoom or another camera app, then stop capture and GPU work when the last app closes the camera. Keep Ultracam open in the menu bar. Turn off to manage the feed manually.")
       if model.automaticFeedEnabled {
         Text(model.automaticFeedStatus).font(.caption2).foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)

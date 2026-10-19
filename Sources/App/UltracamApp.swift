@@ -1,19 +1,30 @@
 import AppKit
 import SwiftUI
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    let hideFromDock = AppSettingsStore().hideFromDock
+    NSApplication.shared.setActivationPolicy(hideFromDock ? .accessory : .regular)
+  }
+}
+
 @main
-struct UltraStudioLUTApp: App {
+struct UltracamApp: App {
+  @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var model = AppModel()
 
   var body: some Scene {
     // A single window keeps the main native video layer attached to one view.
-    Window("UltraStudio LUT", id: "main") {
+    Window("Ultracam", id: "main") {
       ContentView(model: model)
         .frame(minWidth: 850, minHeight: 590)
     }
     .defaultSize(width: 1080, height: 700)
     .commands {
       CommandGroup(replacing: .newItem) {}
+      CommandGroup(after: .appSettings) {
+        Toggle("Hide from Dock", isOn: $model.hideFromDock)
+      }
       CommandMenu("Feed") {
         Button(model.running ? "Stop feed" : "Start feed") {
           if model.running { model.stop() } else { model.start() }
@@ -28,7 +39,7 @@ struct UltraStudioLUTApp: App {
           .keyboardShortcut("p", modifiers: [.command, .shift])
       }
       CommandGroup(replacing: .appTermination) {
-        Button("Quit UltraStudio LUT") {
+        Button("Quit Ultracam") {
           model.saveSettings()
           model.stop()
           NSApplication.shared.terminate(nil)

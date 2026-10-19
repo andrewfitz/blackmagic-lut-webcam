@@ -19,7 +19,7 @@ final class ProgramOutputRoute {
   let fanOut: FrameFanOut<CVPixelBuffer>
 
   init(settings: SwitcherSettings = .init(), feedIDs: [FeedID],
-       routeLabel: String = "org.ultrastudiolut.program-output") {
+       routeLabel: String = "org.ultracam.program-output") {
     switcher = SwitcherCoordinator(settings: settings, feedIDs: feedIDs)
     fanOut = FrameFanOut(label: routeLabel)
   }
@@ -64,6 +64,13 @@ final class ProgramOutputRoute {
   }
 
   func cancelPendingCut() { switcher.cancelPendingCut() }
+
+  /// Marks a source unavailable for future Program cuts. The frame scheduler
+  /// drops a pending cut aimed at that source; frames already selected stay
+  /// on air until a different source presents a valid boundary.
+  func setSourceHealth(_ feedID: FeedID, healthy: Bool) {
+    switcher.setFeedHealth(feedID, healthy: healthy)
+  }
 
   @discardableResult
   func evaluate(at mediaTime: CMTime) -> SwitcherEvaluation {
@@ -207,6 +214,35 @@ final class FeedSession: Identifiable {
   }
 }
 
+/// Keeps the newest processed frame when the main actor is behind capture.
+///
+/// `store` runs on the capture queue and drops the previous unpublished frame
+/// immediately. `take` runs on the main actor. One scheduled drain is enough;
+/// later frames replace the pending value until that drain reads it.
+private final class LatestProcessedFrameHop: @unchecked Sendable {
+  private let lock = NSLock()
+  private var pending: (frame: ProcessedFrame<CVPixelBuffer>, generation: UInt64)?
+  private var scheduled = false
+
+  func store(_ frame: ProcessedFrame<CVPixelBuffer>, generation: UInt64) -> Bool {
+    lock.lock()
+    pending = (frame, generation)
+    let start = !scheduled
+    scheduled = true
+    lock.unlock()
+    return start
+  }
+
+  func take() -> (frame: ProcessedFrame<CVPixelBuffer>, generation: UInt64)? {
+    lock.lock()
+    let frame = pending
+    pending = nil
+    if frame == nil { scheduled = false }
+    lock.unlock()
+    return frame
+  }
+}
+
 /// Main-actor collection of stable feed descriptors, runtime sessions, and
 /// capture owners. Persisted ordering remains the source of truth for the
 /// collection; sessions and controllers are created only for descriptors that
@@ -226,6 +262,7 @@ final class FeedCoordinator {
   let programOutput: ProgramOutputRoute
   private var programBridge: ProgramOutputBridge?
   private var demandCoordinator: RouteDemandCoordinator
+  private var processedFrameHops: [FeedID: LatestProcessedFrameHop] = [:]
   private var programConsumerActive = false
   var onProgramCutApplied: ((FeedID, CMTime, CMTime) -> Void)?
 
@@ -274,7 +311,7 @@ final class FeedCoordinator {
   var selectedSession: FeedSession { session(for: selectedFeedID) }
 
   /// Stable capture owner for one feed.  Calling this for one feed never
-  /// changes or reuses another feed's UDLBackend.
+  /// changes or reuses another feed's UltracamBackend.
   func capture(for id: FeedID) -> CaptureController {
     capturePool.controller(for: id)
   }
@@ -309,27 +346,46 @@ final class FeedCoordinator {
   func setProcessedFrameHandler(feedID: FeedID,
                                 handler: ((ProcessedFrame<CVPixelBuffer>) -> Void)?) {
     guard let handler else {
+      processedFrameHops[feedID] = nil
       capture(for: feedID).onProcessedFrame = nil
       return
     }
+    let hop = LatestProcessedFrameHop()
+    processedFrameHops[feedID] = hop
     capture(for: feedID).onProcessedFrame = { [weak self] frame, generation in
       guard let self else { return }
-      // Capture callbacks run off-main and may already be in flight when a
-      // feed is stopped/restarted. Re-check the native controller generation
-      // on the coordinator actor immediately before handing the frame to
-      // consumers. The controller token is authoritative because teardown
-      // can invoke stop more than once for a single FeedSession.
+      // The capture queue returns the admission slot as soon as this callback
+      // returns. Keep only the newest frame for the main-actor hop so a stalled
+      // consumer cannot retain a growing queue of pool buffers.
+      guard hop.store(frame, generation: generation) else { return }
       Task { @MainActor [weak self] in
-        guard let self, let session = self.sessions[feedID], session.isRunning,
-          self.capture(for: feedID).isAccepting(feedID: feedID),
-          self.capture(for: feedID).generationToken == generation else { return }
-        handler(frame)
+        guard let self else { return }
+        while true {
+          guard let next = hop.take() else { return }
+          // Capture callbacks run off-main and may already be in flight when a
+          // feed is stopped/restarted. Re-check the native controller generation
+          // on the coordinator actor immediately before handing the frame to
+          // consumers. The controller token is authoritative because teardown
+          // can invoke stop more than once for a single FeedSession.
+          guard let session = self.sessions[feedID], session.isRunning,
+            self.capture(for: feedID).isAccepting(feedID: feedID),
+            self.capture(for: feedID).generationToken == next.generation else { continue }
+          handler(next.frame)
+        }
       }
     }
   }
 
   func setCameraOutputEnabled(feedID: FeedID, enabled: Bool) {
     capture(for: feedID).setCameraOutputEnabled(enabled)
+  }
+
+  /// Updates the live Program scheduler. Capture failure of one source must
+  /// not leave that source eligible for the next cut.
+  func setProgramSourceHealth(_ feedID: FeedID, healthy: Bool) {
+    guard descriptors.contains(where: { $0.id == feedID }) else { return }
+    programOutput.setSourceHealth(feedID, healthy: healthy)
+    syncSwitcherMirror()
   }
 
   /// Lazily creates a session while preserving descriptor ordering.
@@ -673,7 +729,7 @@ final class FeedCoordinator {
     switch mode {
     case .separateCameras:
       return feeds.filter(\.enabled).map { feed in
-        VirtualCameraDescriptor.feed(feedID: feed.id.rawValue, displayName: "UltraStudio LUT · \(feed.name)")
+        VirtualCameraDescriptor.feed(feedID: feed.id.rawValue, displayName: "Ultracam · \(feed.name)")
       }
     case .program:
       return [VirtualCameraDescriptor.program()]

@@ -176,6 +176,38 @@ import XCTest
     }
   }
 
+  func testProgramClockAfterStandbyRebasesOnce() throws {
+    var now = CMTime(value: 60_000, timescale: 60_000)
+    var emitted: [CMSampleBuffer] = []
+    var flags: [CMIOExtensionStream.DiscontinuityFlags] = []
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false, clock: { now }, output: { sample, discontinuity, _ in
+      emitted.append(sample)
+      flags.append(discontinuity)
+    })
+    try camera.queue.sync {
+      try camera.source.startStream()
+      XCTAssertTrue(camera.receive(try sample(time: now), discontinuity: []))
+      now = CMTime(value: 90_000, timescale: 60_000)
+      camera.emitStandby()
+      XCTAssertEqual(emitted.count, 2)
+      now = CMTime(value: 90_001, timescale: 60_000)
+      let step = VideoContract.fastDuration
+      for index in 0..<3 {
+        let producer = CMTimeMultiply(step, multiplier: Int32(index))
+        XCTAssertTrue(camera.receive(try sample(time: producer), discontinuity: []))
+      }
+      XCTAssertEqual(emitted.count, 5)
+      let repaired = emitted.suffix(3).map { CMSampleBufferGetPresentationTimeStamp($0) }
+      XCTAssertGreaterThan(CMTimeCompare(repaired[0], CMSampleBufferGetPresentationTimeStamp(emitted[1])), 0)
+      XCTAssertEqual(CMTimeSubtract(repaired[1], repaired[0]), step)
+      XCTAssertEqual(CMTimeSubtract(repaired[2], repaired[1]), step)
+      XCTAssertTrue(flags[2].contains(.time), "Only the standby boundary is a timestamp discontinuity")
+      XCTAssertFalse(flags[3].contains(.time))
+      XCTAssertFalse(flags[4].contains(.time))
+      try camera.source.stopStream()
+    }
+  }
+
   func testMalformedChromaCannotReachTransportOrExtensionSource() throws {
     let width = 1920
     let height = 1080

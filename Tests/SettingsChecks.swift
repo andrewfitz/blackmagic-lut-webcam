@@ -2,8 +2,22 @@ import Foundation
 import XCTest
 
 @MainActor @objcMembers final class SettingsChecks: XCTestCase {
+  func testDockVisibilityPreferencePersistsIndependentlyOfFeedSettings() throws {
+    let suiteName = "org.ultracam.tests.dock.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = AppSettingsStore(defaults: defaults)
+    XCTAssertFalse(store.hideFromDock)
+    store.hideFromDock = true
+    XCTAssertTrue(AppSettingsStore(defaults: defaults).hideFromDock)
+    store.saveSnapshot(AppSettingsSnapshot())
+    XCTAssertTrue(store.hideFromDock)
+    store.hideFromDock = false
+    XCTAssertFalse(AppSettingsStore(defaults: defaults).hideFromDock)
+  }
+
   func testPreferencesRoundTripWithoutVideoOrRateState() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let saved = AppSettings(selectedDevice: "synthetic-device", applyLUT: true,
@@ -30,7 +44,7 @@ import XCTest
   }
 
   func testV1PreferencesMigrateToStablePrimaryFeedAndRetainLegacyRecord() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.migration.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.migration.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let legacy = AppSettings(selectedDevice: "legacy-input", applyLUT: true,
@@ -53,7 +67,7 @@ import XCTest
   }
 
   func testV2SnapshotPreservesStableIDsOrderingAndGlobalSettings() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.v2.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.v2.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let first = FeedDescriptor(id: FeedID(rawValue: "feed-a"), name: "Wide", selectedDevice: "a")
@@ -105,7 +119,7 @@ import XCTest
   }
 
   func testInvalidV2SnapshotFallsBackToV1Migration() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.v2-fallback.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.v2-fallback.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let legacy = AppSettings(selectedDevice: "fallback-input", lutBookmark: Data([9]))
@@ -123,7 +137,7 @@ import XCTest
   }
 
   func testInvalidSnapshotSaveDoesNotResetExistingConfiguration() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.v2-save-validation.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.v2-save-validation.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let original = AppSettingsSnapshot(feeds: [
@@ -144,7 +158,7 @@ import XCTest
   }
 
   func testCorruptOrUnsupportedPreferencesUseSafeDefaults() throws {
-    let suiteName = "org.ultrastudiolut.tests.settings.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.settings.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     defaults.set(Data("invalid JSON".utf8), forKey: AppSettingsStore.key)

@@ -2,7 +2,7 @@ import XCTest
 
 @objcMembers final class CameraAuthorizationChecks: XCTestCase {
   func testKnownProducerKeepsExistingAuthorization() {
-    XCTAssertTrue(CameraProducerAuthorization.allows(signingID: "org.ultrastudiolut.app", pid: 123) { _ in
+    XCTAssertTrue(CameraProducerAuthorization.allows(signingID: "org.ultracam.app", pid: 123) { _ in
       XCTFail("CMIO supplied the expected signing identifier; no local fallback is needed")
       return false
     })
@@ -15,7 +15,7 @@ import XCTest
         checkedPID = pid
         return true
       }
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
       XCTAssertTrue(allowed)
       XCTAssertEqual(checkedPID, 123)
 #else

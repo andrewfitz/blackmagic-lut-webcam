@@ -3,10 +3,10 @@ import CoreVideo
 import Foundation
 
 enum VideoContract {
-  static let cameraName = "UltraStudio LUT"
-  static let sinkName = "UltraStudio LUT Input"
-  static let deviceUID = "org.ultrastudiolut.camera.device"
-  static let extensionID = "org.ultrastudiolut.app.camera"
+  static let cameraName = "Ultracam"
+  static let sinkName = "Ultracam Input"
+  static let deviceUID = "org.ultracam.camera.device"
+  static let extensionID = "org.ultracam.app.camera"
   // Read-only source demand, independent of the host's producer/sink stream.
   static let demandProperty = "4cc_udmd_glob_0000"
   static let demandSelector: UInt32 = 0x75646d64 // 'udmd'

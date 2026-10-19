@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "ultrastudio-auto-switcher/session-timeline",
-  "title": "UltraStudio auto-switcher replay timeline",
+  "$id": "ultracam-auto-switcher/session-timeline",
+  "title": "Ultracam auto-switcher replay timeline",
   "description": "Complete media-clocked session ledger for reproducing realtime or offline cuts.",
   "type": "object",
   "required": [

@@ -31,6 +31,8 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var lastAudioPTS: CMTime?
   private var pendingAudio: [CMSampleBuffer] = []
   private static let pendingAudioCapacity = 64
+  private var adoptedFrameRate: RecordingFrameRate?
+  private var adoptedSourceStart: CMTime?
 
   init(configuration: SourceRecordingConfiguration) throws {
     self.configuration = configuration
@@ -39,11 +41,32 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   /// Returns the generated track description for modes that do not depend on
   /// an embedded source timecode. Source mode remains absent until the capture
   /// boundary supplies a source timecode value.
-  static func makeTimecodeTrack(for configuration: SourceRecordingConfiguration) throws
-    -> QuickTimeTimecodeTrack? {
+  static func makeTimecodeTrack(for configuration: SourceRecordingConfiguration,
+    frameRate: RecordingFrameRate? = nil) throws -> QuickTimeTimecodeTrack? {
     guard configuration.timecodePolicy != .source else { return nil }
-    return try QuickTimeTimecodeTrack(frameRate: configuration.frameRate,
+    return try QuickTimeTimecodeTrack(frameRate: frameRate ?? configuration.frameRate,
       dropFrame: configuration.timecodeDropFrame)
+  }
+
+  /// Wall-clock recordings that ask for computer-clock alignment take `now`
+  /// at the first encoded frame. Every other configuration keeps the date
+  /// the caller supplied, including an explicit wall-clock anchor.
+  static func timecodeAnchorDate(for configuration: SourceRecordingConfiguration, now: Date = Date()) -> Date {
+    guard configuration.timecodeSamplesComputerClockAtFirstFrame,
+      configuration.timecodePolicy == .wallClock else {
+      return configuration.timecodeStartDate
+    }
+    return now
+  }
+
+  /// Matches a source frame duration to the capture contract. Anything else
+  /// keeps the configuration's rate instead of inventing a third cadence.
+  static func matchingFrameRate(_ duration: CMTime) -> RecordingFrameRate? {
+    let rates: [RecordingFrameRate] = [.fps2997, .fps5994]
+    for rate in rates where abs(duration.seconds - rate.frameDuration.seconds) < 0.0001 {
+      return rate
+    }
+    return nil
   }
 
   var telemetry: SourceRecordingWriterTelemetry { lock.withLock { telemetryValue } }
@@ -151,16 +174,22 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         throw SourceRecordingError.writerFailure("VideoToolbox flush failed (OSStatus \(status)).")
       }
     }
+    try drainPendingAudio()
     let writer = try lock.withLock { () -> AVAssetWriter? in
-      guard pendingAudio.isEmpty else {
-        finished = true
-        finishing = false
-        throw SourceRecordingError.writerFailure("VideoToolbox finished before the audio input was established.")
-      }
       guard let writer else {
         finished = true
         finishing = false
+        if !pendingAudio.isEmpty {
+          throw SourceRecordingError.writerFailure(
+            "Recording stopped before video established the file.")
+        }
         return nil
+      }
+      if !pendingAudio.isEmpty {
+        pendingAudio.removeAll()
+        let message = "Audio was still queued when recording stopped."
+        telemetryValue.lastError = message
+        if terminalError == nil { terminalError = .writerFailure(message) }
       }
       videoInput?.markAsFinished()
       audioInput?.markAsFinished()
@@ -213,7 +242,8 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     // the packed 24-bit CMSampleBuffers produced from DeckLink PCM.
     let audio = AVAssetWriterInput(mediaType: .audio,
       outputSettings: EmbeddedAudioFormat.assetWriterSettings)
-    let generatedTimecodeTrack = try Self.makeTimecodeTrack(for: configuration)
+    let rate = adoptedFrameRate ?? configuration.frameRate
+    let generatedTimecodeTrack = try Self.makeTimecodeTrack(for: configuration, frameRate: rate)
     let timecode = generatedTimecodeTrack?.makeInput()
     video.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
     audio.setValue(NSNumber(value: configuration.realTimeEncoding), forKey: "expectsMediaDataInRealTime")
@@ -238,12 +268,17 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     self.timecodeInput = timecode
     self.timecodeTrack = generatedTimecodeTrack
     if generatedTimecodeTrack != nil {
+      // A zero source start means the caller did not know the first frame's
+      // PTS yet. Anchor record-start and wall-clock timecode there so capture
+      // uptime is not added to the label, and so 29.97 is not counted at 59.94.
+      let configuredOrigin = configuration.timecodeSourceStartTime
+      let origin = configuredOrigin == .zero ? (adoptedSourceStart ?? configuredOrigin) : configuredOrigin
       self.timecodeSession = RecordingTimecodeSession(
-        frameRate: configuration.frameRate,
+        frameRate: rate,
         dropFrame: configuration.timecodeDropFrame,
         policy: configuration.timecodePolicy,
-        startDate: configuration.timecodeStartDate,
-        sourceStartTime: configuration.timecodeSourceStartTime)
+        startDate: Self.timecodeAnchorDate(for: configuration),
+        sourceStartTime: origin)
     }
   }
 
@@ -373,9 +408,15 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
         guard let format = CMSampleBufferGetFormatDescription(sample) else {
           throw SourceRecordingError.unsupportedSample("VideoToolbox returned a sample without a format description.")
         }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        if adoptedFrameRate == nil {
+          adoptedFrameRate = Self.matchingFrameRate(CMSampleBufferGetDuration(sample))
+        }
+        if adoptedSourceStart == nil {
+          adoptedSourceStart = pts
+        }
         try ensureWriter(videoFormat: format)
         guard let videoInput else { throw SourceRecordingError.writerFailure("Video writer input is unavailable.") }
-        let pts = CMSampleBufferGetPresentationTimeStamp(sample)
         // Audio is intentionally allowed to arrive before the first encoded
         // video frame while VideoToolbox establishes its format hint. Start
         // the AVAssetWriter session at the earliest admitted media timestamp;
@@ -421,6 +462,28 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
             ?? .writerFailure(error.localizedDescription)
         }
       }
+    }
+  }
+
+  /// Writes audio that arrived before the first encoded video frame. Stop must
+  /// not abandon a movie that already has video when the input is briefly not
+  /// ready; `finish()` still closes the file if a tail remains after the wait.
+  private func drainPendingAudio() throws {
+    let deadline = Date().addingTimeInterval(2)
+    while true {
+      let idle = try lock.withLock { () -> Bool in
+        guard let audioInput, !pendingAudio.isEmpty else { return true }
+        while !pendingAudio.isEmpty {
+          guard Self.inputIsReady(audioInput) else { return false }
+          guard Self.append(pendingAudio[0], to: audioInput) else {
+            throw Self.writerError(writer, fallback: "Pending audio sample append failed.")
+          }
+          pendingAudio.removeFirst()
+        }
+        return true
+      }
+      if idle || Date() >= deadline { return }
+      Thread.sleep(forTimeInterval: 0.005)
     }
   }
 

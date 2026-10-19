@@ -399,7 +399,7 @@ final class CameraSink {
       catch { disconnect(); throw error }
       return
     }
-    throw VideoError.message("Install and approve the UltraStudio LUT camera extension, then reconnect.")
+    throw VideoError.message("Install and approve the Ultracam camera extension, then reconnect.")
   }
 
   func send(_ sample: CMSampleBuffer) throws -> Bool {

@@ -40,7 +40,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   @MainActor fileprivate let displayLayer: AVSampleBufferDisplayLayer
   @MainActor private weak var hostingView: VideoPreviewView?
   private let videoRenderer: AVSampleBufferVideoRenderer
-  private let queue = DispatchQueue(label: "org.ultrastudiolut.preview", qos: .userInteractive)
+  private let queue = DispatchQueue(label: "org.ultracam.preview", qos: .userInteractive)
   private let lock = NSLock()
   private var stager = CameraFrameStager()
   private var generation: UInt64 = 0

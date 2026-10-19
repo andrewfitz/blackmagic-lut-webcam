@@ -43,12 +43,13 @@ final class AutoSwitcherBridge: @unchecked Sendable {
   typealias AudioCueHandler = @Sendable (AutoSwitcherAudioCue) -> Void
   typealias TranscriptCueHandler = @Sendable (AutoSwitcherTranscriptCue) -> Void
 
-  private let queue = DispatchQueue(label: "org.ultrastudiolut.auto-switcher",
+  private let queue = DispatchQueue(label: "org.ultracam.auto-switcher",
     qos: .userInteractive)
   private var handle: OpaquePointer?
   private var nextAudioID: UInt64 = 1
   private var silenceStartedAt: CMTime?
   private var speaking = false
+  private var lastCueSeconds: Double?
   private(set) var lastError: String?
   var onInstruction: InstructionHandler?
   var onError: ErrorHandler?
@@ -92,11 +93,32 @@ final class AutoSwitcherBridge: @unchecked Sendable {
       handle = nil
       silenceStartedAt = nil
       speaking = false
+      lastCueSeconds = nil
     }
   }
 
-  func ingestAudio(time: CMTime, rms: Float, peak: Float,
-                  sampleRate: Int, present: Bool) {
+  /// Tells the director a configured camera can or cannot be cut to. The
+  /// following audio or program tick applies the health change, so this does
+  /// not invent a clock sample of its own.
+  func setCameraHealth(cameraID: FeedID, healthy: Bool, at time: CMTime) {
+    guard let seconds = seconds(time) else { return }
+    queue.async { [weak self] in
+      guard let self, self.handle != nil else { return }
+      self.send([
+        "type": "video",
+        "observation": [
+          "time": seconds,
+          "camera_id": cameraID.rawValue,
+          "healthy": healthy,
+          "motion": 0.0,
+          "scene_change": 0.0,
+          "session_generation": 0,
+        ],
+      ])
+    }
+  }
+
+  func ingestAudio(time: CMTime, rms: Float, peak: Float, present: Bool) {
     guard let seconds = seconds(time), seconds >= 0 else { return }
     let energy = max(0, min(1, rms))
     let emphasis = max(0, min(1, peak))
@@ -111,12 +133,17 @@ final class AutoSwitcherBridge: @unchecked Sendable {
       else if self.silenceStartedAt == nil { self.silenceStartedAt = time }
       let pause = self.silenceStartedAt.map { max(0, seconds - (secondsValue($0) ?? seconds)) } ?? 0
       self.speaking = isSpeech
+      // Status updates arrive in bursts, not once per audio sample. A
+      // 1/sampleRate duration records a 20 µs cue for a packet that actually
+      // covers the gap since the previous update.
+      let duration = self.cueDuration(endingAt: seconds)
+      self.lastCueSeconds = seconds
       let event: [String: Any] = [
         "type": "audio",
         "cue": [
           "id": self.nextAudioID,
           "time": seconds,
-          "duration": sampleRate > 0 ? 1.0 / Double(sampleRate) : 0.02,
+          "duration": duration,
           "speech_energy": energy,
           "pause_duration": pause,
           "emphasis": emphasis,
@@ -131,7 +158,7 @@ final class AutoSwitcherBridge: @unchecked Sendable {
         ],
       ]
       self.onAudioCue?(AutoSwitcherAudioCue(id: self.nextAudioID, time: seconds,
-        duration: sampleRate > 0 ? 1.0 / Double(sampleRate) : 0.02,
+        duration: duration,
         speechEnergy: energy, pauseDuration: pause, emphasis: emphasis, laughter: 0,
         speechStart: speechStart, speechStop: speechStop,
         sessionGeneration: 0))
@@ -187,6 +214,7 @@ final class AutoSwitcherBridge: @unchecked Sendable {
       guard let self else { return }
       self.speaking = false
       self.silenceStartedAt = nil
+      self.lastCueSeconds = nil
       self.send(["type": "reset"])
     }
   }
@@ -242,6 +270,12 @@ final class AutoSwitcherBridge: @unchecked Sendable {
   }
 
   private func seconds(_ time: CMTime) -> Double? { secondsValue(time) }
+
+  private func cueDuration(endingAt seconds: Double) -> Double {
+    guard let previous = lastCueSeconds, seconds >= previous else { return 0.02 }
+    let delta = seconds - previous
+    return delta > 0 && delta <= 1 ? delta : 0.02
+  }
 }
 
 private struct RustOutput: Decodable {

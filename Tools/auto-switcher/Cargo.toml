@@ -1,5 +1,5 @@
 [package]
-name = "ultrastudio-auto-switcher"
+name = "ultracam-auto-switcher"
 version = "0.1.0"
 edition = "2021"
 description = "Realtime and offline talking-head camera direction engine"

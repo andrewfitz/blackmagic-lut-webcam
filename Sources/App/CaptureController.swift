@@ -71,7 +71,7 @@ struct CaptureRawAudio: @unchecked Sendable {
 // to twelve retained frames, covering measured source bursts plus queue delay.
 // Preview visibility never controls camera processing.
 final class CaptureController: @unchecked Sendable {
-  private let queue = DispatchQueue(label: "org.ultrastudiolut.capture", qos: .userInteractive)
+  private let queue = DispatchQueue(label: "org.ultracam.capture", qos: .userInteractive)
   private let queueKey = DispatchSpecificKey<UInt8>()
   private let lock = NSLock()
   private var generation: UInt64 = 0
@@ -142,6 +142,9 @@ final class CaptureController: @unchecked Sendable {
   private var videoRateBytes: UInt64 = 0
   private var videoBitrateMbps = 0.0
   private var lastPublished: Double = 0
+  // `fail` and the app's stopped-update handler both call `stop`. Without
+  // this latch every stopped publish schedules another one.
+  private var stopNotified = false
   private var cameraConnected = false
   private var reconnectAttempts = 0
   private var cameraOutage = false
@@ -152,7 +155,7 @@ final class CaptureController: @unchecked Sendable {
   private var frameRateGate = FrameRateGate()
   private var watchdog: DispatchSourceTimer?
   private var realtimeActivity: NSObjectProtocol?
-  private let logger = Logger(subsystem: "org.ultrastudiolut.app", category: "capture")
+  private let logger = Logger(subsystem: "org.ultracam.app", category: "capture")
   private var lastLogged: Double = 0
   // Program output consumes processed frames through FeedCoordinator. When it
   // is enabled, this controller keeps capture and GPU work alive without
@@ -250,7 +253,10 @@ final class CaptureController: @unchecked Sendable {
     }
     queue.async { [self] in
       guard self.isCurrent(token) else { return }
-      self.stopResources()
+      self.stopNotified = false
+      // Recording can be armed while the feed is idle. Tearing the previous
+      // session down must not delete the callbacks just installed for it.
+      self.stopResources(preserveRecordingCallbacks: true)
       do {
         self.realtimeActivity = ProcessInfo.processInfo.beginActivity(
           options: [.userInitiated, .latencyCritical], reason: "Live UltraStudio video processing")
@@ -310,7 +316,10 @@ final class CaptureController: @unchecked Sendable {
         } else if self.services.startAutomatic == nil {
           try self.establish(warm, inputType: kCVPixelFormatType_422YpCbCr10)
         }
-        guard self.isCurrent(token) else { self.stopResources(); return }
+        guard self.isCurrent(token) else {
+        self.stopResources(preserveRecordingCallbacks: true)
+        return
+      }
         let hasPreview = previewEnabled &&
           (self.previewRenderers.contains { $0.isVisible } || self.services.preview != nil)
         if self.cameraConnected || hasPreview {
@@ -320,7 +329,10 @@ final class CaptureController: @unchecked Sendable {
             try self.deliveryStager.prepare(width: 3840, height: 2160, pixelFormat: type)
           }
         }
-        guard self.isCurrent(token) else { self.stopResources(); return }
+        guard self.isCurrent(token) else {
+        self.stopResources(preserveRecordingCallbacks: true)
+        return
+      }
         self.lock.withLock {
           self.accepting = true
           self.callbackDrops = 0
@@ -397,7 +409,10 @@ final class CaptureController: @unchecked Sendable {
             self?.receive(image, at: pts, duration: nil, signalValid: valid, token: token)
           }, event)
         }
-        guard self.isCurrent(token) else { self.stopResources(); return }
+        guard self.isCurrent(token) else {
+        self.stopResources(preserveRecordingCallbacks: true)
+        return
+      }
         self.message = "Waiting for UltraStudio signal…"
         self.publishCurrent(token: token)
         let timer = DispatchSource.makeTimerSource(queue: self.queue)
@@ -461,6 +476,8 @@ final class CaptureController: @unchecked Sendable {
     }
     queue.async {
       guard self.isCurrent(token) else { return }
+      guard !self.stopNotified else { return }
+      self.stopNotified = true
       self.stopResources()
       self.detected = nil
       self.inputLabel = "No signal"
@@ -493,12 +510,12 @@ final class CaptureController: @unchecked Sendable {
     lock.withLock { accepting && activeFeedID != nil }
   }
 
-  private func stopResources() {
+  private func stopResources(preserveRecordingCallbacks: Bool = false) {
     watchdog?.cancel()
     watchdog = nil
     if let activity = realtimeActivity { ProcessInfo.processInfo.endActivity(activity) }
     realtimeActivity = nil
-    previewRenderers.forEach { $0.flush() }
+    flushPreviewsIfEnabled()
     services.stop()
     services.disconnect()
     cameraConnected = false
@@ -512,7 +529,16 @@ final class CaptureController: @unchecked Sendable {
     deliveryStager = CameraFrameStager()
     processor?.releaseIdleResources()
     preparedConfiguration = nil
-    lock.withLock { recordingCallbacks.removeAll(keepingCapacity: true) }
+    if !preserveRecordingCallbacks {
+      lock.withLock { recordingCallbacks.removeAll(keepingCapacity: true) }
+    }
+  }
+
+  /// Headless Program controllers share no UI renderer. Flushing a renderer
+  /// they do not own clears the window that belongs to the selected feed.
+  private func flushPreviewsIfEnabled() {
+    guard previewEnabled else { return }
+    previewRenderers.forEach { $0.flush() }
   }
 
   private func clearSignal() {
@@ -524,11 +550,12 @@ final class CaptureController: @unchecked Sendable {
     outputFPS = 0
     firstSourceTime = nil
     frameRateGate = FrameRateGate()
-    previewRenderers.forEach { $0.flush() }
+    flushPreviewsIfEnabled()
   }
 
   private func fail(_ value: String, token: UInt64) {
-    guard isCurrent(token) else { return }
+    guard isCurrent(token), !stopNotified else { return }
+    stopNotified = true
     lock.withLock { accepting = false }
     stopResources()
     applied = nil
@@ -584,7 +611,7 @@ final class CaptureController: @unchecked Sendable {
     do {
       try services.connect(next, inputType)
       cameraConnected = true
-      cameraMessage = "Virtual camera connected — choose UltraStudio LUT in Zoom"
+      cameraMessage = "Virtual camera connected — choose Ultracam in Zoom"
     } catch {
       cameraMessage = "Camera output unavailable — \(error.localizedDescription)"
       if wasConnected { beginCameraRecovery() }
@@ -761,7 +788,7 @@ final class CaptureController: @unchecked Sendable {
       type: CVPixelBufferGetPixelFormatType(input), duration: frame.duration)
     var metadataChanged = detected != actual
     if detected != actual {
-      if detected != nil { previewRenderers.forEach { $0.flush() } }
+      if detected != nil { flushPreviewsIfEnabled() }
       if detected?.duration != actual.duration { firstSourceTime = nil; frameRateGate = FrameRateGate() }
       detected = actual
       inputLabel = actual.label
@@ -1000,7 +1027,7 @@ private struct InputFormat: Equatable {
 /// lazily, so idle feeds allocate no Metal, CMIO, or DeckLink resources.  The
 /// default factory calls `CaptureController()` for each feed; that in turn
 /// creates an independent `CaptureServices.live()` value and therefore an
-/// independent UDLBackend control queue, DeckLink input lease, and camera
+/// independent UltracamBackend control queue, DeckLink input lease, and camera
 /// sink.  The initial map lets the legacy primary UI keep its existing
 /// preview-renderer-backed controller while joining the same ownership model.
 final class FeedCapturePool: @unchecked Sendable {
@@ -1092,7 +1119,7 @@ struct CaptureServices: @unchecked Sendable {
   var cameraRetryInterval: TimeInterval = 2
 
   static func live(feedID: FeedID? = nil) -> CaptureServices {
-    let backend = UDLBackend()
+    let backend = UltracamBackend()
     let sink = CameraSink(feedID: feedID)
     return CaptureServices(
       start: { id, fast, frame, event in

@@ -2,15 +2,16 @@
 """Check the built camera package before an OS activation request."""
 from pathlib import Path
 import plistlib
+import subprocess
 import sys
 
 
 def validate(app):
     app = Path(app)
-    extension = app / "Contents/Library/SystemExtensions/org.ultrastudiolut.app.camera.systemextension"
+    extension = app / "Contents/Library/SystemExtensions/org.ultracam.app.camera.systemextension"
     for bundle, identifier, kind in (
-        (app, "org.ultrastudiolut.app", "APPL"),
-        (extension, "org.ultrastudiolut.app.camera", "SYSX"),
+        (app, "org.ultracam.app", "APPL"),
+        (extension, "org.ultracam.app.camera", "SYSX"),
     ):
         with (bundle / "Contents/Info.plist").open("rb") as stream:
             info = plistlib.load(stream)
@@ -26,6 +27,19 @@ def validate(app):
             service = info.get("CMIOExtension", {}).get("CMIOExtensionMachServiceName", "")
             if not service or "$(" in service:
                 raise ValueError("Camera Mach service is missing or has unresolved build variables.")
+            signature = subprocess.run(
+                ["/usr/bin/codesign", "-d", "--entitlements", ":-", str(bundle)],
+                capture_output=True,
+            )
+            if signature.returncode == 0 and signature.stdout:
+                entitlements = plistlib.loads(signature.stdout)
+            else:
+                # Unsigned builds still need to match the configured app group.
+                template = Path(__file__).resolve().parents[1] / "Config/Camera.entitlements"
+                entitlements = plistlib.loads(template.read_bytes())
+            groups = entitlements.get("com.apple.security.application-groups", [])
+            if not any(service.startswith(group + ".") for group in groups):
+                raise ValueError("Camera Mach service must be prefixed with an entitled app group.")
     print("Camera bundle metadata validated.")
 
 

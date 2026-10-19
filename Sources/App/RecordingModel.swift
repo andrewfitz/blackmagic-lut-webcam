@@ -32,7 +32,18 @@ enum RecordingTimecodeMode: String, CaseIterable, Codable, Equatable, Sendable {
     switch self {
     case .source: return "Source timecode"
     case .recordStart: return "Record start"
-    case .wallClock: return "Wall clock"
+    case .wallClock: return "PC time"
+    }
+  }
+
+  var help: String {
+    switch self {
+    case .source:
+      return "No timecode track is written. Camera timecode still appears in the metadata panel when the signal has it."
+    case .recordStart:
+      return "Writes a timecode track that starts at 00:00:00:00."
+    case .wallClock:
+      return "Writes the computer's clock into the file, aligned to the first frame."
     }
   }
 }
@@ -188,7 +199,8 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
         width: 3840, height: 2160,
         videoCodec: configuration.codec == .proRes42210Bit
           ? kCMVideoCodecType_AppleProRes422HQ : kCMVideoCodecType_HEVC,
-        timecodePolicy: Self.timecodePolicy(for: configuration.timecodeMode))
+        timecodePolicy: Self.timecodePolicy(for: configuration.timecodeMode),
+        timecodeSamplesComputerClockAtFirstFrame: configuration.timecodeMode == .wallClock)
       let recorder = try recorderFactory(sourceConfiguration)
       let adapter = SourceRecordingCallbackAdapter(feedID: sourceConfiguration.feedID, recorder: recorder)
       try adapter.start()
@@ -244,29 +256,36 @@ final class NativeRecordingSessionDriver: RecordingSessionDriver, RecordingSessi
   func stopRecording(feedID: FeedID) throws {
     guard let session = sessionLock.withLock({ sessions[feedID] }) else { return }
     captureForFeed(feedID).setRecordingCallbacks(feedID: feedID, callbacks: nil)
+    var stopError: Error?
     do {
       try session.adapter.stop()
-      let telemetry = session.adapter.telemetry
-      // A writer that never received source media must not leave a misleading
-      // zero-byte movie in the user's catalog. Cancel removes the temporary
-      // file and releases the reservation.
-      if telemetry.appendedVideo == 0 && telemetry.appendedAudio == 0 {
-        try session.output.cancel()
-      } else if session.adapter.state == .failed {
-        try session.output.cancel()
-      } else {
-        _ = try session.output.finish()
-      }
-      _ = sessionLock.withLock { sessions.removeValue(forKey: feedID) }
     } catch {
-      try? session.output.cancel()
-      // A failed adapter has already drained/invalidated its writer. Keeping
-      // that dead session in the catalog would leave a cancelled output
-      // reservation reachable only through a retry that can never succeed.
-      // Remove it and leave the UI state/error for the caller to surface;
-      // a subsequent stop then cleanly clears the model's active state.
+      stopError = error
+    }
+    let telemetry = session.adapter.telemetry
+    let hadMedia = telemetry.appendedVideo > 0 || telemetry.appendedAudio > 0
+    // A writer that never received source media must not leave a misleading
+    // zero-byte movie in the user's catalog. A failed take that already
+    // finalized media is renamed and reported; cancelling it deletes the file
+    // and looks like a clean stop.
+    var keptFile = false
+    do {
+      if hadMedia {
+        _ = try session.output.finish()
+        keptFile = true
+      } else {
+        try session.output.cancel()
+      }
+    } catch {
+      if !keptFile { try? session.output.cancel() }
       _ = sessionLock.withLock { sessions.removeValue(forKey: feedID) }
-      throw error
+      throw stopError ?? error
+    }
+    _ = sessionLock.withLock { sessions.removeValue(forKey: feedID) }
+    if let stopError { throw stopError }
+    if session.adapter.state == .failed {
+      throw SourceRecordingError.writerFailure(telemetry.lastError
+        ?? "Recording stopped after a source error.")
     }
   }
 
@@ -412,16 +431,21 @@ final class RecordingModel {
 
   func stop(feedID: FeedID) {
     guard let index = index(of: feedID), feeds[index].status != .idle else { return }
+    let output = (driver as? RecordingSessionDriverArtifacts)?.recordingOutputURL(feedID: feedID)
     do {
-      let output = (driver as? RecordingSessionDriverArtifacts)?.recordingOutputURL(feedID: feedID)
       try driver.stopRecording(feedID: feedID)
       feeds[index].status = .idle
       feeds[index].error = nil
-      let finalOutput = output.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
-      onRecordingFinished?(feedID, finalOutput)
+      onRecordingFinished?(feedID, Self.existingFile(output))
     } catch {
+      feeds[index].status = .idle
       feeds[index].error = error.localizedDescription
+      onRecordingFinished?(feedID, Self.existingFile(output))
     }
+  }
+
+  private static func existingFile(_ url: URL?) -> URL? {
+    url.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
   }
 
   func recordAll() {

@@ -18,7 +18,7 @@ if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
 fi
 export TMPDIR="$external_root/tmp"
 run_id="$(date -u +%Y%m%dT%H%M%S)-$$"
-smoke_root="$external_root/agent-work/build/ultrastudio-lut-e2e/cmio-smoke/$run_id"
+smoke_root="$external_root/agent-work/build/ultracam-e2e/cmio-smoke/$run_id"
 mkdir -p "$TMPDIR" "$smoke_root/modules"
 compile_log="$smoke_root/compile.log"
 xcrun swiftc -O -swift-version 5 -strict-concurrency=complete -warnings-as-errors \
@@ -33,7 +33,7 @@ xcrun swiftc -O -swift-version 5 -strict-concurrency=complete -warnings-as-error
   "$task_root/Sources/App/SharedMetalBuffer.swift" "$task_root/Tools/CameraSmoke/main.swift" \
   -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Metal \
   -o "$smoke_root/camera-smoke" > "$compile_log" 2>&1 || { cat "$compile_log"; exit 1; }
-if ! codesign --force --sign - --identifier org.ultrastudiolut.app "$smoke_root/camera-smoke" >> "$compile_log" 2>&1; then
+if ! codesign --force --sign - --identifier org.ultracam.app "$smoke_root/camera-smoke" >> "$compile_log" 2>&1; then
   cat "$compile_log" >&2
   exit 1
 fi

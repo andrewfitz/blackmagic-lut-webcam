@@ -113,6 +113,10 @@ struct SourceRecordingConfiguration {
   let timecodeDropFrame: Bool
   let timecodeStartDate: Date
   let timecodeSourceStartTime: CMTime
+  /// When true for wall-clock policy, the writer samples the computer clock
+  /// at the first encoded frame. An explicit `timecodeStartDate` is kept when
+  /// this is false, which is the default.
+  let timecodeSamplesComputerClockAtFirstFrame: Bool
 
   init(feedID: SourceRecordingFeedID, outputURL: URL, width: Int, height: Int,
     videoCodec: CMVideoCodecType = kCMVideoCodecType_HEVC,
@@ -123,7 +127,8 @@ struct SourceRecordingConfiguration {
     timecodePolicy: RecordingTimecodePolicy = .source,
     timecodeDropFrame: Bool? = nil,
     timecodeStartDate: Date = Date(),
-    timecodeSourceStartTime: CMTime = .zero) throws {
+    timecodeSourceStartTime: CMTime = .zero,
+    timecodeSamplesComputerClockAtFirstFrame: Bool = false) throws {
     guard !feedID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw SourceRecordingError.invalidConfiguration("A feed ID is required.")
     }
@@ -163,6 +168,7 @@ struct SourceRecordingConfiguration {
     self.timecodeDropFrame = timecodeDropFrame ?? (frameRate == .fps2997 || frameRate == .fps5994)
     self.timecodeStartDate = timecodeStartDate
     self.timecodeSourceStartTime = timecodeSourceStartTime
+    self.timecodeSamplesComputerClockAtFirstFrame = timecodeSamplesComputerClockAtFirstFrame
   }
 }
 
@@ -257,7 +263,7 @@ final class SourceRecorderCore: @unchecked Sendable {
   init(configuration: SourceRecordingConfiguration, writerFactory: @escaping WriterFactory) throws {
     self.configuration = configuration
     self.writer = try writerFactory()
-    self.queue = DispatchQueue(label: "org.ultrastudiolut.recording.\(configuration.feedID.rawValue)",
+    self.queue = DispatchQueue(label: "org.ultracam.recording.\(configuration.feedID.rawValue)",
       qos: .userInitiated)
   }
 

@@ -65,7 +65,10 @@ public struct RecordingTimestampNormalizer: Sendable {
   public private(set) var lastPresentationTime: CMTime?
   public private(set) var lastDuration: CMTime?
 
-  public init(timescale: Int32 = 60_000) {
+  /// 480000 divides 48 kHz audio and both 1001-based video rates, so alternating
+  /// 1601/1602-sample packets stay monotonic. 60000 rounds those durations
+  /// independently and eventually overlaps the next PTS.
+  public init(timescale: Int32 = 480_000) {
     precondition(timescale > 0, "Recording timescale must be positive")
     self.timescale = timescale
   }
@@ -300,7 +303,7 @@ public struct LongRunRecordingConfiguration: Sendable {
   public let minimumFreeBytes: Int64
   public let outputDirectory: URL
 
-  public init(timescale: Int32 = 60_000,
+  public init(timescale: Int32 = 480_000,
               maximumSegmentDuration: CMTime = CMTime(value: 3_600, timescale: 1),
               maximumAVDrift: CMTime = CMTime(value: 1, timescale: 10),
               queueCapacity: Int = 256,
@@ -559,7 +562,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
     case let .failure(error): throw RecordingError.timestamp(error)
     }
 
-    let timelinePacket = mapToOutputTimeline(normalized)
+    let timelinePacket = try mapToOutputTimeline(normalized)
     do {
       try drift.observe(timelinePacket)
     } catch let error as RecordingDriftError {
@@ -584,7 +587,7 @@ public final class LongRunRecordingSession: @unchecked Sendable {
     latestOutputEnd = timelinePacket.endTime
   }
 
-  private func mapToOutputTimeline(_ packet: NormalizedRecordingPacket) -> NormalizedRecordingPacket {
+  private func mapToOutputTimeline(_ packet: NormalizedRecordingPacket) throws -> NormalizedRecordingPacket {
     guard let resumeSourceOrigin else {
       // Every recording starts at zero even when the capture device's source
       // clock began before admission. A resumed segment intentionally starts
@@ -600,7 +603,17 @@ public final class LongRunRecordingSession: @unchecked Sendable {
     }
     let delta = CMTimeSubtract(packet.presentationTime, resumeSourceOrigin)
     let outputOrigin = resumeOutputOrigin ?? .zero
-    let mappedTime = CMTimeAdd(outputOrigin, delta)
+    var mappedTime = CMTimeAdd(outputOrigin, delta)
+    // The other essence can carry an earlier PTS when audio is admitted first.
+    // A lead inside the drift limit starts at the segment origin. A larger gap
+    // is still a broken timeline.
+    if CMTimeCompare(mappedTime, outputOrigin) < 0 {
+      let lead = CMTimeSubtract(outputOrigin, mappedTime)
+      guard CMTimeCompare(lead, configuration.maximumAVDrift) <= 0 else {
+        throw RecordingError.timestamp(.timestampRegressed)
+      }
+      mappedTime = outputOrigin
+    }
     let mapped = RecordingPacket(mediaKind: packet.packet.mediaKind,
       presentationTime: mappedTime, duration: packet.duration, payload: packet.packet.payload)
     return NormalizedRecordingPacket(packet: mapped, presentationTime: mappedTime,

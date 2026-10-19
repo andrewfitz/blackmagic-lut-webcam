@@ -1,4 +1,4 @@
-// Included only with UDL_BACKEND_TESTING; no mock code in the shipped app.
+// Included only with ULTRACAM_BACKEND_TESTING; no mock code in the shipped app.
 #include <vector>
 #include <string>
 
@@ -179,7 +179,7 @@ class FakeConfiguration final : public IDeckLinkConfiguration {
   HRESULT WriteConfigurationToPreferences() override { ++persistentWrites; return S_OK; }
 };
 
-BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
+BOOL UltracamRunRawAudioSyntheticChecks(NSError **error) {
   @autoreleasepool {
     __block NSData *received = nil;
     __block CMTime packetTime = kCMTimeInvalid;
@@ -228,7 +228,7 @@ BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
   }
 }
 
-BOOL UDLRunSyntheticChecks(NSError **error) {
+BOOL UltracamRunSyntheticChecks(NSError **error) {
   @autoreleasepool {
     __block CVPixelBufferRef retained = nullptr;
     __block int frames = 0, events = 0;
@@ -370,10 +370,10 @@ BOOL UDLRunSyntheticChecks(NSError **error) {
   }
 }
 #else
-BOOL UDLRunSyntheticChecks(NSError **error) {
+BOOL UltracamRunSyntheticChecks(NSError **error) {
   return fail(error, @"Synthetic SDK frame mocks currently require the pinned SDK12 interfaces.");
 }
-BOOL UDLRunRawAudioSyntheticChecks(NSError **error) {
+BOOL UltracamRunRawAudioSyntheticChecks(NSError **error) {
   return fail(error, @"Synthetic SDK frame mocks currently require the pinned SDK12 interfaces.");
 }
 #endif

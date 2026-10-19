@@ -71,6 +71,45 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
     }
   }
 
+  func testNormalizerAcceptsAlternating2997AudioPackets() {
+    var normalizer = RecordingTimestampNormalizer()
+    var samplePosition: Int64 = 0
+    let pattern: [Int64] = [1_601, 1_602]
+    for index in 0..<500 {
+      let frames = pattern[index % 2]
+      let packet = RecordingPacket(mediaKind: .audio,
+        presentationTime: CMTime(value: samplePosition, timescale: 48_000),
+        duration: CMTime(value: frames, timescale: 48_000))
+      if case .failure(let error) = normalizer.normalize(packet) {
+        XCTFail("packet \(index) rejected: \(error)")
+        return
+      }
+      samplePosition += frames
+    }
+  }
+
+  func testEarlierVideoAfterAudioStaysInsideTheSegment() throws {
+    let writer = MemorySegmentWriter()
+    let config = LongRunRecordingConfiguration(
+      maximumAVDrift: CMTime(value: 1, timescale: 10),
+      minimumFreeBytes: 0,
+      outputDirectory: URL(fileURLWithPath: "/tmp/ultracam-recording-test"))
+    let session = try LongRunRecordingSession(configuration: config,
+      diskSpace: FixedDiskSpace(Int64.max), writer: writer)
+    try session.start()
+    assertEnqueued(session.enqueue(RecordingPacket(mediaKind: .audio,
+      presentationTime: CMTime(value: 2_000, timescale: 48_000),
+      duration: CMTime(value: 1_602, timescale: 48_000))))
+    assertEnqueued(session.enqueue(RecordingPacket(mediaKind: .video,
+      presentationTime: .zero,
+      duration: CMTime(value: 1_001, timescale: 30_000))))
+    XCTAssertNoThrow(try session.drain())
+    XCTAssertEqual(writer.segments.count, 1)
+    XCTAssertEqual(writer.segments[0].packets.count, 2)
+    XCTAssertGreaterThanOrEqual(CMTimeCompare(writer.segments[0].packets[1].presentationTime,
+      writer.segments[0].start), 0)
+  }
+
   func testDriftBoundFailsWithoutDroppingTheOffendingPacket() throws {
     var tracker = RecordingAVDriftTracker(maximumDrift: CMTime(value: 1, timescale: 10))
     let video = RecordingPacket(mediaKind: .video, presentationTime: .zero,
@@ -102,7 +141,7 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
 
     let writer = MemorySegmentWriter()
     let configuration = LongRunRecordingConfiguration(queueCapacity: 8, maximumQueueBytes: 25,
-      minimumFreeBytes: 0, outputDirectory: URL(fileURLWithPath: "/tmp/ultrastudio-recording-test"))
+      minimumFreeBytes: 0, outputDirectory: URL(fileURLWithPath: "/tmp/ultracam-recording-test"))
     let session = try LongRunRecordingSession(configuration: configuration,
       diskSpace: FixedDiskSpace(Int64.max), writer: writer)
     try session.start()
@@ -121,7 +160,7 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
     let config = LongRunRecordingConfiguration(timescale: 1_000,
       maximumSegmentDuration: CMTime(value: 1_000, timescale: 1_000),
       maximumAVDrift: CMTime(value: 1, timescale: 1), queueCapacity: 8,
-      minimumFreeBytes: 0, outputDirectory: URL(fileURLWithPath: "/tmp/ultrastudio-recording-test"))
+      minimumFreeBytes: 0, outputDirectory: URL(fileURLWithPath: "/tmp/ultracam-recording-test"))
     let session = try LongRunRecordingSession(configuration: config,
       diskSpace: FixedDiskSpace(Int64.max), writer: writer)
     try session.start()
@@ -159,7 +198,7 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
   func testDiskFailureAndWriterFailureAreSticky() throws {
     let writer = MemorySegmentWriter()
     let config = LongRunRecordingConfiguration(minimumFreeBytes: 100,
-      outputDirectory: URL(fileURLWithPath: "/tmp/ultrastudio-recording-test"))
+      outputDirectory: URL(fileURLWithPath: "/tmp/ultracam-recording-test"))
     let session = try LongRunRecordingSession(configuration: config,
       diskSpace: FixedDiskSpace(99), writer: writer)
     XCTAssertThrowsError(try session.start())
@@ -182,7 +221,7 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
 
   func testAtomicWriterLeavesOnlyFinalizedFiles() throws {
     let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("ultrastudio-recording-\(UUID().uuidString)")
+      .appendingPathComponent("ultracam-recording-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: directory) }
     let writer = AtomicRecordingSegmentWriter(directory: directory, sessionID: "stress")
     try writer.beginSegment(index: 0, startTime: .zero)
@@ -199,6 +238,8 @@ private func assertEnqueued(_ result: Result<Void, RecordingError>,
 
   static let allTests = [
     ("large packet monotonicity", testNormalizerRemainsMonotonicAcrossLargePacketCount),
+    ("29.97 audio rounding", testNormalizerAcceptsAlternating2997AudioPackets),
+    ("earlier video after audio", testEarlierVideoAfterAudioStaysInsideTheSegment),
     ("A/V drift bound", testDriftBoundFailsWithoutDroppingTheOffendingPacket),
     ("queue overflow rejection", testQueueRejectsOverflowInsteadOfDropping),
     ("rollover and pause/resume", testSessionRollsOverAndPauseResumeKeepsTimelineContinuous),

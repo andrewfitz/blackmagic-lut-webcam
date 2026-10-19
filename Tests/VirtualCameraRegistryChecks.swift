@@ -19,7 +19,7 @@ import XCTest
   }
 
   func testSnapshotValidationRejectsTamperedIdentityAndDuplicateProgram() throws {
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     var descriptor = VirtualCameraDescriptor.feed(feedID: "feed-1")
     descriptor.deviceUID = "tampered"
     XCTAssertThrowsError(try VirtualCameraRegistrySnapshot(
@@ -33,7 +33,7 @@ import XCTest
   }
 
   func testApplyingRequiresNewerGenerationAndSameAppGroup() throws {
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let current = VirtualCameraRegistrySnapshot(generation: 1, appGroupIdentifier: appGroup,
       devices: [.feed(feedID: "feed-1")])
     let same = current
@@ -54,7 +54,7 @@ import XCTest
   }
 
   func testApplyingRejectsZeroGenerationCandidate() throws {
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let current = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
       devices: [.feed(feedID: "feed-1")])
     let candidate = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
@@ -66,10 +66,10 @@ import XCTest
   }
 
   func testStoreKeepsBackupAndRollsBackCorruptPrimary() throws {
-    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.registry.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
     let first = VirtualCameraRegistrySnapshot(generation: 1, appGroupIdentifier: appGroup,
       devices: [.feed(feedID: "feed-1")])
@@ -86,10 +86,10 @@ import XCTest
   }
 
   func testStoreRejectsStaleOrWrongGroupWritesWithoutChangingCurrent() throws {
-    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.registry.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
     let current = VirtualCameraRegistrySnapshot(generation: 3, appGroupIdentifier: appGroup,
       devices: [.feed(feedID: "feed-1")])
@@ -111,10 +111,10 @@ import XCTest
   }
 
   func testStoreRejectsZeroGenerationWithoutWriting() throws {
-    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.registry.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
     let baseline = VirtualCameraRegistrySnapshot(appGroupIdentifier: appGroup,
       devices: [.feed(feedID: "feed-1")])
@@ -127,10 +127,10 @@ import XCTest
   }
 
   func testStoreDoesNotBackUpCorruptPrimaryBytes() throws {
-    let suiteName = "org.ultrastudiolut.tests.registry.\(UUID().uuidString)"
+    let suiteName = "org.ultracam.tests.registry.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let appGroup = "group.org.ultrastudiolut.registry.\(UUID().uuidString)"
+    let appGroup = "group.org.ultracam.registry.\(UUID().uuidString)"
     let store = VirtualCameraRegistryStore(appGroupIdentifier: appGroup, defaults: defaults)
     defaults.set(Data("truncated".utf8), forKey: VirtualCameraRegistryStore.key)
 

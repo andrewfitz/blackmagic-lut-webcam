@@ -62,7 +62,7 @@ struct ExtensionInstallPreflight: Sendable {
       CFGetTypeID(value) == CFBooleanGetTypeID() {
       entitled = (value as? Bool) == true
     }
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
     let localDevelopmentBuild = true
 #else
     let localDevelopmentBuild = false
@@ -158,7 +158,7 @@ final class ExtensionInstaller: NSObject, OSSystemExtensionRequestDelegate {
     guard let identity = requestIdentity.token(for: ObjectIdentifier(request)) else { return }
     Task { @MainActor in
       guard self.requestIdentity.matches(identity) else { return }
-      self.status = "Approve UltraStudio LUT in System Settings → General → Login Items & Extensions → Camera Extensions."
+      self.status = "Approve Ultracam in System Settings → General → Login Items & Extensions → Camera Extensions."
     }
   }
 
@@ -169,7 +169,7 @@ final class ExtensionInstaller: NSObject, OSSystemExtensionRequestDelegate {
       guard self.requestIdentity.matches(identity) else { return }
       let removed = self.activeChange == .remove
       self.finish(identity, message: completed ? (removed ? "Camera extension removed." :
-        "Camera extension request completed. Refresh inputs; select UltraStudio LUT in Zoom.") :
+        "Camera extension request completed. Refresh inputs; select Ultracam in Zoom.") :
         "Camera extension change requires a restart.")
     }
   }

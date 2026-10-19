@@ -56,6 +56,11 @@ import XCTest
     XCTAssertEqual(RecordingCodec.proRes42210Bit.title, "ProRes 422 10-bit")
     XCTAssertEqual(RecordingCodec.hevcMain10_422.title, "HEVC Main10 4:2:2")
     XCTAssertEqual(RecordingTimecodeMode.allCases, [.source, .recordStart, .wallClock])
+    XCTAssertEqual(RecordingTimecodeMode.wallClock.title, "PC time")
+    XCTAssertEqual(RecordingTimecodeMode.source.help,
+      "No timecode track is written. Camera timecode still appears in the metadata panel when the signal has it.")
+    XCTAssertEqual(RecordingTimecodeMode.wallClock.help,
+      "Writes the computer's clock into the file, aligned to the first frame.")
     XCTAssertEqual(RecordingConfiguration().codec, .proRes42210Bit)
     XCTAssertEqual(RecordingConfiguration().timecodeMode, .source)
   }
@@ -114,6 +119,25 @@ import XCTest
     XCTAssertEqual(model.feeds[0].status, .idle)
     XCTAssertEqual(model.feeds[1].status, .idle)
     XCTAssertEqual(model.feeds[0].error, nil)
+  }
+
+  func testFailedStopReturnsTheFeedToIdleAndClosesTheTake() {
+    let driver = Driver()
+    let model = RecordingModel(feeds: [RecordingFeedDescriptor(id: first, name: "One")], driver: driver)
+    model.outputFolder = URL(fileURLWithPath: "/tmp/recordings", isDirectory: true)
+    model.record(feedID: first)
+    var finished: [FeedID] = []
+    model.onRecordingFinished = { feedID, _ in finished.append(feedID) }
+    driver.failingFeeds = [first]
+
+    model.stop(feedID: first)
+
+    XCTAssertEqual(model.feeds[0].status, .idle)
+    XCTAssertNotNil(model.feeds[0].error)
+    XCTAssertEqual(finished, [first])
+    driver.failingFeeds = []
+    model.record(feedID: first)
+    XCTAssertEqual(model.feeds[0].status, .recording)
   }
 
   func testFolderRequirementIsReportedPerFeed() {
@@ -185,7 +209,7 @@ import XCTest
       })
     let first = FeedID(rawValue: "feed-a")
     let second = FeedID(rawValue: "feed-b")
-    let folder = URL(fileURLWithPath: "/tmp/ultrastudio-recordings", isDirectory: true)
+    let folder = URL(fileURLWithPath: "/tmp/ultracam-recordings", isDirectory: true)
 
     try driver.startRecording(feedID: first,
       configuration: RecordingConfiguration(codec: .hevcMain10_422, outputFolder: folder))
@@ -197,9 +221,18 @@ import XCTest
     XCTAssertEqual(configurations.map(\ .videoCodec), [kCMVideoCodecType_HEVC, kCMVideoCodecType_AppleProRes422HQ])
     XCTAssertTrue(configurations.allSatisfy { $0.width == 3840 && $0.height == 2160 })
     XCTAssertEqual(driver.startWarning, .rawAudioUnavailable)
+    XCTAssertTrue(configurations.allSatisfy { !$0.timecodeSamplesComputerClockAtFirstFrame })
+
+    let third = FeedID(rawValue: "feed-c")
+    try driver.startRecording(feedID: third,
+      configuration: RecordingConfiguration(codec: .hevcMain10_422, outputFolder: folder,
+        timecodeMode: .wallClock))
+    XCTAssertEqual(configurations[2].timecodePolicy, .wallClock)
+    XCTAssertTrue(configurations[2].timecodeSamplesComputerClockAtFirstFrame)
 
     try driver.stopRecording(feedID: first)
     try driver.stopRecording(feedID: second)
+    try driver.stopRecording(feedID: third)
   }
 
   static let allTests = [

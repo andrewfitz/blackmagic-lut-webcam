@@ -50,23 +50,23 @@ struct VirtualCameraDescriptor: Codable, Equatable, Sendable, Identifiable {
   }
 
   static func stableID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {
-    "org.ultrastudiolut.virtual-camera.\(kind.rawValue).\(encodedIdentity(for: kind, feedID: feedID))"
+    "org.ultracam.virtual-camera.\(kind.rawValue).\(encodedIdentity(for: kind, feedID: feedID))"
   }
 
   static func deviceUID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {
     // Keep the migrated single-feed route discoverable by legacy CMIO clients.
     if kind == .feed && normalizedFeedID(feedID) == "default" {
-      return "org.ultrastudiolut.camera.device"
+      return "org.ultracam.camera.device"
     }
-    return "org.ultrastudiolut.camera.device.\(encodedIdentity(for: kind, feedID: feedID))"
+    return "org.ultracam.camera.device.\(encodedIdentity(for: kind, feedID: feedID))"
   }
 
   static func sourceStreamID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {
-    "org.ultrastudiolut.camera.stream.source.\(encodedIdentity(for: kind, feedID: feedID))"
+    "org.ultracam.camera.stream.source.\(encodedIdentity(for: kind, feedID: feedID))"
   }
 
   static func sinkStreamID(for kind: VirtualCameraDeviceKind, feedID: String? = nil) -> String {
-    "org.ultrastudiolut.camera.stream.sink.\(encodedIdentity(for: kind, feedID: feedID))"
+    "org.ultracam.camera.stream.sink.\(encodedIdentity(for: kind, feedID: feedID))"
   }
 
   /// Checks both the descriptor's shape and its deterministic identity fields.
@@ -109,8 +109,8 @@ struct VirtualCameraDescriptor: Codable, Equatable, Sendable, Identifiable {
 
   private static func defaultDisplayName(for kind: VirtualCameraDeviceKind, feedID: String?) -> String {
     switch kind {
-    case .feed: return "UltraStudio LUT · Feed \(normalizedFeedID(feedID))"
-    case .program: return "UltraStudio LUT · Program"
+    case .feed: return "Ultracam · Feed \(normalizedFeedID(feedID))"
+    case .program: return "Ultracam · Program"
     }
   }
 }
@@ -152,12 +152,12 @@ enum VirtualCameraRegistryError: Error, Equatable, LocalizedError, Sendable {
 /// individual descriptor writes.
 struct VirtualCameraRegistrySnapshot: Codable, Equatable, Sendable {
   static let currentSchemaVersion = 1
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
   /// The staged ad-hoc build rewrites both bundle entitlements to this group.
   /// Keep the runtime suite name in lockstep with that signing step.
-  static let defaultAppGroupIdentifier = "group.org.ultrastudiolut.local"
+  static let defaultAppGroupIdentifier = "group.org.ultracam.local"
 #else
-  static let defaultAppGroupIdentifier = "group.org.ultrastudiolut.shared"
+  static let defaultAppGroupIdentifier = "group.org.ultracam.shared"
 #endif
 
   var schemaVersion: Int
@@ -266,8 +266,8 @@ struct VirtualCameraRegistrySnapshot: Codable, Equatable, Sendable {
 /// UserDefaults-backed publication with an independent backup slot. The
 /// settings store owns its own keys; this store never reads or writes them.
 final class VirtualCameraRegistryStore {
-  static let key = "ultrastudio.virtual-camera-registry.v1"
-  static let backupKey = "ultrastudio.virtual-camera-registry.v1.backup"
+  static let key = "ultracam.virtual-camera-registry.v1"
+  static let backupKey = "ultracam.virtual-camera-registry.v1.backup"
 
   private let defaults: UserDefaults
   private let appGroupIdentifier: String

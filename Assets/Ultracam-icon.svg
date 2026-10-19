@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1254 1254">
+  <title>Ultracam</title>
+  <desc>A flat blue and cyan camera aperture on a pale blue macOS icon tile.</desc>
+  <rect x="96" y="96" width="1062" height="1062" rx="230" fill="#E7F5FC"/>
+  <defs>
+    <path id="blade" d="M254 501C314 376 408 292 519 260Q530 257 536 265L710 501Q715 509 706 506C550 440 399 438 260 505Q251 510 254 501Z"/>
+  </defs>
+  <use href="#blade" fill="#1467EF"/>
+  <use href="#blade" transform="rotate(60 627 627)" fill="#00BEDC"/>
+  <use href="#blade" transform="rotate(120 627 627)" fill="#1467EF"/>
+  <use href="#blade" transform="rotate(180 627 627)" fill="#00BEDC"/>
+  <use href="#blade" transform="rotate(240 627 627)" fill="#1467EF"/>
+  <use href="#blade" transform="rotate(300 627 627)" fill="#00BEDC"/>
+</svg>

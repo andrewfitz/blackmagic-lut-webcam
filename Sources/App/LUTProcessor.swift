@@ -53,10 +53,10 @@ final class LUTProcessor {
     self.device = device
     commandQueue = queue
     let library: MTLLibrary
-    if let path = ProcessInfo.processInfo.environment["ULTRASTUDIO_LUT_METALLIB"] {
+    if let path = ProcessInfo.processInfo.environment["ULTRACAM_METALLIB"] {
       library = try device.makeLibrary(URL: URL(fileURLWithPath: path))
     } else {
-      let url = ProcessInfo.processInfo.environment["ULTRASTUDIO_LUT_SHADER"].map { URL(fileURLWithPath: $0) }
+      let url = ProcessInfo.processInfo.environment["ULTRACAM_SHADER"].map { URL(fileURLWithPath: $0) }
         ?? Bundle.main.url(forResource: "LUTShaders", withExtension: "metal")
       guard let url else { throw VideoError.message("GPU shader resource is missing.") }
       library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: nil)

@@ -114,13 +114,23 @@ impl Director {
                 Vec::new()
             }
             StreamEvent::Tick { time } => {
-                let expired = self
-                    .pending
-                    .as_ref()
-                    .and_then(|pending| (time > pending.expires_at).then_some(pending.decision_id));
                 let mut outputs = Vec::new();
-                if let Some(decision_id) = expired {
-                    outputs.push(SwitcherOutput::DecisionExpired { decision_id });
+                // Emit expiry before `tick` clears the pending decision. A
+                // backward clock, an elapsed deadline, or a target that has
+                // gone unhealthy all invalidate that decision.
+                if let Some(pending) = self.pending.clone() {
+                    let time_ok = time.is_finite() && time >= 0.0;
+                    let discontinuous = time_ok
+                        && self
+                            .last_media_time
+                            .is_some_and(|last| time + 1e-6 < last);
+                    let expired = time_ok && time > pending.expires_at;
+                    let target_unhealthy = time_ok && !self.is_healthy(&pending.target_camera_id);
+                    if discontinuous || expired || target_unhealthy {
+                        outputs.push(SwitcherOutput::DecisionExpired {
+                            decision_id: pending.decision_id,
+                        });
+                    }
                 }
                 if let Some(instruction) = self.tick(time) {
                     outputs.push(SwitcherOutput::Cut { instruction });
@@ -253,13 +263,20 @@ impl Director {
             return None;
         }
         if self.last_media_time.is_some_and(|last| now + 1e-6 < last) {
-            self.reset(None);
+            // The program output is still on `current_camera_id`. Resetting
+            // the shot origin to zero would make shot age equal the absolute
+            // media time and immediately force a cut after a one-microsecond
+            // clock step.
+            self.rebase_after_clock_discontinuity(now);
+            return None;
         }
         self.last_media_time = Some(now);
         self.prune(now);
 
         if let Some(pending) = &self.pending {
-            if now > pending.expires_at {
+            let drop_pending =
+                now > pending.expires_at || !self.is_healthy(&pending.target_camera_id);
+            if drop_pending {
                 self.pending = None;
                 self.candidate = None;
                 self.state = self.state_for_current();
@@ -270,6 +287,9 @@ impl Director {
         }
         if self.config.manual_hold {
             return None;
+        }
+        if let Some(instruction) = self.health_fallback(now) {
+            return Some(instruction);
         }
 
         let shot_age = (now - self.shot_started_at).max(0.0);
@@ -389,7 +409,12 @@ impl Director {
         self.current_camera_id = pending.target_camera_id;
         self.shot_started_at = applied;
         self.last_cut_at = Some(applied);
-        self.last_media_time = Some(self.last_media_time.unwrap_or(applied).max(applied));
+        // An editorial boundary can sit slightly ahead of the newest audio
+        // cue. Advancing the live clock to that boundary makes the next cue
+        // look discontinuous and throws away the shot just acknowledged.
+        if self.last_media_time.is_none() {
+            self.last_media_time = Some(applied);
+        }
         self.candidate = None;
         self.state = self.state_for_current();
         true
@@ -416,9 +441,21 @@ impl Director {
         {
             return;
         }
-        if self.last_media_time.is_some_and(|last| time < last) {
-            return;
-        }
+        let time = if let Some(last) = self.last_media_time {
+            if time < last {
+                // Status time can lag the last cue by a frame. Snapping a
+                // recent override forward keeps the operator cut; a large gap
+                // is a different timeline and is ignored.
+                if last - time > 2.0 {
+                    return;
+                }
+                last
+            } else {
+                time
+            }
+        } else {
+            time
+        };
         self.pending = None;
         self.candidate = None;
         self.current_camera_id = camera_id;
@@ -446,6 +483,44 @@ impl Director {
             .insert(self.config.anchor_camera_id.clone(), true);
         self.health
             .insert(self.config.emphasis_camera_id.clone(), true);
+    }
+
+    fn rebase_after_clock_discontinuity(&mut self, now: MediaTime) {
+        let current = self.current_camera_id.clone();
+        let health = self.health.clone();
+        self.reset(None);
+        self.current_camera_id = current;
+        self.health = health;
+        self.shot_started_at = now;
+        self.last_media_time = Some(now);
+        self.state = self.state_for_current();
+    }
+
+    fn health_fallback(&mut self, now: MediaTime) -> Option<CutInstruction> {
+        if self.is_healthy(&self.current_camera_id) {
+            return None;
+        }
+        let target = if self.current_camera_id == self.config.anchor_camera_id {
+            self.config.emphasis_camera_id.clone()
+        } else if self.current_camera_id == self.config.emphasis_camera_id {
+            self.config.anchor_camera_id.clone()
+        } else {
+            return None;
+        };
+        if !self.is_healthy(&target) {
+            return None;
+        }
+        let instruction = self.make_instruction(
+            &target,
+            now,
+            0.4,
+            CutReason::CameraHealthFallback,
+            true,
+            now + 1.0,
+        );
+        self.pending = Some(instruction.clone());
+        self.state = DirectorState::RequestPending;
+        Some(instruction)
     }
 
     fn forced_cut(&mut self, now: MediaTime) -> Option<CutInstruction> {

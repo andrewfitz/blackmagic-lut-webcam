@@ -38,6 +38,8 @@ def source_type(path):
     if path.endswith((".h", ".inc")): return "sourcecode.c.h"
     return "sourcecode.swift"
 source_refs = {path: file(path, source_type(path)) for path in sorted(set(app + camera))}
+icon_catalog = "Config/Assets.xcassets"
+icon_catalog_ref = file(icon_catalog, "folder.assetcatalog")
 
 
 def contained_path(value, root, label):
@@ -48,7 +50,7 @@ def contained_path(value, root, label):
 
 
 sdk_dir = contained_path(
-    os.environ.get("DECKLINK_SDK_DIR", str(EXTERNAL_ROOT / "cache/ultrastudio-lut/decklink-sdk")),
+    os.environ.get("DECKLINK_SDK_DIR", str(EXTERNAL_ROOT / "cache/ultracam/decklink-sdk")),
     EXTERNAL_ROOT,
     "DECKLINK_SDK_DIR",
 )
@@ -61,9 +63,10 @@ if "$(" not in auto_switcher_lib_dir:
 dispatch_path = str(Path(sdk_dir) / "DeckLinkAPIDispatch.cpp")
 source_refs[dispatch_path] = add("sdk-dispatch-reference", "PBXFileReference", lastKnownFileType="sourcecode.cpp.cpp", path=dispatch_path, sourceTree="<absolute>")
 app.append(dispatch_path)
-config_refs = [file(p.relative_to(ROOT).as_posix(), "text.plist.xml") for p in sorted((ROOT / "Config").glob("*")) if p.name != "Signing.xcconfig"]
-app_product = add("app-product", "PBXFileReference", explicitFileType="wrapper.application", path="UltraStudio LUT.app", sourceTree="BUILT_PRODUCTS_DIR")
-camera_product = add("camera-product", "PBXFileReference", explicitFileType="wrapper.system-extension", path="org.ultrastudiolut.app.camera.systemextension", sourceTree="BUILT_PRODUCTS_DIR")
+config_refs = [file(p.relative_to(ROOT).as_posix(), "text.plist.xml") for p in sorted((ROOT / "Config").glob("*")) if p.is_file() and p.name != "Signing.xcconfig"]
+config_refs.append(icon_catalog_ref)
+app_product = add("app-product", "PBXFileReference", explicitFileType="wrapper.application", path="Ultracam.app", sourceTree="BUILT_PRODUCTS_DIR")
+camera_product = add("camera-product", "PBXFileReference", explicitFileType="wrapper.system-extension", path="org.ultracam.app.camera.systemextension", sourceTree="BUILT_PRODUCTS_DIR")
 products = add("products", "PBXGroup", children=[app_product, camera_product], name="Products", sourceTree="<group>")
 group = add("root-group", "PBXGroup", children=list(source_refs.values()) + config_refs + [products], sourceTree="<group>")
 
@@ -88,7 +91,8 @@ def target(key, name, sources, product, product_type, bundle_id, plist, entitlem
     if key == "camera":
         settings.update(PRODUCT_NAME=bundle_id, SKIP_INSTALL="YES")
     else:
-        settings.update(SWIFT_OBJC_BRIDGING_HEADER="Sources/DeckLinkBackend/BridgingHeader.h", DECKLINK_SDK_DIR=sdk_dir,
+        settings.update(ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon",
+                        SWIFT_OBJC_BRIDGING_HEADER="Sources/DeckLinkBackend/BridgingHeader.h", DECKLINK_SDK_DIR=sdk_dir,
                         HEADER_SEARCH_PATHS=["$(inherited)", "$(DECKLINK_SDK_DIR)"],
                         LIBRARY_SEARCH_PATHS=["$(inherited)", auto_switcher_lib_dir],
                         OTHER_LDFLAGS=["$(inherited)", "-lauto_switcher", "-lc++", "-lz", "-liconv",
@@ -96,12 +100,16 @@ def target(key, name, sources, product, product_type, bundle_id, plist, entitlem
                                        "-framework", "SystemConfiguration"])
     resources = [add(f"{key}-resource-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith(".metal")]
     resource_phase = add(f"{key}-resources", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, files=resources, dstPath="", dstSubfolderSpec=7, name="Copy GPU Shader Source", runOnlyForDeploymentPostprocessing=0)
-    return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=[phase, frameworks, resource_phase], buildRules=[], dependencies=[], name=name, productName=name, productReference=product, productType=product_type)
+    phases = [phase, frameworks, resource_phase]
+    if key == "app":
+        icon_build = add("app-icon-build", "PBXBuildFile", fileRef=icon_catalog_ref)
+        phases.append(add("app-icon-resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[icon_build], runOnlyForDeploymentPostprocessing=0))
+    return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=phases, buildRules=[], dependencies=[], name=name, productName=name, productReference=product, productType=product_type)
 
 
-camera_id = target("camera", "UltraStudioLUTCamera", camera, camera_product, "com.apple.product-type.system-extension", "org.ultrastudiolut.app.camera", "Config/Camera-Info.plist", "Config/Camera.entitlements")
-app_id = target("app", "UltraStudio LUT", app, app_product, "com.apple.product-type.application", "org.ultrastudiolut.app", "Config/App-Info.plist", "Config/App.entitlements")
-proxy = add("camera-proxy", "PBXContainerItemProxy", containerPortal=ref("project"), proxyType=1, remoteGlobalIDString=camera_id, remoteInfo="UltraStudioLUTCamera")
+camera_id = target("camera", "UltracamCamera", camera, camera_product, "com.apple.product-type.system-extension", "org.ultracam.app.camera", "Config/Camera-Info.plist", "Config/Camera.entitlements")
+app_id = target("app", "Ultracam", app, app_product, "com.apple.product-type.application", "org.ultracam.app", "Config/App-Info.plist", "Config/App.entitlements")
+proxy = add("camera-proxy", "PBXContainerItemProxy", containerPortal=ref("project"), proxyType=1, remoteGlobalIDString=camera_id, remoteInfo="UltracamCamera")
 dependency = add("camera-dependency", "PBXTargetDependency", target=camera_id, targetProxy=proxy)
 embed_file = add("embed-camera-file", "PBXBuildFile", fileRef=camera_product, settings=dict(ATTRIBUTES=["CodeSignOnCopy", "RemoveHeadersOnCopy"]))
 embed = add("embed-camera", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="$(CONTENTS_FOLDER_PATH)/Library/SystemExtensions", dstSubfolderSpec=16, files=[embed_file], name="Embed Camera Extension", runOnlyForDeploymentPostprocessing=0)
@@ -118,16 +126,16 @@ def encode(value, level=0):
     return str(value) if isinstance(value, int) else json.dumps(value)
 
 
-directory = ROOT / "UltraStudioLUT.xcodeproj"
+directory = ROOT / "Ultracam.xcodeproj"
 directory.mkdir(exist_ok=True)
 (directory / "project.pbxproj").write_text("// !$*UTF8*$!\n" + encode(dict(archiveVersion=1, classes={}, objectVersion=56, objects=objects, rootObject=project)) + "\n")
 schemes = directory / "xcshareddata/xcschemes"
 schemes.mkdir(parents=True, exist_ok=True)
-(schemes / "UltraStudio LUT.xcscheme").write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
+(schemes / "Ultracam.xcscheme").write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="2700" version="1.3">
-<BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{app_id}" BuildableName="UltraStudio LUT.app" BlueprintName="UltraStudio LUT" ReferencedContainer="container:UltraStudioLUT.xcodeproj"/></BuildActionEntry></BuildActionEntries></BuildAction>
-<LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="NO"><BuildableProductRunnable runnableDebuggingMode="0"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{app_id}" BuildableName="UltraStudio LUT.app" BlueprintName="UltraStudio LUT" ReferencedContainer="container:UltraStudioLUT.xcodeproj"/></BuildableProductRunnable></LaunchAction>
+<BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{app_id}" BuildableName="Ultracam.app" BlueprintName="Ultracam" ReferencedContainer="container:Ultracam.xcodeproj"/></BuildActionEntry></BuildActionEntries></BuildAction>
+<LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="NO"><BuildableProductRunnable runnableDebuggingMode="0"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{app_id}" BuildableName="Ultracam.app" BlueprintName="Ultracam" ReferencedContainer="container:Ultracam.xcodeproj"/></BuildableProductRunnable></LaunchAction>
 <ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>
 ''')
-print("Generated UltraStudioLUT.xcodeproj")
+print("Generated Ultracam.xcodeproj")

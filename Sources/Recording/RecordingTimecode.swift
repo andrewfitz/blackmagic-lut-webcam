@@ -49,8 +49,10 @@ public enum RecordingFrameRate: Equatable, Sendable {
 /// preserves an embedded source timecode.
 public enum RecordingTimecodePolicy: Equatable, Sendable {
   /// Anchor each feed at its own start date and advance it using source media
-  /// time.  This keeps separately started feeds independent while preserving
-  /// source cadence and avoids sampling `Date()` on every frame.
+  /// time. PC-time recordings sample that date from the computer clock once,
+  /// at the first written frame, then count media frames. This keeps
+  /// separately started feeds independent and avoids sampling `Date()` on
+  /// every frame.
   case wallClock
 
   /// Start at 00:00:00:00 and advance with the source media clock. This is

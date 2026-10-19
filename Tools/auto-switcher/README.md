@@ -1,4 +1,4 @@
-# UltraStudio Auto Switcher
+# Ultracam Auto Switcher
 
 This is an independent Rust subsystem for realtime and offline camera
 direction. It is intentionally transport-neutral: applications can feed it

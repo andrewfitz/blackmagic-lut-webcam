@@ -4,16 +4,16 @@ import CoreVideo
 import IOKit.audio
 import Foundation
 import os
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
 import Security
 #endif
 
 enum CameraProducerAuthorization {
-  static let identifier = "org.ultrastudiolut.app"
+  static let identifier = "org.ultracam.app"
 
   static func allows(signingID: String?, pid: pid_t, verifyLocalProcess: (pid_t) -> Bool) -> Bool {
     if signingID == identifier { return true }
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
     // CMIO reports the literal "unknown" for an ad-hoc producer on macOS 27.
     // Verify that particular running process instead of trusting the placeholder.
     guard signingID == nil || signingID == "unknown", pid > 0 else { return false }
@@ -23,7 +23,7 @@ enum CameraProducerAuthorization {
 #endif
   }
 
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
   static func verifyRunningProcess(pid: pid_t, reportPhase: (String) -> Void = { _ in }) -> OSStatus {
     guard pid > 0 else { return errSecParam }
     var requirement: SecRequirement?
@@ -82,6 +82,10 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
   private var lastOutput: CMTime = .invalid
   private var nextStandby: CMTime = .invalid
   private var wasStandby = true
+  /// Constant added to a producer clock that sits behind the host-time output.
+  /// Program time starts at zero, so repairing every late frame independently
+  /// restamps the whole session and marks each frame discontinuous.
+  private var outputTimeOffset: CMTime?
   let automaticTimers: Bool
   let clock: () -> CMTime
   private let output: ((CMSampleBuffer, CMIOExtensionStream.DiscontinuityFlags, UInt64) -> Void)?
@@ -95,7 +99,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
     descriptor: VirtualCameraDescriptor = .feed(feedID: "default")) {
     self.descriptor = descriptor
     self.automaticTimers = automaticTimers
-    self.queue = queue ?? DispatchQueue(label: "org.ultrastudiolut.camera")
+    self.queue = queue ?? DispatchQueue(label: "org.ultracam.camera")
     self.clock = clock
     self.output = output
     super.init()
@@ -172,7 +176,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
   }
   func providerProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionProviderProperties {
     let result = CMIOExtensionProviderProperties(dictionary: [:])
-    result.manufacturer = "UltraStudio LUT"
+    result.manufacturer = "Ultracam"
     return result
   }
   func setProviderProperties(_ properties: CMIOExtensionProviderProperties) throws {}
@@ -192,7 +196,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
     // Validate the complete request before modifying either property. The host
     // selects the common source/sink contract before starting the producer.
     guard fromProducer || !sink.consuming || (nextIndex == activeIndex && nextDuration == duration) else {
-      throw VideoError.message("Stop capture in UltraStudio LUT before changing the output format or frame rate.")
+      throw VideoError.message("Stop capture in Ultracam before changing the output format or frame rate.")
     }
     var changes: [CMIOExtensionProperty: CMIOExtensionPropertyState<AnyObject>] = [:]
     if nextIndex != activeIndex {
@@ -223,6 +227,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
     nextStandby = .invalid
     guard consumers > 0 else {
       lastOutput = .invalid
+      outputTimeOffset = nil
       // A new source client starts a fresh output segment.  Mark its first
       // live frame as a discontinuity even when the producer stayed running
       // while the previous viewer disconnected.
@@ -274,19 +279,30 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
     do {
       var outgoing = sample
       var flags = discontinuity
-      if wasStandby { flags.insert(.time) }
-      // A queued capture frame may predate the last standby frame on recovery.
-      // Repair only that boundary; live frames keep their producer timestamps.
+      if wasStandby {
+        flags.insert(.time)
+        // Standby moved the output clock. The next live run gets one new offset.
+        outputTimeOffset = nil
+      }
+      // A producer clock that begins at zero stays behind host-time standby for
+      // the whole session. Anchor it once and reuse that offset. A frame that
+      // is already ahead of the output keeps its own timestamp.
       if lastOutput.isNumeric, CMTimeCompare(time, lastOutput) <= 0 {
-        let now = clock()
-        let adjusted = CMTimeCompare(now, lastOutput) > 0 ? now : CMTimeAdd(lastOutput, duration)
-        var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: adjusted, decodeTimeStamp: .invalid)
+        if outputTimeOffset == nil {
+          let now = clock()
+          let adjusted = CMTimeCompare(now, lastOutput) > 0 ? now : CMTimeAdd(lastOutput, duration)
+          outputTimeOffset = CMTimeSubtract(adjusted, time)
+        }
+        let shifted = CMTimeAdd(time, outputTimeOffset ?? .zero)
+        let stamped = CMTimeCompare(shifted, lastOutput) > 0 ? shifted : CMTimeAdd(lastOutput, duration)
+        var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: stamped, decodeTimeStamp: .invalid)
         var copy: CMSampleBuffer?
         let status = CMSampleBufferCreateCopyWithNewTiming(allocator: kCFAllocatorDefault,
           sampleBuffer: sample, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleBufferOut: &copy)
         guard status == noErr, let copy else { throw VideoError.message("Cannot repair source timestamp (\(status)).") }
         outgoing = copy
-        flags.insert(.time)
+      } else {
+        outputTimeOffset = nil
       }
       wasStandby = false
       send(outgoing, discontinuity: flags)
@@ -380,7 +396,7 @@ final class CameraDeviceRuntime: NSObject, CMIOExtensionProviderSource, @uncheck
 /// properties below delegate to the first published device for compatibility
 /// with the existing app while callers migrate to `runtime(for:)`.
 final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Sendable {
-  let queue = DispatchQueue(label: "org.ultrastudiolut.camera.registry")
+  let queue = DispatchQueue(label: "org.ultracam.camera.registry")
   var provider: CMIOExtensionProvider!
   private(set) var snapshot: VirtualCameraRegistrySnapshot
   private(set) var descriptors: [VirtualCameraDescriptor]
@@ -539,7 +555,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   }
   func providerProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionProviderProperties {
     let result = CMIOExtensionProviderProperties(dictionary: [:])
-    result.manufacturer = "UltraStudio LUT"
+    result.manufacturer = "Ultracam"
     return result
   }
   func setProviderProperties(_ properties: CMIOExtensionProviderProperties) throws {}
@@ -641,7 +657,7 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
       var verificationStatus: Int32?
       var verificationPhase = "unavailable"
       let allowed = CameraProducerAuthorization.allows(signingID: client.signingID, pid: client.pid) { pid in
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
         let status = CameraProducerAuthorization.verifyRunningProcess(pid: pid) { verificationPhase = $0 }
         verificationStatus = status
         return status == errSecSuccess

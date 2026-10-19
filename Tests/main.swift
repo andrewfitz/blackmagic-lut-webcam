@@ -221,7 +221,7 @@ func syntheticRamp() throws -> CVPixelBuffer {
   ]
 }
 
-let suite = XCTestSuite(name: "UltraStudio LUT synthetic checks")
+let suite = XCTestSuite(name: "Ultracam synthetic checks")
 suite.addTest(XCTestSuite(forTestCaseClass: CubeTests.self))
 suite.addTest(XCTestSuite(forTestCaseClass: PipelineTests.self))
 suite.addTest(XCTestSuite(forTestCaseClass: GPUExtendedChecks.self))
@@ -242,6 +242,7 @@ suite.addTest(XCTestSuite(forTestCaseClass: ProgramOutputRouteChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: AutomaticFeedChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: EmbeddedAudioRecordingChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RecordingChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: RecordingTimecodeChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RecordingOutputChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: ProResRecordingConfigurationChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: RecordingEndToEndChecks.self))

@@ -10,6 +10,13 @@ struct InputDevice: Identifiable {
 
 @MainActor @Observable
 final class AppModel {
+  var hideFromDock = false {
+    didSet {
+      guard hideFromDock != oldValue else { return }
+      settingsStore.hideFromDock = hideFromDock
+      NSApplication.shared.setActivationPolicy(hideFromDock ? .accessory : .regular)
+    }
+  }
   var devices: [InputDevice] = []
   /// Descriptors and selection are coordinated as a collection. The selected
   /// session still follows the established one-feed capture path.
@@ -103,14 +110,10 @@ final class AppModel {
     didSet {
       guard automaticFeedEnabled != oldValue, !restoringSettings else { return }
       saveSettings()
-      automaticPolicy = AutomaticFeedPolicy()
-      cameraDemandError = nil
-      if automaticFeedEnabled { demandMonitor.start() }
-      else { demandMonitor.stop() }
-      // Turning automatic mode off must release a capture that was started
-      // for camera demand; otherwise the feed keeps running with no owner and
-      // the UI toggle appears to have no effect until the user presses Stop.
-      if !automaticFeedEnabled { reconcileAutomaticFeed() }
+      // A live feed stays up under manual Start/Stop. Only the demand monitor
+      // changes, so closing the camera app no longer stops a feed the user
+      // has taken back.
+      installAutomaticFeedMonitor()
     }
   }
   private(set) var cameraDemandError: String?
@@ -154,6 +157,7 @@ final class AppModel {
        registryStore: VirtualCameraRegistryStore? = nil) {
     let store = settingsStore ?? AppSettingsStore()
     self.settingsStore = store
+    hideFromDock = store.hideFromDock
     self.virtualCameraRegistryStore = registryStore ?? VirtualCameraRegistryStore()
     let snapshot = store.loadSnapshot()
     persistedSnapshot = snapshot
@@ -198,10 +202,11 @@ final class AppModel {
       self.pendingAutoTargetFeedID = nil
       self.autoSwitcherTimeline?.recordApplied(decisionID: decisionID, target: feedID,
         sourceTime: sourceTime, programTime: programTime)
-      // Rust's director decision clock is source media time. Program time is
-      // retained in the timeline as a separate mapped value and must not be
-      // used to acknowledge a source-clock cut.
-      self.autoSwitcherBridge?.acknowledge(decisionID: decisionID, appliedAt: sourceTime)
+      // The director clock is the selected input's audio time. The frame that
+      // landed the cut has a different source's video PTS, so acknowledging
+      // with that PTS moves the director onto the wrong timeline. Nil keeps
+      // the shot start on the decision's own cut time.
+      self.autoSwitcherBridge?.acknowledge(decisionID: decisionID, appliedAt: nil)
     }
     let savedFeed = snapshot.feeds.first(where: { $0.id == initialFeedID }) ?? FeedDescriptor()
     selectedDevice = savedFeed.selectedDevice
@@ -236,7 +241,7 @@ final class AppModel {
 
   func refresh() {
     do {
-      devices = try UDLBackend.devices().map { InputDevice(id: $0.identifier, name: $0.name) }
+      devices = try UltracamBackend.devices().map { InputDevice(id: $0.identifier, name: $0.name) }
     } catch { devices = []; update.message = error.localizedDescription }
     if !devices.isEmpty, !devices.contains(where: { $0.id == selectedDevice }) {
       selectedDevice = devices.first!.id
@@ -421,12 +426,26 @@ final class AppModel {
       autoSwitcherTimeline?.recordRejected(decisionID: oldDecisionID)
       autoSwitcherBridge?.reject(decisionID: oldDecisionID)
     }
+    if case .queued = result {
+      autoSwitcherBridge?.manualOverride(cameraID: feedID, at: directorClock())
+    } else if case .coalesced = result {
+      autoSwitcherBridge?.manualOverride(cameraID: feedID, at: directorClock())
+    }
     saveSettings()
     return result
   }
 
+  /// Audio packet time from the selected input. That is the clock the Rust
+  /// director ticks, so manual cuts have to be expressed on it.
+  private func directorClock() -> CMTime {
+    update.audioPacketTime ?? update.mediaTime ?? .zero
+  }
+
   private func applySelectedDescriptor(_ descriptor: FeedDescriptor) {
     lutLoadGeneration &+= 1
+    // An in-flight load for the previous feed no longer owns this flag.
+    // Leaving it true disables Start until that discarded load finishes.
+    loading = false
     restoringSettings = true
     selectedDevice = descriptor.selectedDevice
     configuration = descriptor.configuration
@@ -442,8 +461,22 @@ final class AppModel {
     lutFileName = nil
     lutError = nil
     restoringSettings = false
+    // Assignments above ran while restoring, so the automatic-feed didSet
+    // did not retarget the demand monitor. Do that after the new descriptor
+    // is in place, then restore this feed's LUT.
+    installAutomaticFeedMonitor()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
     capture.setPreviewEnabled(previewEnabled)
+  }
+
+  /// Points camera-demand listening at the selected feed without starting or
+  /// stopping capture. Each feed stores its own automatic-feed choice.
+  private func installAutomaticFeedMonitor() {
+    automaticPolicy = AutomaticFeedPolicy()
+    cameraDemandError = nil
+    demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
+    if automaticFeedEnabled { demandMonitor.start() }
+    else { demandMonitor.stop() }
   }
 
   func saveSettings() {
@@ -492,6 +525,11 @@ final class AppModel {
     update.pipelineEnabledApplied = nil
     update.output = ""
     capture.reconfigure(configuration: effectiveConfiguration, pipelineEnabled: pipelineEnabled)
+    guard running, feedCoordinator.outputMode == .program else { return }
+    // The Program sink negotiates once. A later processing change has to
+    // renegotiate that contract or every new frame is rejected.
+    try? feedCoordinator.setProgramOutputDemand(true, configuration: effectiveConfiguration,
+      passthroughFormat: kCVPixelFormatType_422YpCbCr10)
   }
 
   var canStartFeed: Bool {
@@ -513,10 +551,20 @@ final class AppModel {
         descriptor.id != selectedFeedID && !descriptor.selectedDevice.isEmpty {
         installCaptureUpdateHandler(for: descriptor.id)
         installProcessedFrameHandler(for: descriptor.id)
+        feedCoordinator.setProgramSourceHealth(descriptor.id, healthy: true)
         feedCoordinator.setCameraOutputEnabled(feedID: descriptor.id, enabled: false)
+        // Apply LUT stays off until this controller has its own cube. The
+        // saved flag alone makes the first frame fail with "Load a LUT".
+        var headlessConfiguration = descriptor.configuration
+        let applySavedLUT = headlessConfiguration.applyLUT
+        headlessConfiguration.applyLUT = false
         _ = feedCoordinator.startCapture(feedID: descriptor.id,
-          deviceID: descriptor.selectedDevice, configuration: descriptor.configuration,
+          deviceID: descriptor.selectedDevice, configuration: headlessConfiguration,
           pipelineEnabled: descriptor.pipelineEnabled, previewEnabled: false)
+        if applySavedLUT, let bookmark = descriptor.lutBookmark {
+          restoreHeadlessLUT(feedID: descriptor.id, bookmark: bookmark,
+            pipelineEnabled: descriptor.pipelineEnabled)
+        }
       }
     }
     guard feedCoordinator.start(selectedFeedID) else { return }
@@ -524,6 +572,7 @@ final class AppModel {
     previewReady = false
     update = CaptureUpdate(message: "Opening UltraStudio…")
     if feedCoordinator.outputMode == .program {
+      feedCoordinator.setProgramSourceHealth(selectedFeedID, healthy: true)
       feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: false)
       do {
         try feedCoordinator.setProgramOutputDemand(true, configuration: effectiveConfiguration,
@@ -606,8 +655,11 @@ final class AppModel {
           self.feedCoordinator.outputMode == .program else { return }
         self.autoSwitcherTimeline?.recordInstruction(instruction,
           from: self.switcherSelectedFeedID)
+        // `cutTime` is on the director's audio clock, not on the target
+        // camera's video PTS. Using it as a frame bound waits for a timestamp
+        // the target will never reach and drops the current program source.
         let result = self.feedCoordinator.requestProgramCut(to: instruction.targetCameraID,
-          noEarlierThan: instruction.cutTime)
+          noEarlierThan: nil)
         switch result {
         case .queued, .coalesced:
           self.pendingAutoDecisionID = instruction.decisionID
@@ -665,7 +717,7 @@ final class AppModel {
       autoSwitcherBridge?.ingestAudio(time: update.audioPacketTime ?? time,
         rms: Float(max(update.audioRMSLeft, update.audioRMSRight)),
         peak: Float(max(update.audioPeakLeft, update.audioPeakRight)),
-        sampleRate: update.audioSampleRate, present: true)
+        present: true)
     } else {
       autoSwitcherTimeline?.recordTick(time: time)
       autoSwitcherBridge?.tick(time: time)
@@ -697,19 +749,25 @@ final class AppModel {
         if update.stopped {
           self.feedCoordinator.stopCapture(feedID: feedID)
           if self.selectedFeedID == feedID {
+            if self.feedCoordinator.outputMode == .program {
+              try? self.feedCoordinator.setProgramOutputDemand(false,
+                configuration: self.effectiveConfiguration,
+                passthroughFormat: kCVPixelFormatType_422YpCbCr10)
+            }
             for descriptor in self.feedCoordinator.descriptors where descriptor.id != feedID {
               self.feedCoordinator.stopCapture(feedID: descriptor.id)
             }
             self.recordingModel.stopAll()
             self.running = false
             self.previewReady = false
+            self.stopAutoSwitcher()
           } else {
             // A headless Program source can fail independently. Stop only its
-            // recording; stopping every recording here would interrupt healthy
-            // sources that are still producing Program frames.
+            // recording; stopping the director here would take the surviving
+            // cameras off automatic cuts while they are still live.
             self.recordingModel.stop(feedID: feedID)
+            self.retireProgramSource(feedID)
           }
-          self.stopAutoSwitcher()
           return
         }
         guard self.selectedFeedID == feedID else { return }
@@ -724,6 +782,41 @@ final class AppModel {
         }
       }
     }
+  }
+
+  /// Loads one non-selected feed's saved LUT into that feed's controller, then
+  /// enables Apply LUT. The camera is already running without the LUT.
+  private func restoreHeadlessLUT(feedID: FeedID, bookmark: Data, pipelineEnabled: Bool) {
+    Task { [weak self, lutLoader] in
+      let loaded: LoadedLUT
+      do { loaded = try await lutLoader.restore(bookmark: bookmark) }
+      catch { return }
+      await MainActor.run { [weak self] in
+        guard let self, self.running, self.feedCoordinator.isFeedRunning(feedID) else { return }
+        self.feedCoordinator.capture(for: feedID).load(loaded.cube) { [weak self] result in
+          MainActor.assumeIsolated {
+            guard let self, case .success = result, self.running,
+              self.feedCoordinator.isFeedRunning(feedID),
+              let descriptor = self.feedCoordinator.descriptors.first(where: { $0.id == feedID }),
+              descriptor.applyLUT else { return }
+            var configuration = descriptor.configuration
+            configuration.applyLUT = true
+            self.feedCoordinator.reconfigureCapture(feedID: feedID,
+              configuration: configuration, pipelineEnabled: pipelineEnabled)
+          }
+        }
+      }
+    }
+  }
+
+  /// Removes one failed source from Program eligibility without ending the
+  /// session. The director hears the same health change on its next tick.
+  private func retireProgramSource(_ feedID: FeedID) {
+    feedCoordinator.setProgramSourceHealth(feedID, healthy: false)
+    // `self.update` is the selected input, which owns the director clock.
+    // The stopped source's own timestamps are cleared and must not be used.
+    // A zero sample still records health without moving that clock backward.
+    autoSwitcherBridge?.setCameraHealth(cameraID: feedID, healthy: false, at: directorClock())
   }
 
   private func installProcessedFrameHandler(for feedID: FeedID) {

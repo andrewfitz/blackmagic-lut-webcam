@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "ultrastudio-auto-switcher/switcher-output",
+  "$id": "ultracam-auto-switcher/switcher-output",
   "title": "Auto switcher realtime output",
   "type": "object",
   "required": ["type"],

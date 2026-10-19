@@ -9,7 +9,7 @@ if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
   exit 1
 fi
 export TMPDIR="$external_root/tmp"
-sdk_dir="${DECKLINK_SDK_DIR:-$external_root/cache/ultrastudio-lut/decklink-sdk}"
+sdk_dir="${DECKLINK_SDK_DIR:-$external_root/cache/ultracam/decklink-sdk}"
 sdk_dir="$(python3 - "$external_root" "$sdk_dir" <<'PY'
 from pathlib import Path
 import sys

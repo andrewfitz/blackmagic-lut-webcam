@@ -6,7 +6,7 @@ import XCTest
   func testTimelinePersistsExactTicksAndAppliedProgramCut() throws {
     var settings = NaturalTalkingHeadSettings()
     settings.maximumShotDuration = 30
-    let folder = URL(fileURLWithPath: "/tmp/ultrastudio-lut-auto-switcher-timeline-check")
+    let folder = URL(fileURLWithPath: "/tmp/ultracam-auto-switcher-timeline-check")
     let recorder = AutoSwitcherTimelineRecorder(settings: settings,
       anchor: FeedID(rawValue: "anchor"), emphasis: FeedID(rawValue: "emphasis"),
       outputFolder: folder)

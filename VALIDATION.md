@@ -1,5 +1,44 @@
 # Validation
 
+## Ultracam fresh identity and flat icon — October 19, 2026
+
+Source is in `/Users/andrew/Projects/ai/ultracam`, with the `Ultracam.xcodeproj`
+project and `Ultracam` scheme. The app uses fresh identities `org.ultracam.app`
+and `org.ultracam.app.camera`, the shared group `group.org.ultracam.shared`,
+Ultracam camera/stream UIDs and `ultracam.*` preference keys. The native bridge
+is `UltracamBackend`; development and test flags also use Ultracam names.
+Settings start fresh, with no migration of the previous app's preferences.
+Older entries below retain the names used for their historical checks.
+
+The signed Release app is installed at `/Applications/Ultracam.app`. Strict
+signature and bundle metadata checks pass for both the host and its embedded
+camera extension, using team `44XS8S26W2`. The camera Mach service name now
+starts with its entitled app group, correcting a category-validation failure
+in the first signed build. Bundle validation checks this prefix for both
+signed and unsigned builds before an installation request.
+
+The final icon is flat blue/cyan vector artwork with no U-shaped holder or 3D
+effects. `Assets/Ultracam-icon.svg` is the editable source; `generate_icon.sh`
+renders the PNG master and all ten transparent macOS AppIcon sizes. The installed
+`AppIcon.icns` and `Assets.car` match the final build. Concept prompt and asset
+instructions are in `docs/ICON.md`.
+
+The fresh app was launched with no LUT, automatic feed disabled, no recording
+folder and capture stopped, confirming a clean settings store. The fresh-identity
+synthetic XCTest suite passes **263 tests, zero failures**, in 26.802 seconds.
+The renamed Rust helper package previously passed **15 integration tests**;
+its Rust implementation was unchanged by the identity and icon updates.
+
+The legacy virtual camera was deactivated through `systemextensionsctl`.
+macOS retains its terminated versions pending removal on restart. Seventy-five
+obsolete app/build/test paths were removed in the first cleanup. The approved
+final cleanup removed 781 remaining build, test, cache and legacy-settings paths.
+Strict signature verification still passes for `/Applications/Ultracam.app`.
+The installed app is the only existing indexed app copy; no app copies remain
+in the source or project build directories. Editable source, icon assets and
+user media are preserved. The fresh camera extension is embedded in the app
+but is not yet activated.
+
 Development machine: M4 Max Mac Studio, 48 GB RAM, macOS 27.0.1, Xcode 27.0,
 Blackmagic Desktop Video 16.4. Executed October 14, 2026.
 

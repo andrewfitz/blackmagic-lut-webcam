@@ -20,10 +20,10 @@ extension VirtualCameraRegistrySnapshot {
     case .separateCameras:
       devices = feeds.filter(\.enabled).map { feed in
         VirtualCameraDescriptor.feed(feedID: feed.id.rawValue,
-          displayName: "UltraStudio LUT · \(feed.name)", enabled: true)
+          displayName: "Ultracam · \(feed.name)", enabled: true)
       }
     case .program:
-      devices = [.program(displayName: "UltraStudio LUT · Program")]
+      devices = [.program(displayName: "Ultracam · Program")]
     }
 
     // A previous snapshot is only a generation source when it is itself a

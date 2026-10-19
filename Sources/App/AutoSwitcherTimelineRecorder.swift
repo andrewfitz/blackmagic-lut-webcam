@@ -384,9 +384,11 @@ final class AutoSwitcherTimelineRecorder {
     document.cuts[index].appliedProgramTime = program.seconds
     document.cuts[index].appliedProgramTimeTicks = program.ticks
     currentCameraID = target
+    // `applied_at` is the director clock. Program time is already stored on
+    // the cut record and must not be replayed as the source-clock ack.
     let event = AutoSwitcherTimelineEvent(type: "acknowledge", cue: nil,
-      time: program.seconds, timeTicks: program.ticks, decisionID: decisionID,
-      appliedAt: program.seconds, appliedAtTicks: program.ticks, cameraID: target.rawValue)
+      time: source.seconds, timeTicks: source.ticks, decisionID: decisionID,
+      appliedAt: source.seconds, appliedAtTicks: source.ticks, cameraID: target.rawValue)
     append(event: event, mediaTime: source, outputs: [])
     persist(force: true)
   }
@@ -534,7 +536,7 @@ final class AutoSwitcherTimelineRecorder {
 
   private static func makeOutputURL(folder: URL?, sessionID _: UUID) -> URL {
     let base = folder ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("UltraStudio LUT/Sessions", isDirectory: true)
+      .appendingPathComponent("Ultracam/Sessions", isDirectory: true)
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(secondsFromGMT: 0)

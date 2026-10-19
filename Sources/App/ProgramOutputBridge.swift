@@ -41,7 +41,7 @@ final class ProgramOutputBridge: @unchecked Sendable {
   private var statistics = Statistics()
 
   /// The production bridge uses the dedicated Program CMIO destination.
-  convenience init(route: FrameRoute<CVPixelBuffer>, queueLabel: String = "org.ultrastudiolut.program-output-bridge") {
+  convenience init(route: FrameRoute<CVPixelBuffer>, queueLabel: String = "org.ultracam.program-output-bridge") {
     let sink = CameraSink(program: true)
     self.init(route: route, connect: { configuration, passthroughFormat in
       try sink.connect(configuration: configuration, passthroughFormat: passthroughFormat)
@@ -55,7 +55,7 @@ final class ProgramOutputBridge: @unchecked Sendable {
   /// only path that supplies the real `CameraSink`.
   init(route: FrameRoute<CVPixelBuffer>, connect: @escaping Connect,
        disconnect: @escaping Disconnect, send: @escaping Send,
-       queueLabel: String = "org.ultrastudiolut.program-output-bridge") {
+       queueLabel: String = "org.ultracam.program-output-bridge") {
     self.route = route
     connectSink = connect
     disconnectSink = disconnect
@@ -91,8 +91,14 @@ final class ProgramOutputBridge: @unchecked Sendable {
         drainLocked()
         return
       }
+      let contractChanged = connected && !Self.sameContract(demandConfiguration, configuration,
+        demandPassthroughFormat, passthroughFormat)
       demandConfiguration = configuration
       demandPassthroughFormat = passthroughFormat
+      if contractChanged {
+        disconnectSink()
+        connected = false
+      }
       guard !connected else {
         pumpLocked()
         return
@@ -160,13 +166,29 @@ final class ProgramOutputBridge: @unchecked Sendable {
         statistics.invalid &+= 1
         continue
       }
+      var staged: CMSampleBuffer?
       do {
         let sample = try sampleFactory.sample(image, at: metadata.presentationTime,
           duration: metadata.duration)
+        staged = sample
         if try sendSink(sample) { statistics.delivered &+= 1 }
         else { statistics.dropped &+= 1 }
       } catch {
         statistics.sendErrors &+= 1
+        let mismatch = (error as? LocalizedError)?.errorDescription?
+          .contains("negotiated format") == true
+        if let sample = staged, mismatch, reconnectLocked(to: metadata) {
+          do {
+            if try sendSink(sample) {
+              statistics.delivered &+= 1
+              continue
+            }
+            statistics.dropped &+= 1
+            continue
+          } catch {
+            statistics.sendErrors &+= 1
+          }
+        }
         // A failed enqueue usually means the CMIO client released the
         // virtual camera between our demand check and this send. Keep demand
         // asserted so the next demanded frame can reconnect the sink.
@@ -176,6 +198,38 @@ final class ProgramOutputBridge: @unchecked Sendable {
         break
       }
     }
+  }
+
+  /// Rebuilds the sink around the frame that was just rejected. Program
+  /// sources can change resolution, chroma, or frame rate at a cut, and the
+  /// sink's previous negotiation would otherwise drop every following frame.
+  private func reconnectLocked(to metadata: ProcessedFrameMetadata) -> Bool {
+    if connected { disconnectSink() }
+    connected = false
+    var configuration = PipelineConfiguration()
+    configuration.downscale = metadata.width <= 1920
+    configuration.convertTo420 = metadata.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    configuration.inputFast = metadata.duration == VideoContract.fastDuration
+    configuration.reduceFrameRate = false
+    let passthrough = demandPassthroughFormat ?? kCVPixelFormatType_422YpCbCr10
+    do {
+      try connectSink(configuration, passthrough)
+      connected = true
+      demandConfiguration = configuration
+      demandPassthroughFormat = passthrough
+      return true
+    } catch {
+      connected = false
+      return false
+    }
+  }
+
+  private static func sameContract(_ current: PipelineConfiguration?, _ next: PipelineConfiguration,
+                                   _ currentPassthrough: OSType?, _ nextPassthrough: OSType) -> Bool {
+    guard let current, let currentPassthrough else { return false }
+    return current.width == next.width && current.height == next.height &&
+      current.pixelFormat == next.pixelFormat && current.duration == next.duration &&
+      currentPassthrough == nextPassthrough
   }
 
   private func drainLocked() {

@@ -64,7 +64,7 @@ private final class SyntheticSourceWriter: SourceRecordingWriter, @unchecked Sen
 
   func testTwoFeedsRecordSimultaneouslyAndFinalizeAfterPauseResume() throws {
     let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("ultrastudio-recording-e2e-\(UUID().uuidString)")
+      .appendingPathComponent("ultracam-recording-e2e-\(UUID().uuidString)")
     let writerA = SyntheticSourceWriter()
     let writerB = SyntheticSourceWriter()
     let duration = RecordingFrameRate.fps2997.frameDuration

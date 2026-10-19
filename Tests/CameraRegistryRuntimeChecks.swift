@@ -162,7 +162,7 @@ import XCTest
     XCTAssertEqual(camera.descriptors.count, 1)
     XCTAssertEqual(fallback.kind, .feed)
     XCTAssertEqual(fallback.feedID, "default")
-    XCTAssertEqual(fallback.deviceUID, "org.ultrastudiolut.camera.device")
+    XCTAssertEqual(fallback.deviceUID, "org.ultracam.camera.device")
     XCTAssertTrue(camera.device(for: fallback.id) === camera.device)
     let fallbackRuntime = try XCTUnwrap(camera.runtime(for: fallback.id))
     XCTAssertTrue(camera.source === fallbackRuntime.source)

@@ -85,7 +85,7 @@ import XCTest
 
   func testCurrentBuildPolicyComesFromCompilation() {
     let current = ExtensionInstallPreflight.current()
-#if UDL_LOCAL_DEVELOPMENT
+#if ULTRACAM_LOCAL_DEVELOPMENT
     XCTAssertTrue(current.localDevelopmentBuild)
 #else
     XCTAssertFalse(current.localDevelopmentBuild)

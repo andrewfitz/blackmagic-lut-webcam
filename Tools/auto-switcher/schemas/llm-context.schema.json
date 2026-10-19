@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "ultrastudio-auto-switcher/llm-context",
+  "$id": "ultracam-auto-switcher/llm-context",
   "title": "Delayed LLM decision context",
   "type": "object",
   "required": ["request_id", "media_time", "current_camera_id", "anchor_camera_id", "emphasis_camera_id", "audio", "transcript", "video"],

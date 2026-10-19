@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "ultrastudio-auto-switcher/stream-event",
+  "$id": "ultracam-auto-switcher/stream-event",
   "title": "Auto switcher stream event",
   "type": "object",
   "required": ["type"],

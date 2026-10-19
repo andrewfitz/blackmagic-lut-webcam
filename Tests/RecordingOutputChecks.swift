@@ -10,7 +10,7 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
 @objcMembers final class RecordingOutputChecks: XCTestCase {
   private func makeRoot() throws -> URL {
     let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("ultrastudio-recording-output-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("ultracam-recording-output-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     return root
   }
@@ -71,7 +71,7 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let outside = root.deletingLastPathComponent()
-      .appendingPathComponent("ultrastudio-recording-outside-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("ultracam-recording-outside-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: outside) }
     let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0,

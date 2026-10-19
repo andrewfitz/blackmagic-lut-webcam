@@ -368,12 +368,18 @@ struct AppSettingsSnapshot: Codable, Equatable, Sendable {
 // contents are never serialized into defaults.
 @MainActor
 final class AppSettingsStore {
-  static let key = "ultrastudio.settings.v1"
-  static let snapshotKey = "ultrastudio.settings.v2"
+  static let hideFromDockKey = "ultracam.hideFromDock"
+  static let key = "ultracam.settings.v1"
+  static let snapshotKey = "ultracam.settings.v2"
   static let v2Key = snapshotKey
   private let defaults: UserDefaults
 
   init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+  var hideFromDock: Bool {
+    get { defaults.bool(forKey: Self.hideFromDockKey) }
+    set { defaults.set(newValue, forKey: Self.hideFromDockKey) }
+  }
 
   func load() -> AppSettings {
     if let snapshot = loadV2() { return snapshot.selectedFeed?.appSettings ?? AppSettings() }

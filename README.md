@@ -1,7 +1,14 @@
-# UltraStudio LUT
+# Ultracam
+
+Ultracam uses fresh app and camera identities: `org.ultracam.app`,
+`org.ultracam.app.camera` and the shared app group `group.org.ultracam.shared`.
+Settings start fresh. Blackmagic UltraStudio refers to the input hardware.
+The Xcode project is `Ultracam.xcodeproj`, with the `Ultracam` scheme.
+The custom macOS icon and its reproducible asset catalog are documented in
+[docs/ICON.md](docs/ICON.md).
 
 A standalone native macOS app and Core Media I/O camera extension for a Sony
-FX3 log feed through an UltraStudio Mini Recorder 12G. Select **UltraStudio LUT**
+FX3 log feed through an UltraStudio Mini Recorder 12G. Select **Ultracam**
 as the camera in Zoom or another macOS camera application.
 
 ## Processing
@@ -104,11 +111,11 @@ The app is built unsigned with Release optimization by default. Use
 alias, overwritten on every build, is at:
 
 ```text
-/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/UltraStudio LUT.app
+/Volumes/8TB/cinesomatic-director-work/agent-work/ultracam/Ultracam.app
 ```
 
 Xcode derived data and test objects use a unique UTC timestamp/PID directory
-under `/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultrastudio-lut/`
+under `/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultracam/`
 so overlapping builds and test runs cannot overwrite one another. The stable
 `build.log`, `test-compile.log`, and `tests.log` aliases point to the latest
 run; timestamped logs remain in the `logs/` directory.
@@ -126,8 +133,16 @@ keep Install/Remove disabled; capture and preview remain available.
 DEVELOPMENT_TEAM=YOUR_TEAM_ID bash scripts/build.sh --signed
 ```
 
-The script does not register identifiers, download provisioning profiles, change
-system-extension developer mode, install certificates, or install the app.
+For first-time setup with your developer account signed in to Xcode, allow Xcode
+to register identifiers and this Mac, and create or download provisioning profiles:
+
+```sh
+DEVELOPMENT_TEAM=YOUR_TEAM_ID bash scripts/build.sh --signed --provisioning-updates
+```
+
+Without `--provisioning-updates`, the script uses existing signing assets only.
+The script does not change system-extension developer mode, install certificates,
+or install the app.
 In Xcode, configure Signing & Capabilities for both targets if signing needs
 setup. Keep bundle IDs synchronized with `VideoContract.extensionID` and the
 producer signing ID in `CameraStream.authorizedToStartStream`.
@@ -145,9 +160,9 @@ bash scripts/build.sh --local-development
 ```
 
 The ad-hoc signed package is staged at
-`/Volumes/8TB/cinesomatic-director-work/agent-work/ultrastudio-lut/local-development/UltraStudio LUT.app`.
+`/Volumes/8TB/cinesomatic-director-work/agent-work/ultracam/local-development/Ultracam.app`.
 Quit the previous app, copy this package into `/Applications`, launch it there,
-then request **Install camera** and approve **UltraStudio LUT Camera** in
+then request **Install camera** and approve **Ultracam Camera** in
 System Settings → General → Login Items & Extensions → Camera Extensions.
 This mode embeds the actual install entitlement and matching local app groups;
 its compile-time policy accepts a valid local signature. Production builds
@@ -172,7 +187,7 @@ displays or records image pixels.
 Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, with RAW output off
 and any HDMI display LUT disabled. Optionally load the matching LUT here. Select the
 processing checkboxes and start the
-feed. In Zoom, choose **UltraStudio LUT**. Zoom determines transmitted quality
+feed. In Zoom, choose **Ultracam**. Zoom determines transmitted quality
 and frame rate from its own supported features, settings, and meeting conditions.
 
 ## Natural talking-head auto-switcher

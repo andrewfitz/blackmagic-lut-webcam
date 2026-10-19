@@ -182,7 +182,7 @@ public final class FrameFanOut<Payload>: @unchecked Sendable {
   private var routes: [String: RouteState] = [:]
   private var closed = false
 
-  public init(label: String = "org.ultrastudiolut.frame-fanout") {
+  public init(label: String = "org.ultracam.frame-fanout") {
     queue = DispatchQueue(label: label, qos: .userInteractive)
     queue.setSpecific(key: queueKey, value: 1)
   }

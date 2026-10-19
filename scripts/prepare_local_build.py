@@ -14,9 +14,9 @@ sys.dont_write_bytecode = True
 from validate_bundle import validate
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCAL_GROUP = "group.org.ultrastudiolut.local"
-LOCAL_MARKER = "UltraStudioLUTLocalDevelopmentBuild"
-APP_ID = "org.ultrastudiolut.app"
+LOCAL_GROUP = "group.org.ultracam.local"
+LOCAL_MARKER = "UltracamLocalDevelopmentBuild"
+APP_ID = "org.ultracam.app"
 EXTENSION_ID = APP_ID + ".camera"
 
 
@@ -44,7 +44,7 @@ def main():
     if source == destination or destination.is_relative_to(source) or source.is_relative_to(destination):
         raise SystemExit("Source and staging destination must be separate bundles.")
     if read_plist(source / "Contents/Info.plist").get("CFBundleIdentifier") != APP_ID:
-        raise SystemExit("Input is not an UltraStudio LUT build.")
+        raise SystemExit("Input is not an Ultracam build.")
     if destination.exists():
         previous = read_plist(destination / "Contents/Info.plist")
         if previous.get("CFBundleIdentifier") != APP_ID or previous.get(LOCAL_MARKER) is not True:
@@ -68,7 +68,7 @@ def main():
         write_plist(info_path, info)
     # Generate outside the repo; both signatures must contain the exact same
     # app group, and the extension's Mach service must start with that group.
-    with tempfile.TemporaryDirectory(prefix="ultrastudio-sign-", dir=os.environ.get("TMPDIR")) as work:
+    with tempfile.TemporaryDirectory(prefix="ultracam-sign-", dir=os.environ.get("TMPDIR")) as work:
         for bundle, template, name in (
             (extension, "Camera.entitlements", "camera"),
             (destination, "App.entitlements", "app"),
