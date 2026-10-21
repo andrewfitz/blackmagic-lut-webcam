@@ -225,7 +225,7 @@ final class CaptureController: @unchecked Sendable {
     queue.async {
       do {
         if let expectedGeneration, !self.isCurrent(expectedGeneration) {
-          throw VideoError.message("Feed changed before its LUT finished loading.")
+          throw VideoError.message("Camera changed before its LUT finished loading.")
         }
         if self.processor == nil { self.processor = try LUTProcessor() }
         try self.processor!.load(cube)
@@ -882,7 +882,7 @@ final class CaptureController: @unchecked Sendable {
         outputLabel = ""
         processingMS = 0
         outputFPS = 0
-        message = "Feed ready — no active video destination."
+        message = "Camera ready — no active video destination."
         publishIfDue(token: token, force: metadataChanged)
         return
       }
@@ -974,7 +974,7 @@ final class CaptureController: @unchecked Sendable {
         renderedFormat = output
         outputLabel = output.label
       }
-      message = pipelineEnabled ? (effective.applyLUT ? "Processing enabled — LUT applied" : "Processing enabled — LUT off") : "Complete bypass — original feed"
+      message = pipelineEnabled ? (effective.applyLUT ? "Processing enabled — LUT applied" : "Processing enabled — LUT off") : "Complete bypass — original camera signal"
       publishIfDue(token: token, force: frames == 1 || metadataChanged)
     } catch VideoError.outputBackPressure { poolDrops &+= 1 }
     catch { fail(error.localizedDescription, token: token) }

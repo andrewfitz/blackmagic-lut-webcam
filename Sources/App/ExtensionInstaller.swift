@@ -169,7 +169,7 @@ final class ExtensionInstaller: NSObject, OSSystemExtensionRequestDelegate {
       guard self.requestIdentity.matches(identity) else { return }
       let removed = self.activeChange == .remove
       self.finish(identity, message: completed ? (removed ? "Camera extension removed." :
-        "Camera extension request completed. Refresh inputs; select Ultracam in Zoom.") :
+        "Camera extension request completed. Refresh inputs, then choose Ultracam in your meeting app.") :
         "Camera extension change requires a restart.")
     }
   }

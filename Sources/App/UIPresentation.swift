@@ -109,6 +109,8 @@ struct UICameraSnapshot: Sendable, Equatable, Identifiable {
   var previewError: String?
   var automaticStart = false
   var automaticStatus: String?
+  /// Automatic mode tried to start this camera and failed; Retry is available.
+  var automaticStartFailed = false
   var timecode: String?
   var audio = UIAudioLevels()
   var activeTools: Set<UIMonitorTool> = []
@@ -174,6 +176,12 @@ struct UISessionSnapshot: Sendable, Equatable {
   var autoSwitching = false
   var autoHold = false
   var strategy: SwitcherStrategy = .manual
+  /// Natural talking head: the camera preferred for the wide/anchor shot, if fixed.
+  var anchorID: String?
+  /// Natural talking head: the camera preferred for emphasis, if fixed.
+  var emphasisID: String?
+  /// A picture is expanded from a grid layout; Restore Layout returns to it.
+  var expandedFrom: UILayout?
   var strategyTitle = "Manual"
   var shot = UIShotTiming()
   var programFormatMismatch = false
@@ -271,6 +279,8 @@ struct UICameraPresentation: Sendable, Equatable, Identifiable {
   var audio: UIAudioLevels
   var activeTools: [UIMonitorTool]
   var accessibilityLabel: String
+  var lutError: String?
+  var automaticStartFailed: Bool
 }
 
 enum UIRecordControl: Sendable, Equatable {
@@ -532,7 +542,8 @@ enum UIPresentationBuilder {
       stopConfirmationMessage: stopMessage(camera: camera, recording: isRecording, onAir: tally == .onAir),
       timecode: camera.timecode ?? "—", audio: camera.audio,
       activeTools: UIMonitorTool.allCases.filter { camera.activeTools.contains($0) },
-      accessibilityLabel: labelParts.joined(separator: ", "))
+      accessibilityLabel: labelParts.joined(separator: ", "),
+      lutError: camera.lutError, automaticStartFailed: camera.automaticStartFailed)
   }
 
   static func stopMessage(camera: UICameraSnapshot, recording: Bool, onAir: Bool) -> String {
@@ -622,6 +633,7 @@ enum UIPresentationBuilder {
       if camera.recording.status == .recording, case .noSignal = camera.signal { return "\(camera.name): recording, no signal" }
       if camera.recording.failed || camera.recording.error != nil { return "\(camera.name): recording stopped" }
     }
+    if let failed = session.cameras.first(where: \.automaticStartFailed) { return "\(failed.name): couldn't start" }
     if let low = session.drives.first(where: { ($0.secondsLeft ?? .infinity) < 30 * 60 }), let left = low.secondsLeft {
       return "\(low.name): \(UIFormat.duration(left)) left"
     }
@@ -633,6 +645,7 @@ enum UIPresentationBuilder {
       default: break
       }
     }
+    if let lut = session.cameras.first(where: { $0.lutError != nil }) { return "\(lut.name): LUT unavailable" }
     if session.outputMode == .program && session.programFormatMismatch { return "Program cameras use different formats" }
     return nil
   }

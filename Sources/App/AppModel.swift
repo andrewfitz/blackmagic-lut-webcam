@@ -81,7 +81,7 @@ final class AppModel {
   var naturalDirectorStatus: String {
     if !naturalTalkingHeadEnabled { return "Disabled" }
     if autoSwitcherBridge != nil { return "Active · Rust director" }
-    return running ? "Waiting for two enabled feeds" : "Starts with Program output"
+    return running ? "Waiting for two enabled cameras" : "Starts with Program output"
   }
 
   var canEditFeedTopology: Bool {
@@ -140,7 +140,7 @@ final class AppModel {
   var running = false
   var previewReady = false
   var loading = false
-  var update = CaptureUpdate(message: "Select the UltraStudio input and start the feed. LUT loading is optional.")
+  var update = CaptureUpdate(message: "Select the UltraStudio input and start the camera. LUT loading is optional.")
   let installer = ExtensionInstaller()
   let previewRenderer: VideoPreviewRenderer
   let miniPreviewRenderer: VideoPreviewRenderer
@@ -440,8 +440,9 @@ final class AppModel {
   /// previous feed are committed before the new descriptor is applied.
   @discardableResult
   func selectFeed(_ id: FeedID) -> Bool {
-    guard !loading,
-      feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
+    // A LUT still loading for the previous camera doesn't block selection:
+    // applySelectedDescriptor invalidates that load and clears the flag.
+    guard feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
     saveSettings()
     guard feedCoordinator.select(id) else { return false }
     capture.setLegacyPreviewOwnership(false)
@@ -986,7 +987,7 @@ final class AppModel {
         : "Preview is live. Hide it to stop capture until a camera app needs it."
     }
     if !devices.contains(where: { $0.id == selectedDevice }) { return "Connect the UltraStudio and refresh inputs." }
-    return "Feed stopped. Retry to resume preview or camera output."
+    return "Camera stopped. Retry to resume preview or camera output."
   }
 
   func retryAutomaticFeed() {
@@ -1098,6 +1099,13 @@ final class AppModel {
   // MARK: - Per-camera control (new interface)
 
   func descriptor(for id: FeedID) -> FeedDescriptor? { feedDescriptors.first { $0.id == id } }
+
+  /// Automatic mode asked this camera to run and it isn't running: its start failed.
+  /// The interface offers Retry (one attempt per camera session, no background loop).
+  func automaticStartFailed(_ id: FeedID) -> Bool {
+    guard let descriptor = descriptor(for: id), descriptor.automaticFeed, !feedCoordinator.isFeedRunning(id) else { return false }
+    return feedPolicies[id]?.captureRequested == true || (id == selectedFeedID && automaticCaptureRequested && !running)
+  }
 
   func isCameraRunning(_ id: FeedID) -> Bool { feedCoordinator.isFeedRunning(id) }
 

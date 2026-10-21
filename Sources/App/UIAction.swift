@@ -15,6 +15,11 @@ enum UIAction: Sendable, Equatable {
   case setInspectorOpen(Bool)
   case setSidebarVisible(Bool)
   case showInspector(cameraID: String)
+  /// Shows one camera alone (Single layout) from a grid; Restore Layout returns.
+  case expandPicture(cameraID: String)
+  case restoreLayout
+  /// Swaps the first two pictures in the grid.
+  case swapPictures
 
   // Cameras (capture and output)
   case startCamera(cameraID: String)
@@ -33,6 +38,7 @@ enum UIAction: Sendable, Equatable {
   case retryPreview
   case addCamera
   case removeCamera(cameraID: String)
+  case forgetLUT(cameraID: String)
   case renameCamera(cameraID: String, name: String)
 
   // Program
@@ -42,6 +48,8 @@ enum UIAction: Sendable, Equatable {
   case setAutoHold(Bool)
   case setStrategy(SwitcherStrategy)
   case setOutputMode(UIOutputMode)
+  case setAnchor(cameraID: String?)
+  case setEmphasis(cameraID: String?)
 
   // Recording
   case toggleRecording(cameraID: String)
@@ -71,6 +79,8 @@ enum UIAction: Sendable, Equatable {
   case openSettings
   case openDiagnostics
   case openMainWindow
+  /// Clears every saved preference, then quits (only while nothing runs or records).
+  case resetAllSettings
   case quit
 }
 
@@ -81,6 +91,11 @@ extension UIAction {
     case .stopCamera(let id):
       guard let camera = presentation.cameras.first(where: { $0.id == id }), camera.stopNeedsConfirmation else { return nil }
       return camera.stopConfirmationMessage
+    case .removeCamera(let id):
+      let name = presentation.cameras.first { $0.id == id }?.name ?? "this camera"
+      return "Remove \(name)? Its settings are deleted. Recordings on disk are kept."
+    case .resetAllSettings:
+      return "Reset all settings? Cameras, effects, folders, monitor tools and layout return to their defaults. Recordings are not touched. Ultracam quits when it's done."
     case .stopAllCameras:
       let recording = presentation.cameras.filter { $0.recordButtonActive || $0.pauseTitle == "Resume" }
       let onAir = presentation.cameras.contains { $0.tally == .onAir }

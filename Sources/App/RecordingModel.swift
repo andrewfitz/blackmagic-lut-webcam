@@ -120,7 +120,7 @@ enum RecordingUIError: LocalizedError, Equatable {
     case .rawAudioUnavailable:
       return "Blackmagic raw audio recording is unavailable; video will be recorded without audio."
     case .feedNotActive:
-      return "Start this feed before recording it. Only an active source feed can produce media."
+      return "Start this camera before recording it. Only a running camera can produce media."
     }
   }
 }

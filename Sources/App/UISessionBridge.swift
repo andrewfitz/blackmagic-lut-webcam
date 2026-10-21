@@ -9,6 +9,10 @@ final class UIInterfaceState {
   var layout: UILayout { didSet { defaults.set(layout.rawValue, forKey: "ui.layout") } }
   var collapsed: Set<String> { didSet { defaults.set(Array(collapsed), forKey: "ui.collapsed") } }
   var sidebarVisible: Bool { didSet { defaults.set(sidebarVisible, forKey: "ui.sidebar") } }
+  /// Display order of the pictures (camera IDs); cameras not listed follow in their saved order.
+  var order: [String] { didSet { defaults.set(order, forKey: "ui.order") } }
+  /// Set while a picture is expanded from a grid layout.
+  var expandedFrom: UILayout?
   var inspectorOpen = false
   /// Tests set this so confirmations are recorded instead of shown as modal alerts.
   var alertsDisabled = false
@@ -20,6 +24,20 @@ final class UIInterfaceState {
     layout = UILayout(rawValue: defaults.string(forKey: "ui.layout") ?? "") ?? .sideBySide
     collapsed = Set(defaults.stringArray(forKey: "ui.collapsed") ?? [])
     sidebarVisible = defaults.object(forKey: "ui.sidebar") as? Bool ?? true
+    order = defaults.stringArray(forKey: "ui.order") ?? []
+    defaultCollapsed = defaults.string(forKey: "ui.collapsed.default") == "collapsed"
+  }
+
+  /// Settings › General › Channel strips: new cameras start collapsed.
+  let defaultCollapsed: Bool
+
+  /// Sorts cameras into the display order.
+  func ordered<T>(_ items: [T], id: (T) -> String) -> [T] {
+    items.enumerated().sorted { lhs, rhs in
+      let left = order.firstIndex(of: id(lhs.element)) ?? (order.count + lhs.offset)
+      let right = order.firstIndex(of: id(rhs.element)) ?? (order.count + rhs.offset)
+      return left < right
+    }.map(\.element)
   }
 }
 
@@ -104,6 +122,7 @@ struct UISessionBridge {
       camera.previewError = update?.previewError
       camera.automaticStart = descriptor.automaticFeed
       camera.automaticStatus = selected && descriptor.automaticFeed ? model.automaticFeedStatus : nil
+      camera.automaticStartFailed = model.automaticStartFailed(id)
       camera.timecode = update?.timecode
       if let update {
         camera.audio = UIAudioLevels(present: update.audioPresent, peakLeft: update.audioPeakLeft,
@@ -136,7 +155,7 @@ struct UISessionBridge {
     }
     var session = UISessionSnapshot()
     session.outputMode = model.outputMode == .program ? .program : .separate
-    session.cameras = cameras
+    session.cameras = interface.ordered(cameras, id: \.id)
     session.selectedID = model.selectedFeedID.rawValue
     session.programInUse = model.programInUse
     session.onAirID = model.outputMode == .program ? model.switcherSelectedFeedID?.rawValue : nil
@@ -145,6 +164,9 @@ struct UISessionBridge {
     session.autoSwitching = switcher.automatic
     session.autoHold = switcher.naturalTalkingHead.manualHold
     session.strategy = switcher.strategy
+    session.anchorID = switcher.naturalTalkingHead.anchorFeedID?.rawValue
+    session.emphasisID = switcher.naturalTalkingHead.emphasisFeedID?.rawValue
+    session.expandedFrom = interface.expandedFrom
     session.strategyTitle = UIStrategy.title(switcher.strategy)
     session.shot = UIShotTiming(startedAt: model.programShotStartedAt, currentShot: model.programShotStartedAt.map { Date().timeIntervalSince($0) },
       minimum: switcher.naturalTalkingHead.minimumShotDuration,
@@ -208,7 +230,7 @@ struct UISessionBridge {
     switch action {
     case .select(let id): _ = model.selectFeed(feedID(id))
     case .selectNumber(let number): if let id = cameraID(number: number) { _ = model.selectFeed(id) }
-    case .setLayout(let layout): interface.layout = layout
+    case .setLayout(let layout): interface.layout = layout; interface.expandedFrom = nil
     case .toggleCollapsed(let id):
       if interface.collapsed.contains(id) { interface.collapsed.remove(id) } else { interface.collapsed.insert(id) }
     case .setAllCollapsed(let collapsed):
@@ -218,6 +240,17 @@ struct UISessionBridge {
     case .setInspectorOpen(let open): if interface.inspectorOpen != open { interface.inspectorOpen = open }
     case .setSidebarVisible(let visible): if interface.sidebarVisible != visible { interface.sidebarVisible = visible }
     case .showInspector(let id): _ = model.selectFeed(feedID(id)); interface.inspectorOpen = true
+    case .expandPicture(let id):
+      _ = model.selectFeed(feedID(id))
+      if interface.layout != .single { interface.expandedFrom = interface.layout }
+      interface.layout = .single
+    case .restoreLayout:
+      interface.layout = interface.expandedFrom ?? .sideBySide
+      interface.expandedFrom = nil
+    case .swapPictures:
+      var ids = interface.ordered(model.feedDescriptors.map(\.id.rawValue), id: { $0 })
+      if ids.count >= 2 { ids.swapAt(0, 1) }
+      interface.order = ids
     case .startCamera(let id): model.startCamera(feedID(id))
     case .stopCamera(let id): model.stopCamera(feedID(id))
     case .startAllCameras: model.startAllCameras()
@@ -243,7 +276,8 @@ struct UISessionBridge {
     case .setAutomaticStart(let id, let on): model.updateCamera(feedID(id)) { $0.automaticFeed = on }
     case .retryAutomaticStart: model.retryAutomaticFeed()
     case .retryPreview: model.resetPreview()
-    case .addCamera: _ = model.addFeed()
+    case .addCamera:
+      if let id = model.addFeed(), interface.defaultCollapsed { interface.collapsed.insert(id.rawValue) }
     case .removeCamera(let id): _ = model.removeFeed(feedID(id))
     case .renameCamera(let id, let name): _ = model.renameFeed(feedID(id), name: name)
     case .cut(let id): _ = model.requestProgramCut(to: feedID(id))
@@ -260,6 +294,13 @@ struct UISessionBridge {
       settings.naturalTalkingHead.enabled = settings.automatic && strategy == .naturalTalkingHead
       model.updateSwitcher(settings)
     case .setOutputMode(let mode): model.setOutputMode(mode == .program ? .program : .separateCameras)
+    case .setAnchor(let id): model.naturalAnchorFeedID = id.map(feedID)
+    case .setEmphasis(let id): model.naturalEmphasisFeedID = id.map(feedID)
+    case .forgetLUT(let id): model.forgetLUT(feedID(id))
+    case .resetAllSettings:
+      guard model.resetAllSettings() else { return }
+      for key in ["ui.layout", "ui.collapsed", "ui.sidebar", "ui.order", "ui.collapsed.default"] { UserDefaults.standard.removeObject(forKey: key) }
+      NSApplication.shared.terminate(nil)
     case .toggleRecording(let id):
       let fid = feedID(id)
       switch recording.feeds.first(where: { $0.id == fid })?.status ?? .idle {
