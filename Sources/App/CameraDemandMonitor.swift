@@ -150,8 +150,8 @@ final class CameraDemandMonitor {
       guard let device = try devices.first(where: { try string($0, kCMIODevicePropertyDeviceUID) == route.deviceUID }) else {
         throw VideoError.message("Install and enable the \(route.displayName) virtual camera to use automatic feed.")
       }
-      guard let source = try ids(device, kCMIODevicePropertyStreams)
-        .first(where: { try string($0, kCMIOObjectPropertyName) == route.sourceStreamName }) else {
+      let streams = try ids(device, kCMIODevicePropertyStreams).map { ($0, try string($0, kCMIOObjectPropertyName)) }
+      guard let source = Self.sourceStream(streams, named: route.sourceStreamName) else {
         throw VideoError.message("The \(route.displayName) virtual camera does not publish its source stream.")
       }
       if demand[route.id]?.object != source {
@@ -171,6 +171,15 @@ final class CameraDemandMonitor {
       demand[route.id] = nil
       emitError(error.localizedDescription, for: route)
     }
+  }
+
+  /// The device's source stream. A running extension keeps the stream names it
+  /// published, so after a camera is renamed the expected name is missing; the
+  /// device UID already selected the camera, so take the stream that isn't its input.
+  static func sourceStream(_ streams: [(id: UInt32, name: String)], named name: String) -> UInt32? {
+    streams.first { $0.name == name }?.id ?? streams.first { stream in
+      !stream.name.localizedCaseInsensitiveContains("input") && !stream.name.localizedCaseInsensitiveContains("sink")
+    }?.id
   }
 
   private func readDemand(routeID: String) {

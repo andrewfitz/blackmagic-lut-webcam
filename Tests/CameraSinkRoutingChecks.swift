@@ -34,6 +34,14 @@ import XCTest
     XCTAssertNotEqual(alphaRoute.sourceStreamName, betaRoute.sourceStreamName)
   }
 
+  @MainActor func testDemandFindsSourceStreamAfterCameraRename() {
+    // The extension published these names before "Feed 1" became "Camera 1".
+    let published: [(id: UInt32, name: String)] = [(7, "Ultracam · Feed 1 Input"), (8, "Ultracam · Feed 1")]
+    XCTAssertEqual(CameraDemandMonitor.sourceStream(published, named: "Ultracam · Camera 1"), 8)
+    XCTAssertEqual(CameraDemandMonitor.sourceStream(published, named: "Ultracam · Feed 1"), 8)
+    XCTAssertNil(CameraDemandMonitor.sourceStream([(7, "Ultracam · Feed 1 Input")], named: "Ultracam · Camera 1"))
+  }
+
   func testLegacyRoutePreservesOriginalSingleCameraIdentity() {
     let legacy = CameraSinkRoute(feedID: nil)
     let defaultID = CameraSinkRoute(feedID: FeedID(rawValue: "default"))
