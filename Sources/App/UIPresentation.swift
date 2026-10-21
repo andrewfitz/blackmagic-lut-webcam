@@ -361,11 +361,21 @@ extension UISessionPresentation {
 
 enum UIMenuBarIcon: String, Sendable, Equatable {
   case stopped, waiting, live, bypass, recording, attention
+  /// The camera: outlined while stopped or waiting, filled while it sends pictures.
   var symbol: String {
     switch self {
-    case .stopped, .waiting: return "video"
-    case .live, .recording, .attention: return "video.fill"
-    case .bypass: return "arrow.right.square"
+    case .stopped: return "video"
+    case .waiting: return "video.badge.ellipsis"
+    case .live, .bypass, .recording, .attention: return "video.fill"
+    }
+  }
+  /// The state drawn as a badge on the camera, in the corner Apple's own badged camera symbols use.
+  var badgeSymbol: String? {
+    switch self {
+    case .stopped, .waiting, .live: return nil
+    case .bypass: return "arrow.right.circle.fill"
+    case .recording: return "circle.fill"
+    case .attention: return "exclamationmark.triangle.fill"
     }
   }
   var accessibilityLabel: String {
@@ -399,6 +409,21 @@ enum UIFormat {
     let minutes = max(0, Int((seconds / 60).rounded(.down)))
     if minutes >= 60 { return "\(minutes / 60) h \(minutes % 60) m" }
     return "\(minutes) min"
+  }
+
+  /// "capture" for "/Volumes/8TB/capture".
+  static func folderName(_ path: String) -> String {
+    let name = (path as NSString).lastPathComponent
+    return name.isEmpty || name == "/" ? path : name
+  }
+
+  /// Where a folder is: "On 8TB" for an external volume, "~/Movies" or the parent path otherwise.
+  static func folderLocation(_ path: String) -> String {
+    let parts = (path as NSString).pathComponents
+    if parts.count >= 3, parts[1] == "Volumes" {
+      return parts.count == 3 ? "Volume" : "On \(parts[2])"
+    }
+    return ((path as NSString).deletingLastPathComponent as NSString).abbreviatingWithTildeInPath
   }
 
   static func bytes(_ value: Int64) -> String {

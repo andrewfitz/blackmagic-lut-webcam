@@ -81,7 +81,8 @@ struct UICameraPictureView: View {
       }
     }
     .overlay {
-      if camera.selected && !compact {
+      // Selection only means something next to other pictures; alone, the ring just doubles the tally ring.
+      if camera.selected && !compact && context.presentation.layout != .single {
         RoundedRectangle(cornerRadius: 17).strokeBorder(Color.accentColor, lineWidth: 2.5)
           .padding(-4).allowsHitTesting(false)
       }

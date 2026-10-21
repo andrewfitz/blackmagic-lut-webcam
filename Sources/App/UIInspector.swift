@@ -47,6 +47,8 @@ struct UIInspectorViewContent: View {
       }
     }
     .formStyle(.grouped)
+    // Even margins wide enough for the scroller, so it runs beside the sections and never over their controls.
+    .contentMargins(.horizontal, 16, for: .scrollContent)
   }
 
   /// The camera's name and state, in place of a "Camera" row. The Input picker

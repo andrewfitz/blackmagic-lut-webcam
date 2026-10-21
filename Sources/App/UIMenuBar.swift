@@ -45,6 +45,7 @@ final class UIMenuCommandBox: NSObject {
   private var previewHost: NSHostingView<AnyView>?
   private var previewItem: NSMenuItem?
   private var showLivePreview = false
+  private var previewWidth = UIMenuPreviewContent.minimumWidth
   private var menuOpen = false
   private var sampler = AppResourceSampler()
   private var lastIcon: UIMenuBarIcon?
@@ -121,45 +122,35 @@ final class UIMenuCommandBox: NSObject {
     button.toolTip = icon.accessibilityLabel
   }
 
-  /// A template image: the SF Symbol with a knock-out badge for recording (dot) or attention (triangle).
+  /// The menu bar's symbol size: the camera glyph is wide and short, so it needs more than
+  /// the usual 13–15 pt to look as large as its neighbors.
+  private static let iconConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+
+  /// A template image: the camera symbol, with the state's badge knocked out of its lower-left
+  /// corner. Drawn on demand, so it's sharp at every display scale.
   static func image(for icon: UIMenuBarIcon) -> NSImage? {
-    let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
     guard let symbol = NSImage(systemSymbolName: icon.symbol, accessibilityDescription: icon.accessibilityLabel)?
-      .withSymbolConfiguration(configuration) else { return nil }
-    guard icon == .recording || icon == .attention else {
+      .withSymbolConfiguration(iconConfiguration) else { return nil }
+    guard let badgeName = icon.badgeSymbol,
+      let badge = NSImage(systemSymbolName: badgeName, accessibilityDescription: nil)?
+        .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)) else {
       symbol.isTemplate = true
       return symbol
     }
-    let size = NSSize(width: ceil(symbol.size.width) + 3, height: max(ceil(symbol.size.height), 16))
-    let scale: CGFloat = 2
-    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale),
-      pixelsHigh: Int(size.height * scale), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-      let context = NSGraphicsContext(bitmapImageRep: rep) else { return symbol }
-    rep.size = size
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = context
-    let symbolRect = NSRect(x: 0, y: (size.height - symbol.size.height) / 2, width: symbol.size.width, height: symbol.size.height)
-    symbol.draw(in: symbolRect)
-    let badge: CGFloat = 7
-    let badgeRect = NSRect(x: size.width - badge, y: 0, width: badge, height: badge)
-    context.compositingOperation = .clear
-    NSBezierPath(ovalIn: badgeRect.insetBy(dx: -1.5, dy: -1.5)).fill()
-    context.compositingOperation = .sourceOver
-    NSColor.black.setFill()
-    if icon == .recording {
-      NSBezierPath(ovalIn: badgeRect).fill()
-    } else {
-      let path = NSBezierPath()
-      path.move(to: NSPoint(x: badgeRect.minX, y: badgeRect.minY))
-      path.line(to: NSPoint(x: badgeRect.maxX, y: badgeRect.minY))
-      path.line(to: NSPoint(x: badgeRect.midX, y: badgeRect.maxY))
-      path.close()
-      path.fill()
+    // The badge sticks out past the camera's lower-left corner by about a third of its size.
+    let overhang = NSSize(width: (badge.size.width * 0.3).rounded(.up), height: (badge.size.height * 0.3).rounded(.up))
+    let size = NSSize(width: ceil(symbol.size.width + overhang.width), height: ceil(symbol.size.height + overhang.height))
+    let image = NSImage(size: size, flipped: false) { bounds in
+      symbol.draw(in: NSRect(x: bounds.width - symbol.size.width, y: bounds.height - symbol.size.height,
+        width: symbol.size.width, height: symbol.size.height))
+      let badgeRect = NSRect(origin: .zero, size: badge.size)
+      // A clear ring keeps the badge apart from the camera.
+      NSGraphicsContext.current?.compositingOperation = .clear
+      NSBezierPath(ovalIn: badgeRect.insetBy(dx: -1.5, dy: -1.5)).fill()
+      NSGraphicsContext.current?.compositingOperation = .sourceOver
+      badge.draw(in: badgeRect)
+      return true
     }
-    NSGraphicsContext.restoreGraphicsState()
-    let image = NSImage(size: size)
-    image.addRepresentation(rep)
     image.isTemplate = true
     image.accessibilityDescription = icon.accessibilityLabel
     return image
@@ -188,7 +179,7 @@ final class UIMenuCommandBox: NSObject {
     let bridge = bridge()
     let session = bridge.snapshot()
     let presentation = UIPresentationBuilder.session(session)
-    let host = NSHostingView(rootView: AnyView(UIMenuPreviewCard(model: model, interface: interface, showLive: showLivePreview)))
+    let host = NSHostingView(rootView: card(width: UIMenuPreviewContent.minimumWidth))
     host.frame.size = host.fittingSize
     let item = NSMenuItem()
     item.view = host
@@ -199,6 +190,17 @@ final class UIMenuCommandBox: NSObject {
       stats: statsLine(session: session), target: self, previewItem: item, showLivePreview: showLivePreview)
     menu.removeAllItems()
     for item in items { menu.addItem(item) }
+    // The menu is as wide as its widest row. Lay the card out again at that width, so the
+    // picture fills the menu and stays centered instead of sitting at the left.
+    previewWidth = max(UIMenuPreviewContent.minimumWidth, menu.size.width.rounded(.down))
+    if previewWidth > host.frame.width {
+      host.rootView = card(width: previewWidth)
+      host.frame.size = host.fittingSize
+    }
+  }
+
+  private func card(width: CGFloat) -> AnyView {
+    AnyView(UIMenuPreviewCard(model: model, interface: interface, showLive: showLivePreview, width: width))
   }
 
   private func statsLine(session: UISessionSnapshot) -> String {
@@ -223,7 +225,7 @@ final class UIMenuCommandBox: NSObject {
       case .showLivePreview:
         showLivePreview = true
         // Reopen the card as live on the next update; the menu stays as it is.
-        previewHost?.rootView = AnyView(UIMenuPreviewCard(model: model, interface: interface, showLive: true))
+        previewHost?.rootView = card(width: previewWidth)
       case .action(let action):
         run(action)
       }
@@ -356,7 +358,10 @@ final class UIMenuCommandBox: NSObject {
     items.append(row("Settings…", action(.openSettings), key: ",", modifiers: .command, symbol: "gearshape", target: target))
     items.append(.separator())
     if let stats {
+      // A footnote, not a command: small secondary text.
       let item = NSMenuItem(title: stats, action: nil, keyEquivalent: "")
+      item.attributedTitle = NSAttributedString(string: stats, attributes: [
+        .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor])
       item.isEnabled = false
       items.append(item)
     }
@@ -448,12 +453,14 @@ struct UIMenuPreviewCard: View {
   let model: AppModel
   let interface: UIInterfaceState
   let showLive: Bool
+  /// The menu's width, so the card fills it edge to edge.
+  var width = UIMenuPreviewContent.minimumWidth
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { _ in
       let session = UISessionBridge.live(model: model, interface: interface).snapshot()
       UIMenuPreviewContent(presentation: UIPresentationBuilder.session(session), session: session,
-        pictures: UIAppPictures(model: model), showLive: showLive)
+        pictures: UIAppPictures(model: model), showLive: showLive, width: width)
     }
   }
 }
@@ -464,6 +471,10 @@ struct UIMenuPreviewContent: View {
   let session: UISessionSnapshot
   let pictures: any UIPictureProviding
   var showLive = false
+  var width = Self.minimumWidth
+
+  /// The card's width when the menu's rows are narrower.
+  static let minimumWidth: CGFloat = 340
 
   private var waiting: Bool {
     !presentation.camerasRunning && session.cameras.first { $0.id == session.selectedID }?.automaticStart == true
@@ -483,16 +494,16 @@ struct UIMenuPreviewContent: View {
           HStack(spacing: 6) {
             ForEach(presentation.cameras.prefix(2)) { camera in miniPicture(camera) }
           }
-          .frame(height: 104)
         } else if let shown = presentation.previewCamera {
           cameraPicture(shown)
         }
       }
       if presentation.outputMode == .program && presentation.camerasRunning {
+        // A quarter of the card each, whatever the number of cameras, centered under the picture.
         HStack(spacing: 6) {
-          ForEach(presentation.cameras.prefix(4)) { camera in thumbnail(camera) }
+          ForEach(presentation.cameras.prefix(4)) { camera in thumbnail(camera).frame(width: thumbnailWidth) }
         }
-        .frame(height: 64)
+        .frame(maxWidth: .infinity)
       }
       // Only the two-picture layout has nothing on it that says whether a meeting uses Ultracam.
       if twoUp && !showsPlaceholder {
@@ -503,19 +514,22 @@ struct UIMenuPreviewContent: View {
           .padding(.horizontal, 2)
       }
     }
-    .padding(10)
-    .frame(width: 330)
+    .padding(.horizontal, 12)
+    .padding(.top, 6)
+    .padding(.bottom, 8)
+    .frame(width: width)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Ultracam preview")
   }
+
+  private var thumbnailWidth: CGFloat { ((width - 24 - 6 * 3) / 4).rounded(.down) }
 
   private var showsPlaceholder: Bool { !presentation.camerasRunning && !(waiting && showLive) }
   /// Two small pictures side by side while no meeting uses either camera.
   private var twoUp: Bool { presentation.outputMode == .separate && session.cameras.count >= 2 && !presentation.outputInUse }
 
   private var placeholder: some View {
-    RoundedRectangle(cornerRadius: 10).fill(Color.black)
-      .frame(height: 178)
+    UIColumnPictureLayout { RoundedRectangle(cornerRadius: 10).fill(Color.black) }
       .overlay {
         VStack(spacing: 6) {
           Image(systemName: "video").font(.system(size: 26, weight: .light))
@@ -531,8 +545,8 @@ struct UIMenuPreviewContent: View {
   }
 
   private var programPicture: some View {
-    pictures.programPicture()
-      .frame(height: 178)
+    // Sized from the card's width, so the picture fills it at 16:9 whatever the native preview's own size.
+    UIColumnPictureLayout { pictures.programPicture() }
       .clipShape(RoundedRectangle(cornerRadius: 10))
       .overlay(alignment: .topLeading) { Label("Ultracam · Program", systemImage: "tv").font(.caption.weight(.semibold)).uiPictureOverlay().padding(7) }
       .overlay(alignment: .topTrailing) { UITallyBadge(tally: session.programInUse ? .onAir : .program).padding(7) }
@@ -544,8 +558,7 @@ struct UIMenuPreviewContent: View {
   }
 
   private func cameraPicture(_ camera: UICameraPresentation) -> some View {
-    pictures.picture(cameraID: camera.id, compact: true)
-      .frame(height: 178)
+    UIColumnPictureLayout { pictures.picture(cameraID: camera.id, compact: true) }
       .clipShape(RoundedRectangle(cornerRadius: 10))
       .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(camera.tally.ringColor ?? .clear, lineWidth: 3))
       .overlay(alignment: .topLeading) { Text("Ultracam · \(camera.name)").font(.caption.weight(.semibold)).uiPictureOverlay().padding(7) }
@@ -564,7 +577,7 @@ struct UIMenuPreviewContent: View {
   }
 
   private func miniPicture(_ camera: UICameraPresentation) -> some View {
-    pictures.picture(cameraID: camera.id, compact: true)
+    UIColumnPictureLayout { pictures.picture(cameraID: camera.id, compact: true) }
       .clipShape(RoundedRectangle(cornerRadius: 8))
       .overlay(alignment: .bottomLeading) { Text(camera.name).font(.caption2.weight(.semibold)).uiPictureOverlay().padding(5) }
       .overlay(alignment: .topLeading) {
@@ -575,7 +588,7 @@ struct UIMenuPreviewContent: View {
 
   /// Program thumbnails show tally only; cutting happens from the menu rows.
   private func thumbnail(_ camera: UICameraPresentation) -> some View {
-    pictures.picture(cameraID: camera.id, compact: true)
+    UIColumnPictureLayout { pictures.picture(cameraID: camera.id, compact: true) }
       .clipShape(RoundedRectangle(cornerRadius: 7))
       .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(camera.tally.ringColor ?? .clear, lineWidth: 2.5))
       .overlay(alignment: .bottomLeading) {

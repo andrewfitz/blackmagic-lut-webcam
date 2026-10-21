@@ -153,7 +153,8 @@ import SwiftUI
       ("standalone", UIFixtures.standalone()), ("stopped", UIFixtures.stopped())] {
       let presentation = UIPresentationBuilder.session(session)
       render("menubar-preview-\(name)", UIMenuPreviewContent(presentation: presentation, session: session,
-        pictures: UIFixturePictures(), showLive: true).frame(width: 330).fixedSize(horizontal: false, vertical: true), size: CGSize(width: 330, height: 330)).forEach { $0.close() }
+        pictures: UIFixturePictures(), showLive: true).fixedSize(horizontal: false, vertical: true),
+        size: CGSize(width: UIMenuPreviewContent.minimumWidth, height: 330)).forEach { $0.close() }
     }
   }
 
@@ -556,10 +557,39 @@ import SwiftUI
       verifier.check("menu bar \(name): no duplicate shortcuts", duplicates.isEmpty, duplicates.sorted().joined(separator: ", "))
       verifier.check("menu bar \(name): no consumer app names", !titles.contains { $0.contains("Zoom") || $0.contains("Teams") })
     }
-    for icon in [UIMenuBarIcon.stopped, .waiting, .live, .bypass, .recording, .attention] {
+    let icons: [UIMenuBarIcon] = [.stopped, .waiting, .live, .bypass, .recording, .attention]
+    for icon in icons {
       let image = UIMenuBarController.image(for: icon)
       verifier.check("menu bar icon \(icon.rawValue) renders", image != nil)
       verifier.check("menu bar icon \(icon.rawValue) is a template", image?.isTemplate == true)
+      // The menu bar is 24 pt tall; the badged icons must still fit it with room to spare.
+      verifier.check("menu bar icon \(icon.rawValue) fits the menu bar", (image?.size.height ?? 99) <= 22,
+        "\(image?.size ?? .zero)")
+    }
+    // Every state side by side on a menu bar's light and dark backgrounds, at 2× and magnified 4× more, to look at.
+    let cell = NSSize(width: 40, height: 24), magnify: CGFloat = 8
+    let sheet = NSImage(size: NSSize(width: cell.width * CGFloat(icons.count) * magnify, height: cell.height * 2 * magnify), flipped: false) { _ in
+      for (row, dark) in [(0, true), (1, false)] {
+        NSColor(white: dark ? 0.16 : 0.93, alpha: 1).setFill()
+        NSRect(x: 0, y: CGFloat(row) * cell.height * magnify, width: cell.width * CGFloat(icons.count) * magnify, height: cell.height * magnify).fill()
+        for (index, icon) in icons.enumerated() {
+          guard let image = UIMenuBarController.image(for: icon) else { continue }
+          let tinted = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            (dark ? NSColor.white : NSColor.black).set()
+            rect.fill(using: .sourceIn)
+            return true
+          }
+          let size = NSSize(width: image.size.width * magnify, height: image.size.height * magnify)
+          tinted.draw(in: NSRect(x: (CGFloat(index) * cell.width * magnify) + (cell.width * magnify - size.width) / 2,
+            y: CGFloat(row) * cell.height * magnify + (cell.height * magnify - size.height) / 2, width: size.width, height: size.height))
+        }
+      }
+      return true
+    }
+    if let tiff = sheet.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+      Images.write(rep, to: verifier.pngDirectory.appendingPathComponent("menubar-icons.png"))
+      verifier.savedImage()
     }
   }
 }

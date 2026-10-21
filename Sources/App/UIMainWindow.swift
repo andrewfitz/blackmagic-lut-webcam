@@ -29,6 +29,9 @@ struct UIMainWindowView: View {
           if squeezed { context.send(.makeRoomForPictures) }
         }
     }
+    // Opening the inspector otherwise draws a hard line under the title bar across the
+    // pictures only; content scrolling under the toolbar gets the system's soft edge instead.
+    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .navigationTitle(context.presentation.title)
     .navigationSubtitle(context.presentation.subtitle)
     .inspector(isPresented: inspectorBinding) {

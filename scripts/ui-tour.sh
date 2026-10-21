@@ -39,6 +39,7 @@ ln -sfn "$run_id-$appearance" "$out_root/latest-$appearance"
 
 xcrun swiftc -O "$task_root/Tools/UITour/windows.swift" -o "$out/windows" 2>"$out/windows-build.log"
 xcrun swiftc -O "$task_root/Tools/UITour/click.swift" -o "$out/click" 2>>"$out/windows-build.log"
+xcrun swiftc -O "$task_root/Tools/UITour/scroll.swift" -o "$out/scroll" 2>>"$out/windows-build.log"
 if [[ -f "$preferences.plist" ]]; then defaults export "$preferences" "$out/preferences-before.plist"; fi
 
 pid=""
@@ -50,10 +51,15 @@ trap finish EXIT
 
 # The main window, by title (its accessibility name adds the subtitle after an en dash).
 main='(first window whose (name is "Ultracam" or name starts with "Ultracam –"))'
-# Retries once: the app can be briefly busy (switching output mode) and miss a scripting request.
+# Retries: the app can be busy for a few seconds (switching output mode, building the Program
+# pipeline) and miss scripting requests meanwhile.
 ui() {
-  osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to $1" 2>>"$out/osascript.log" ||
-    { sleep 1; osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to $1" 2>>"$out/osascript.log"; }
+  local attempt
+  for attempt in 1 2 3 4; do
+    osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to $1" 2>>"$out/osascript.log" && return 0
+    sleep "$attempt"
+  done
+  return 1
 }
 # Opening a menu blocks the scripting call until the menu closes, so don't wait for it.
 open_menu() {
@@ -125,6 +131,13 @@ sidebar_open || click_sidebar_toggle
 capture 01-main-sidebar Ultracam
 toolbar Inspector
 capture 02-main-sidebar-inspector Ultracam
+# At a smaller window the inspector scrolls: its sections pass under the toolbar and beside the scroller.
+ui "set size of $main to {1345, 764}" >/dev/null
+capture 02-main-inspector-small Ultracam
+"$out/scroll" 1260 500 -12
+capture 02-main-inspector-scrolled Ultracam
+"$out/scroll" 1260 500 30
+ui "set size of $main to {1440, 900}" >/dev/null
 click_sidebar_toggle
 capture 03-main-inspector Ultracam
 click_sidebar_toggle

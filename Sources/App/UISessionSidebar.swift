@@ -115,12 +115,20 @@ struct UISessionSidebarViewContent: View {
       }
       .accessibilityElement(children: .combine)
       ForEach(session.drives) { drive in UIDriveRow(drive: drive).selectionDisabled() }
-      HStack(spacing: 6) {
+      HStack(spacing: 8) {
         Image(systemName: "folder").foregroundStyle(.secondary)
-        Text(session.defaultFolderPath.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "No folder")
-          .foregroundStyle(session.defaultFolderPath == nil ? .secondary : .primary)
-          .lineLimit(1).truncationMode(.middle)
-          .help(session.defaultFolderPath ?? "Choose where recordings are saved.")
+        // The folder's name, and where it is underneath: a whole path doesn't fit the sidebar.
+        VStack(alignment: .leading, spacing: 1) {
+          if let path = session.defaultFolderPath {
+            Text(UIFormat.folderName(path)).lineLimit(1).truncationMode(.middle)
+            Text(UIFormat.folderLocation(path)).font(.subheadline).foregroundStyle(.secondary)
+              .lineLimit(1).truncationMode(.middle)
+          } else {
+            Text("No folder").foregroundStyle(.secondary)
+          }
+        }
+        .accessibilityElement(children: .combine)
+        .help(session.defaultFolderPath ?? "Choose where recordings are saved.")
         Spacer(minLength: 4)
         Button(session.defaultFolderPath == nil ? "Choose…" : "Change…") { context.send(.chooseRecordingFolder(cameraID: nil)) }
           .controlSize(.small)
@@ -186,12 +194,15 @@ struct UISessionSidebarViewContent: View {
         Text("Start with camera apps")
         Text(automatic.isEmpty ? "Off" : automatic.joined(separator: ", "))
           .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+        // Sidebar rows are one line unless told otherwise, which cut this note off mid-word.
+        if let status = session.cameras.first(where: { $0.id == session.selectedID })?.automaticStatus, !status.isEmpty {
+          Text(status).font(.subheadline).foregroundStyle(.secondary)
+            .lineLimit(4).fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 3)
+        }
       }
       .accessibilityElement(children: .combine)
       .help("A camera starts when a meeting app opens its virtual camera and stops when the last app closes. Set it per camera in the inspector.")
-      if let status = session.cameras.first(where: { $0.id == session.selectedID })?.automaticStatus {
-        Text(status).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-      }
       VStack(alignment: .leading, spacing: 1) {
         Text("Backup recording")
         Text("Coming later").font(.subheadline)
