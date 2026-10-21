@@ -112,7 +112,8 @@ Shortcuts:
 | ⇧⌘B | Processing (selected camera) |
 | ⇧⌘P | Video preview |
 | ⌘R / ⌥⌘R | Record or stop the selected camera / all cameras |
-| ⌃1–⌃4 | Cut Program to a camera |
+| ⇧⌘R | Pause or resume the selected camera's recording |
+| ⌃1–⌃4 | Cut Program to a camera (also Mission Control's desktop shortcuts if those are on) |
 | ⌃⌥A | Automatic switching |
 | ⌘1–⌘4 | Select a camera |
 | ⌥⌘1–⌥⌘4 | Layout |
@@ -121,7 +122,7 @@ Shortcuts:
 | ⌥⌘K | Scopes |
 | ⌥⌘I | Inspector |
 | ⌃⌥F / ⌃⌥C | Freeze / Clean view (selected picture) |
-| ⌘0 | Main window |
+| ⌘0 | Show main window |
 
 Stopping a camera that is recording or on air asks first. Changing Downscale,
 Color, Frame rate or Processing while a meeting app is connected renegotiates
