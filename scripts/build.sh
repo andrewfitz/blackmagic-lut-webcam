@@ -27,7 +27,7 @@ if [[ "$signed" == true && -z "${DEVELOPMENT_TEAM:-}" ]]; then
   exit 1
 fi
 external_root=/Volumes/8TB/cinesomatic-director-work
-if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
+if ! mount | /usr/bin/grep -F ' on /Volumes/8TB ' > /dev/null; then
   echo 'External drive /Volumes/8TB is not mounted.' >&2
   exit 1
 fi

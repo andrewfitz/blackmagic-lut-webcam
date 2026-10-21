@@ -1,4 +1,5 @@
 import Foundation
+import MonitorToolsCore
 
 /// Stable identity for a configured feed. The raw value is persisted instead of
 /// relying on array position, so reordering feeds does not change their
@@ -231,12 +232,14 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
   var lutBookmark: Data?
   var automaticFeed = false
   var enabled = true
+  var monitorConfiguration = MonitorConfiguration()
 
   init(id: FeedID = .primary, name: String = "Feed 1", selectedDevice: String = "",
     applyLUT: Bool = false, downscale: Bool = true, convertTo420: Bool = true,
     reduceFrameRate: Bool = false, gamut: String = "S-Gamut3.Cine / S-Log3",
     pipelineEnabled: Bool = true, previewEnabled: Bool = true, lutBookmark: Data? = nil,
-    automaticFeed: Bool = false, enabled: Bool = true) {
+    automaticFeed: Bool = false, enabled: Bool = true,
+    monitorConfiguration: MonitorConfiguration = MonitorConfiguration()) {
     self.id = id
     self.name = name
     self.selectedDevice = selectedDevice
@@ -250,6 +253,7 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
     self.lutBookmark = lutBookmark
     self.automaticFeed = automaticFeed
     self.enabled = enabled
+    self.monitorConfiguration = monitorConfiguration
   }
 
   init(legacy settings: AppSettings, id: FeedID = .primary, name: String = "Feed 1") {
@@ -286,7 +290,7 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
   private enum CodingKeys: String, CodingKey {
     case version, id, name, selectedDevice, applyLUT, downscale, convertTo420,
       reduceFrameRate, gamut, pipelineEnabled, previewEnabled, lutBookmark,
-      automaticFeed, enabled
+      automaticFeed, enabled, monitorConfiguration
   }
 
   init(from decoder: Decoder) throws {
@@ -305,6 +309,7 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
     lutBookmark = try values.decodeIfPresent(Data.self, forKey: .lutBookmark)
     automaticFeed = try values.decodeIfPresent(Bool.self, forKey: .automaticFeed) ?? false
     enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+    monitorConfiguration = try values.decodeIfPresent(MonitorConfiguration.self, forKey: .monitorConfiguration) ?? MonitorConfiguration()
   }
 }
 
@@ -316,16 +321,22 @@ struct AppSettingsSnapshot: Codable, Equatable, Sendable {
   var selectedFeedID: FeedID
   var outputMode: FeedOutputMode = .separateCameras
   var switcher = SwitcherSettings()
+  var programMonitorConfiguration = MonitorConfiguration()
+  var monitorWorkspace = MonitorWorkspaceState()
   var virtualCameraRegistryVersion = 1
 
   init(feeds: [FeedDescriptor] = [FeedDescriptor()], selectedFeedID: FeedID? = nil,
     outputMode: FeedOutputMode = .separateCameras, switcher: SwitcherSettings = SwitcherSettings(),
-    virtualCameraRegistryVersion: Int = 1) {
+    virtualCameraRegistryVersion: Int = 1,
+    programMonitorConfiguration: MonitorConfiguration = MonitorConfiguration(),
+    monitorWorkspace: MonitorWorkspaceState = MonitorWorkspaceState()) {
     self.feeds = feeds
     self.selectedFeedID = selectedFeedID ?? feeds.first?.id ?? .primary
     self.outputMode = outputMode
     self.switcher = switcher
     self.virtualCameraRegistryVersion = virtualCameraRegistryVersion
+    self.programMonitorConfiguration = programMonitorConfiguration
+    self.monitorWorkspace = monitorWorkspace
   }
 
   var selectedFeed: FeedDescriptor? {
@@ -349,7 +360,7 @@ struct AppSettingsSnapshot: Codable, Equatable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case version, feeds, selectedFeedID, outputMode, switcher, virtualCameraRegistryVersion
+    case version, feeds, selectedFeedID, outputMode, switcher, virtualCameraRegistryVersion, programMonitorConfiguration, monitorWorkspace
   }
 
   init(from decoder: Decoder) throws {
@@ -361,6 +372,8 @@ struct AppSettingsSnapshot: Codable, Equatable, Sendable {
     outputMode = try values.decodeIfPresent(FeedOutputMode.self, forKey: .outputMode) ?? .separateCameras
     switcher = try values.decodeIfPresent(SwitcherSettings.self, forKey: .switcher) ?? SwitcherSettings()
     virtualCameraRegistryVersion = try values.decodeIfPresent(Int.self, forKey: .virtualCameraRegistryVersion) ?? 1
+    programMonitorConfiguration = try values.decodeIfPresent(MonitorConfiguration.self, forKey: .programMonitorConfiguration) ?? MonitorConfiguration()
+    monitorWorkspace = try values.decodeIfPresent(MonitorWorkspaceState.self, forKey: .monitorWorkspace) ?? MonitorWorkspaceState()
   }
 }
 

@@ -26,7 +26,7 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     XCTAssertEqual(session.paths.feedDirectory.lastPathComponent, "camera-a")
     XCTAssertEqual(session.paths.finalFile.pathExtension, "mov")
     XCTAssertNotNil(session.paths.finalFile.lastPathComponent.range(
-      of: #"^camera-a-\d{8}-\d{6}-\d{3}(?:-\d+)?\.mov$"#, options: .regularExpression))
+      of: #"^camera-a_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d{3}(?:-\d+)?\.mov$"#, options: .regularExpression))
     XCTAssertTrue(FileManager.default.fileExists(atPath: session.temporaryURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: session.finalURL.path))
 
@@ -168,6 +168,123 @@ private struct FixedRecordingOutputDiskSpace: RecordingOutputDiskSpaceProviding 
     try session.resume()
     XCTAssertEqual(session.state, .recording)
     XCTAssertEqual(try session.finish(), session.finalURL)
+  }
+
+  func testRecoveryIgnoresLiveSessionsAndRetainsFailedMedia() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let take = try manager.beginExternalWriterSession(feedID: "Wide")
+    let media = Data([1, 2, 3, 4])
+    try media.write(to: take.temporaryURL)
+    XCTAssertTrue(try RecordingRecovery.scan(root: root).isEmpty)
+    take.preserveForRecovery()
+    let found = try RecordingRecovery.scan(root: root)
+    XCTAssertEqual(found.count, 1)
+    XCTAssertEqual(found.first?.temporaryURL.resolvingSymlinksInPath().path, take.temporaryURL.resolvingSymlinksInPath().path)
+    XCTAssertEqual(try Data(contentsOf: take.temporaryURL), media)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalURL.path))
+  }
+
+  func testCompletedAndCancelledSessionsRemoveRecoveryJournal() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    for finish in [true, false] {
+      let take = try manager.beginExternalWriterSession(feedID: "Wide")
+      try Data([1]).write(to: take.temporaryURL)
+      let journal = RecordingRecoveryJournal.url(for: take.temporaryURL)
+      XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
+      if finish { _ = try take.finish() } else { try take.cancel() }
+      XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
+    XCTAssertTrue(try RecordingRecovery.scan(root: root).isEmpty)
+  }
+
+  func testRecoveryRejectsForeignFilesTraversalAndSymlinks() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let take = try manager.beginExternalWriterSession(feedID: "Wide")
+    try Data([1]).write(to: take.temporaryURL)
+    take.preserveForRecovery()
+    let original = try Data(contentsOf: take.temporaryURL)
+    let journalURL = RecordingRecoveryJournal.url(for: take.temporaryURL)
+    let journal = try Data(contentsOf: journalURL)
+    let malformed = RecordingRecoveryJournal.Entry(temporaryName: "../../outside", finalName: "outside.mov")
+    try JSONEncoder().encode(malformed).write(to: journalURL)
+    XCTAssertTrue(try RecordingRecovery.scan(root: root).isEmpty)
+    try journal.write(to: journalURL)
+    let target = root.appendingPathComponent("unrelated.partial")
+    try original.write(to: target)
+    try FileManager.default.removeItem(at: take.temporaryURL)
+    try FileManager.default.createSymbolicLink(at: take.temporaryURL, withDestinationURL: target)
+    XCTAssertTrue(try RecordingRecovery.scan(root: root).isEmpty)
+    try FileManager.default.removeItem(at: journalURL)
+    try FileManager.default.createSymbolicLink(at: journalURL, withDestinationURL: target)
+    XCTAssertTrue(try RecordingRecovery.scan(root: root).isEmpty)
+    XCTAssertEqual(try Data(contentsOf: target), original)
+  }
+
+  func testRecoveryFailurePreservesOriginalAndCanBeRetried() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let take = try manager.beginExternalWriterSession(feedID: "Wide")
+    let original = Data("not a movie".utf8)
+    try original.write(to: take.temporaryURL)
+    take.preserveForRecovery()
+    let interrupted = try XCTUnwrap(RecordingRecovery.scan(root: root).first)
+    let completed = expectation(description: "Recovery rejects invalid media")
+    Task {
+      do {
+        _ = try await RecordingRecovery.recover(interrupted, root: root)
+        XCTFail("Invalid media was recovered")
+      } catch { }
+      completed.fulfill()
+    }
+    wait(for: [completed], timeout: 5)
+    XCTAssertEqual(try Data(contentsOf: take.temporaryURL), original)
+    XCTAssertEqual(try RecordingRecovery.scan(root: root).count, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalURL.path))
+  }
+
+  func testRecordingFolderBookmarkSurvivesStoreRecreationAndClears() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let suite = "UltracamRecordingBookmarkTests-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    try RecordingFolderStore(defaults: defaults).save(root)
+    XCTAssertEqual(try RecordingFolderStore(defaults: defaults).load()?.resolvingSymlinksInPath().path, root.resolvingSymlinksInPath().path)
+    try RecordingFolderStore(defaults: defaults).save(nil)
+    XCTAssertNil(try RecordingFolderStore(defaults: defaults).load())
+  }
+
+  func testIndependentManagersRespectJournalReservationBeforeMediaArrives() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let firstManager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let first = try firstManager.beginExternalWriterSession(feedID: "Wide")
+    let secondManager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let second = try secondManager.beginExternalWriterSession(feedID: "Wide")
+    XCTAssertNotEqual(first.temporaryURL, second.temporaryURL)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: RecordingRecoveryJournal.url(for: first.temporaryURL).path))
+    try first.cancel()
+    try second.cancel()
+  }
+
+  func testFailedStartCancellationCannotDeleteAnUnownedFile() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = try RecordingOutputManager(rootDirectory: root, minimumFreeBytes: 0)
+    let take = try manager.makeSession(feedID: "Wide")
+    try FileManager.default.createDirectory(at: take.paths.feedDirectory, withIntermediateDirectories: true)
+    let original = Data("another writer owns this file".utf8)
+    try original.write(to: take.temporaryURL)
+    XCTAssertThrowsError(try take.start())
+    try take.cancel()
+    XCTAssertEqual(try Data(contentsOf: take.temporaryURL), original)
   }
 
   static let allTests = [

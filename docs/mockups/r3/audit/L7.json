@@ -1,0 +1,1034 @@
+[
+  {
+    "id": "L7-01",
+    "lens": "consistency",
+    "pages": [
+      "app-menus",
+      "main-expanded",
+      "main-collapsed",
+      "settings",
+      "standalone",
+      "states"
+    ],
+    "location": "Nouns for the user-facing source object",
+    "issue": "The same object is called 'Feed' and 'Camera' interchangeably, even inside one menu.",
+    "evidence": "app-menus Feed menu: 'Add Camera' sits next to 'Rename Feed 1…' and 'Remove Feed 1'. Sidebar section header 'Cameras' (r3.js sidebar). Strip ⋯ popover footer 'Remove Camera' (main-collapsed). Settings: 'Per-Camera Folders' and 'Remove Camera' (the extension). Default names are 'Feed 1', the virtual camera is 'Ultracam · Feed 1', and the menu is 'Feed'.",
+    "scenario": "The user looks for 'Remove Camera' in the Feed menu and finds 'Remove Feed'. 'Remove Camera' in Settings removes the system extension, not a feed, so the shared word risks a destructive mix-up.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Use 'Feed' for the app object (menu name, default names, sidebar section 'Feeds', Add Feed…, Rename Feed…, Remove Feed). Reserve 'camera' for the physical device and the virtual camera ('Ultracam camera', Install/Remove Ultracam Camera).",
+    "alternatives": [
+      "Rename the object 'Camera' everywhere and default names to 'Camera 1'; the virtual camera becomes 'Ultracam · Camera 1'"
+    ],
+    "affects": [
+      "r3.js sidebar()",
+      "app-menus",
+      "main-collapsed popover",
+      "settings Recording/Camera",
+      "states",
+      "spec §4"
+    ],
+    "effort": "S",
+    "decision_for_user": "Feed or Camera as the user-facing noun"
+  },
+  {
+    "id": "L7-02",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "main-collapsed",
+      "menubar",
+      "app-menus",
+      "standalone",
+      "single",
+      "spec",
+      "states"
+    ],
+    "location": "Stop commands",
+    "issue": "Stop has seven names, and one command is named differently in different places.",
+    "evidence": "Bare 'Stop' (strip, meaning stop recording); 'Stop Feed'; 'Stop Feeds' (menubar a, spec); 'Stop All Feeds' (menubar c, standalone) for the same command; 'Stop Recording'; 'Stop All Recordings'; 'Stop All' (app-menus table, diagnostics popover, standalone toolbar). The toolbar record button shows a stop glyph with only '12:31 · 2'.",
+    "scenario": "After a meeting the user wants to stop the backup takes but keep the feed for Zoom. Bare 'Stop' and unlabelled toolbar buttons make it unclear which one ends what.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Always use verb + object: Stop Recording / Stop All Recordings / Stop Feed / Stop All Feeds. Never a bare 'Stop'; an icon-only button gets the full name as its tooltip and accessibility label.",
+    "alternatives": [
+      "Use 'End Take' for recordings to separate the verbs entirely"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "r3.js toolbar()",
+      "menubar",
+      "app-menus",
+      "standalone",
+      "spec §5"
+    ],
+    "effort": "S",
+    "suspects": [
+      "S6"
+    ]
+  },
+  {
+    "id": "L7-03",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "program-view",
+      "four-up",
+      "single",
+      "standalone"
+    ],
+    "location": "Toolbar record control",
+    "issue": "The same toolbar control is labelled four ways, and only one page shows the companion Pause All.",
+    "evidence": "'12:31 · 2' (main-expanded, main-collapsed, program-view), '12:31 · 3' (four-up), '12:31' (single), 'Stop All · 12:31' with a separate 'Pause All' button (standalone only).",
+    "scenario": "The user can't tell whether the red '12:31 · 2' button stops everything, opens a menu, or shows a count.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "One rule: idle 'Record All'; recording 'Stop All · 12:31', with a count badge when there's more than one take. Pause All either always sits beside it or lives only in the menu.",
+    "alternatives": [
+      "Make it a split button: main action Stop All, with a menu for Pause All and per-feed stop"
+    ],
+    "affects": [
+      "r3.js toolbar()",
+      "standalone local toolbar",
+      "spec §1"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-04",
+    "lens": "consistency",
+    "pages": [
+      "monitor-tools",
+      "app-menus",
+      "spec"
+    ],
+    "location": "⌘0 shortcut",
+    "issue": "⌘0 is assigned to two different commands.",
+    "evidence": "monitor-tools keyboard card: 'Zoom in / out, ⌘0 to fit', and its zoom menu shows 'Fit ⌘0'. app-menus Window menu and spec §6 assign ⌘0 to the main window. monitor-tools' ⌘= / ⌘− zoom keys appear in neither app-menus' View ▸ Zoom nor the spec table.",
+    "scenario": "The user presses ⌘0 expecting the zoomed picture to return to Fit; the main window comes forward instead.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Keep ⌘0 for the main window (common macOS convention). Picture zoom uses ⌘= / ⌘− / ⌘9 for Fit, or menu-only. List them in app-menus View ▸ Zoom and in the spec table.",
+    "alternatives": [
+      "Drop zoom shortcuts and use the zoom pop-up only"
+    ],
+    "affects": [
+      "monitor-tools",
+      "app-menus",
+      "spec §6"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-05",
+    "lens": "consistency",
+    "pages": [
+      "app-menus",
+      "spec"
+    ],
+    "location": "⌘1–⌘4 meaning",
+    "issue": "⌘1–⌘4 means 'Select Feed' in the menus but 'Focus feed (keyboard target)' in the spec. Selection and focus are different concepts.",
+    "evidence": "app-menus Feed menu has a 'Select Feed' section with ⌘1/⌘2; its legend says the Feed menu acts on the selected feed and ⌘1–⌘4 change it. spec §6: '⌘1–⌘4 Focus feed (keyboard target)'; spec §7: '⌘1–⌘4 move focus between feeds'.",
+    "scenario": "The engineer implements ⌘2 as keyboard focus only; ⇧⌘B then still bypasses Feed 1 while the user believes Feed 2 is targeted.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Define one concept, either a single 'selected feed' or 'focused picture', that drives the Feed menu, ⇧⌘B and the picture shortcuts. Show it visibly, and use the same wording in the menus, spec and legends.",
+    "alternatives": [
+      "Remove the selected-feed concept; Feed-menu items become per-feed submenus"
+    ],
+    "affects": [
+      "app-menus",
+      "spec §6–7",
+      "monitor-tools focused-tile ring"
+    ],
+    "effort": "M",
+    "suspects": [
+      "S2"
+    ]
+  },
+  {
+    "id": "L7-06",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "menubar",
+      "app-menus",
+      "settings",
+      "single",
+      "states"
+    ],
+    "location": "Automation setting names",
+    "issue": "The two automation settings each have three or four different wordings, not just case variants.",
+    "evidence": "Start: 'Start with camera apps' (sidebar), 'Start with Camera Apps' (dropdown), 'Start When Camera Is in Use' (app-menus), 'Start when camera is in use' (Settings; also the current app's label). Record: 'Record with camera apps' / 'Record with Camera Apps' / 'Record when a camera app opens Ultracam' (Settings).",
+    "scenario": "The user turns on 'Record when a camera app opens Ultracam' in Settings and doesn't recognise it as the 'Record with camera apps' switch in the sidebar.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "One wording pair, with case following context (menus title case, forms sentence case): 'Start with Camera Apps' / 'Record with Camera Apps'. Settings can add the explanation as a footnote.",
+    "alternatives": [
+      "Keep the current app's 'Start when camera is in use' and use 'Record when camera is in use'"
+    ],
+    "affects": [
+      "r3.js sidebar()",
+      "menubar",
+      "app-menus",
+      "settings",
+      "states"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-07",
+    "lens": "consistency",
+    "pages": [
+      "standalone",
+      "four-up",
+      "spec",
+      "states"
+    ],
+    "location": "Paused picture rendering",
+    "issue": "A paused feed has an orange ring on one page and no ring on another, and the spec's tally table has no paused row.",
+    "evidence": "standalone: Feed 2 paused has an orange ring plus an orange 'PAUSED 04:12' pill (its legend says so). four-up: Feed 4 paused has the pill only. spec §5 picture-tally roles: On air / Next / Consumer on air / Idle, with no Paused. The tile() builder has no paused state; standalone patches it with string replace.",
+    "scenario": "Two pages built from the same spec show paused differently, so engineering has to guess.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Rings are reserved for tally (Program or a consumer). Paused is shown by the orange pill and the strip state only. Add a paused state to tile() and strip(), and a row to the spec table.",
+    "alternatives": [
+      "Use an orange ring for paused everywhere and add it to the spec"
+    ],
+    "affects": [
+      "r3.js tile()/strip()",
+      "standalone",
+      "four-up",
+      "spec §5"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-08",
+    "lens": "consistency",
+    "pages": [
+      "main-collapsed",
+      "states",
+      "four-up",
+      "standalone",
+      "spec"
+    ],
+    "location": "Builder vs hand-built components",
+    "issue": "Strips and status bars were hand-built or string-patched on five pages, and those copies have drifted from the builders.",
+    "evidence": "main-collapsed builds both collapsed strips by hand; its hover row drops the effect chips. states uses its own sbox() helper, whose collapsed recording row still shows '0 drops', which the builder removed. four-up hand-builds the Feed 3/4 strips and its status bar. standalone patches builder output for paused and writes its own status bar. spec's status bar omits '(video)' after GPU and the Audio segment. Grep counts: hand-built strip3 = main-collapsed 2, four-up 2, states 2; hand-built sbar = four-up, standalone, spec, states.",
+    "scenario": "Round-4 builder fixes won't reach the pages that bypass the builders, so inconsistencies multiply.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Extend the builders and rebuild those pages with them. strip(): states ready / no-folder / recording / paused / finishing / failed / stopped / waiting / unsupported / bypass, and a hover variant. tile(): paused / no-signal / unsupported / hidden. statusbar(): a segment list parameter.",
+    "alternatives": [],
+    "affects": [
+      "r3.js",
+      "main-collapsed",
+      "states",
+      "four-up",
+      "standalone",
+      "spec"
+    ],
+    "effort": "M",
+    "suspects": [
+      "S15"
+    ]
+  },
+  {
+    "id": "L7-09",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "monitor-tools",
+      "settings",
+      "single",
+      "standalone"
+    ],
+    "location": "Picture/scope signal names",
+    "issue": "The processed signal is called 'Output' on pictures but 'Processed Output' in the scope popover and in Settings.",
+    "evidence": "Picture pills (tile builder): 'Output'. monitor-tools Scopes popover: Signal 'Source | Output' in one place and 'Processed Output' in others. Settings Monitor pane: Picture signal 'Source | Processed Output'. The current code (MonitorTileChrome) uses 'Processed Output'.",
+    "scenario": "The user picks 'Output' on the picture and then can't find the same option by name in Settings.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Use 'Output' everywhere in the UI, with the help text 'Processed output, as published'. Keep 'Processed Output' only in diagnostics if needed.",
+    "alternatives": [
+      "Use 'Processed Output' everywhere, matching the current code"
+    ],
+    "affects": [
+      "monitor-tools",
+      "settings",
+      "r3.js tile()"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-10",
+    "lens": "consistency",
+    "pages": [
+      "monitor-tools",
+      "app-menus",
+      "menubar"
+    ],
+    "location": "Detached monitor action",
+    "issue": "Opening a picture in its own window has five names.",
+    "evidence": "Detach (hover button), Detach to Window (tile context menu), Detach Focused Picture (View ▸ Layout submenu), Window ▸ Detach Monitor ›, and Open Monitor Window (Feed menu, dropdown submenu).",
+    "scenario": "The user learns 'Detach' on the picture but can't find it in the menus.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Command 'Open in Monitor Window', with Window ▸ Monitor Windows › listing open ones. The hover button is the same icon with that tooltip.",
+    "alternatives": [
+      "'Detach' everywhere"
+    ],
+    "affects": [
+      "monitor-tools",
+      "app-menus",
+      "menubar"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-11",
+    "lens": "consistency",
+    "pages": [
+      "app-menus",
+      "settings"
+    ],
+    "location": "Dock visibility setting",
+    "issue": "One setting has two different controls and names.",
+    "evidence": "app-menus Ultracam menu: toggle 'Hide from Dock (menu bar only)'. Settings General: 'Show Ultracam in: Dock and menu bar | Menu bar only' (its caption references today's 'Hide from Dock').",
+    "scenario": "The user unchecks 'Hide from Dock' and Settings now reads 'Dock and menu bar', which is two mental models for one setting.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Use the same wording in both: either the 'Show in Dock' toggle everywhere, or the segmented 'Dock and menu bar / Menu bar only' in Settings with the menu item mirroring it as 'Show in Dock'.",
+    "alternatives": [],
+    "affects": [
+      "app-menus",
+      "settings"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-12",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "main-collapsed",
+      "single",
+      "menubar",
+      "app-menus",
+      "states"
+    ],
+    "location": "Effect names and the master switch",
+    "issue": "Effects are named by value in some places and by function in others, and the master switch is called both 'Processing' and 'Effects'.",
+    "evidence": "Strip chips: 'LUT · 1080p · 4:2:0 · 29.97'. ⋯ popover: '1 · LUT / 2 · Downscale / 3 · Color / 4 · Frame rate'. Menus: '2 · Downscale to 1080p', '3 · Color 4:2:0 8-bit', '4 · Limit to 29.97 fps'. Signal path: '3 · 4:2:0 8-bit'. Master switch: 'Processing' in the menus and popover; 'Effects active' result line; the strip switch has no label.",
+    "scenario": "The user can't map the '4:2:0' chip to 'Color' in the popover, or tell what the unlabelled strip switch does.",
+    "severity": "P2",
+    "confidence": "medium",
+    "recommendation": "Master switch is always 'Processing' (off = bypass). The items are 'effects', each with a fixed name plus value: 'LUT', 'Downscale · 1080p', 'Color · 4:2:0 8-bit', 'Frame rate · 29.97'. Chips can show the value with the name as tooltip and accessibility label. Label the strip switch 'Processing'.",
+    "alternatives": [
+      "Chips show names (LUT, Scale, Color, Rate) and the value appears on hover"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "main-collapsed popover",
+      "menubar",
+      "app-menus",
+      "single signal path"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-13",
+    "lens": "consistency",
+    "pages": [
+      "program-view",
+      "main-expanded",
+      "states",
+      "spec"
+    ],
+    "location": "Queued-cut wording",
+    "issue": "'Next' and 'queued' are used for the same Program state, and a third word covers a different state.",
+    "evidence": "Picture 'NEXT', strip 'Next', program-view cut bar 'Feed 2 queued', spec 'Queued'. states adds 'CUTTING…' / 'Cut pending' for a manual cut awaiting the frame boundary.",
+    "scenario": "The user sees NEXT on the picture and 'queued' in the cut bar and wonders whether these are two different things.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "'Next' means the director's planned cut (green). 'Cutting…' means a manual cut waiting for the frame boundary (dashed red). Drop 'queued'.",
+    "alternatives": [],
+    "affects": [
+      "program-view",
+      "spec §5",
+      "states"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-14",
+    "lens": "consistency",
+    "pages": [
+      "app-menus",
+      "menubar",
+      "main-expanded",
+      "single"
+    ],
+    "location": "Icon meanings",
+    "issue": "One icon is used for unrelated commands.",
+    "evidence": "The 'sliders' icon is used for Effects (menubar, single dropdown, app-menus), Rename Feed 1… (app-menus), Collapse All Strips (app-menus View) and the toolbar collapse toggle (r3.js toolbar). The sparkle 'auto' icon is used for both Automatic Switching and Start with Camera Apps.",
+    "scenario": "The toolbar collapse button looks like an effects control.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Assign distinct SF Symbols in the spec: effects 'slider.horizontal.3'; collapse strips 'rectangle.compress.vertical' / 'chevron.up.chevron.down'; rename 'pencil'; auto switching 'wand.and.stars'; start with camera apps 'video.badge.checkmark' or none.",
+    "alternatives": [],
+    "affects": [
+      "r3.js toolbar()",
+      "app-menus",
+      "menubar",
+      "spec §4"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-15",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "main-collapsed",
+      "states",
+      "standalone",
+      "four-up"
+    ],
+    "location": "Time formats",
+    "issue": "Elapsed time and time remaining use mixed formats.",
+    "evidence": "Elapsed: '00:12:31' (expanded strip), '12:31' (collapsed strip, sidebar, toolbar, REC pill), '1:42:10' (states). Remaining: '1 h 35 m left', '1 h 05 m left', '12 min left', '3 h 10 m available' (states status bar).",
+    "scenario": "Minor, but numbers that shift format draw the eye and look like different quantities.",
+    "severity": "P3",
+    "confidence": "high",
+    "recommendation": "Elapsed is m:ss under 1 h and h:mm:ss after, everywhere (tabular digits). Remaining is '1 h 35 min left' / '12 min left'; never 'available'.",
+    "alternatives": [
+      "Always h:mm:ss for elapsed"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "states",
+      "spec §3"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-16",
+    "lens": "consistency",
+    "pages": [
+      "standalone",
+      "states",
+      "four-up",
+      "main-expanded"
+    ],
+    "location": "Time-left values",
+    "issue": "Identical scenarios show different time left, because the rule (does a paused take count?) is undefined.",
+    "evidence": "standalone: Feed 1 recording to 8TB and Feed 2 paused, writing to Archive. Sidebar, strip and status bar show 8TB '3 h 10 m left', which is correct for one writer. The states status-bar card for the same scenario shows '8TB 1 h 35 m'. main-expanded and program-view: Feed 1 → 8TB and Feed 2 → Archive (strip 'Own folder'), yet 8TB shows '1 h 35 m', as if both write to it. four-up: '8TB 1 h 05 m' with no stated per-drive split.",
+    "scenario": "The engineer can't derive the formula from the mockups; the user sees the number jump when pausing.",
+    "severity": "P2",
+    "confidence": "medium",
+    "recommendation": "Define time left per drive = free space ÷ combined data rate of the active takes writing to that drive (a paused take holds 0 rate). Then fix main-expanded and states to match: 8TB has only Feed 1, so 3 h 10 m.",
+    "alternatives": [],
+    "affects": [
+      "r3.js sidebar()/statusbar()/FEEDS",
+      "states",
+      "four-up",
+      "spec"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-17",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "standalone",
+      "four-up",
+      "spec",
+      "states"
+    ],
+    "location": "Status bar segment set",
+    "issue": "The status bar has no fixed segment order; segments appear or disappear per page.",
+    "evidence": "Builder: output → Program → REC → Audio → resources. standalone: adds 'Timecode: PC time' and drops Audio. four-up: drops Audio and adds a warning. spec: drops Audio, and writes 'GPU' instead of 'GPU (video)'. states: the error variant leads with 'Couldn't start Feed 1 · Retry'.",
+    "scenario": "Segments jump around between sessions, so the user can't learn where to look.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Fixed order: [problem, only when present, leftmost] · output → consumer · Program (Program mode only) · recording · audio · spacer · resources. Timecode mode belongs in the recording popover.",
+    "alternatives": [],
+    "affects": [
+      "r3.js statusbar()",
+      "standalone",
+      "four-up",
+      "spec",
+      "states"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-18",
+    "lens": "consistency",
+    "pages": [
+      "single",
+      "main-expanded",
+      "standalone"
+    ],
+    "location": "Feed state wording in Separate mode",
+    "issue": "In Separate mode the picture and the strip describe the same state differently.",
+    "evidence": "single: picture badge 'ON AIR · Zoom', strip output row 'Ultracam · Feed 1 · In use by Zoom', sidebar 'In use by Zoom'. Program mode is consistent ('ON AIR · Program' and 'On air in Program').",
+    "scenario": "Minor: two phrasings for one state.",
+    "severity": "P3",
+    "confidence": "medium",
+    "recommendation": "The badge stays 'ON AIR · Zoom'; the strip and sidebar read 'On air in Zoom' (or both say 'In use by Zoom'). Pick one.",
+    "alternatives": [],
+    "affects": [
+      "r3.js strip()/sidebar()"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-19",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "program-view",
+      "four-up",
+      "standalone",
+      "single"
+    ],
+    "location": "Window title / subtitle",
+    "issue": "The window title follows no rule.",
+    "evidence": "'Meeting', 'Meeting · Program view', 'Recording Session' (four-up), 'Recording' (standalone), 'Feed 1' (single).",
+    "scenario": "Polish only.",
+    "severity": "P3",
+    "confidence": "high",
+    "recommendation": "Title 'Ultracam'. The subtitle is derived: '<n> feeds · Program → Zoom · recording 2' or '<n> feeds · recording · not in a meeting'.",
+    "alternatives": [
+      "The title states the session type, derived from consumer and recording state"
+    ],
+    "affects": [
+      "r3.js toolbar()",
+      "pages' toolbar args"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L7-20",
+    "lens": "consistency",
+    "pages": [
+      "menubar",
+      "single",
+      "standalone",
+      "states",
+      "app-menus"
+    ],
+    "location": "NEW tagging of proposed shortcuts",
+    "issue": "The same proposed shortcut is tagged NEW on some pages and not others.",
+    "evidence": "⌥⌘R is tagged NEW in the single and standalone dropdowns, untagged in menubar (a, b, c, g) and the states dropdowns, and marked 'PROPOSED' in the app-menus table. ⌃⌥A and ⌃1 are untagged in most dropdowns.",
+    "scenario": "Reviewers can't trust the NEW tag as a complete list of proposals.",
+    "severity": "P3",
+    "confidence": "high",
+    "recommendation": "Either tag every proposed shortcut on every page, or tag none on pages and keep the single list in the app-menus/spec shortcut tables (preferred: less noise).",
+    "alternatives": [],
+    "affects": [
+      "menubar",
+      "single",
+      "standalone",
+      "states"
+    ],
+    "effort": "S",
+    "suspects": [
+      "S11"
+    ]
+  },
+  {
+    "id": "L7-21",
+    "lens": "consistency",
+    "pages": [
+      "main-expanded",
+      "single",
+      "states",
+      "program-view"
+    ],
+    "location": "Start/Stop Feed control in the window",
+    "issue": "The running strip and toolbar have no Stop Feed control, but the stopped strip has Start Feed, so the control appears only in one direction.",
+    "evidence": "r3 toolbar() has no Start/Stop. The builder's expanded strip header has no Stop Feed (r2 V2 had 'Stop Feed'). states' 'Feed stopped' strip shows a 'Start Feed' button. While running, stopping is reachable only through ⌘↩ / the menus / the dropdown.",
+    "scenario": "The user wants to release the capture device for another app and can't find Stop Feed in the window.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Put a Start/Stop Feed control in the same place in both states (the strip header, or the ⋯ popover footer), labelled per L7-02.",
+    "alternatives": [
+      "Toolbar Start/Stop for the selected feed"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "states"
+    ],
+    "effort": "S",
+    "cross_lens": "L9 coverage"
+  },
+  {
+    "id": "L7-terms",
+    "table": [
+      {
+        "concept": "App source object",
+        "variants": [
+          {
+            "text": "Feed / Feeds",
+            "pages": [
+              "app-menus",
+              "spec",
+              "menubar",
+              "main-collapsed",
+              "standalone"
+            ]
+          },
+          {
+            "text": "Camera / Cameras",
+            "pages": [
+              "sidebar (all window pages)",
+              "app-menus Add Camera",
+              "main-collapsed Remove Camera",
+              "settings Per-Camera Folders"
+            ]
+          }
+        ],
+        "recommended": "Feed (app object); camera = device / virtual camera"
+      },
+      {
+        "concept": "Stop capture",
+        "variants": [
+          {
+            "text": "Stop Feed",
+            "pages": [
+              "app-menus",
+              "menubar",
+              "single",
+              "states",
+              "main-collapsed"
+            ]
+          },
+          {
+            "text": "Stop Feeds",
+            "pages": [
+              "menubar",
+              "spec"
+            ]
+          },
+          {
+            "text": "Stop All Feeds",
+            "pages": [
+              "menubar",
+              "standalone"
+            ]
+          },
+          {
+            "text": "Stop feed",
+            "pages": [
+              "spec"
+            ]
+          }
+        ],
+        "recommended": "Stop Feed / Stop All Feeds"
+      },
+      {
+        "concept": "Stop recording",
+        "variants": [
+          {
+            "text": "Stop (bare)",
+            "pages": [
+              "strip builder",
+              "main-collapsed",
+              "standalone"
+            ]
+          },
+          {
+            "text": "Stop Recording",
+            "pages": [
+              "menubar",
+              "app-menus",
+              "single",
+              "states"
+            ]
+          },
+          {
+            "text": "Stop All / Stop All Recordings",
+            "pages": [
+              "standalone",
+              "diagnostics",
+              "app-menus",
+              "menubar"
+            ]
+          }
+        ],
+        "recommended": "Stop Recording / Stop All Recordings"
+      },
+      {
+        "concept": "Automatic start",
+        "variants": [
+          {
+            "text": "Start with camera apps",
+            "pages": [
+              "sidebar",
+              "states"
+            ]
+          },
+          {
+            "text": "Start with Camera Apps",
+            "pages": [
+              "menubar",
+              "single"
+            ]
+          },
+          {
+            "text": "Start When Camera Is in Use",
+            "pages": [
+              "app-menus"
+            ]
+          },
+          {
+            "text": "Start when camera is in use",
+            "pages": [
+              "settings"
+            ]
+          }
+        ],
+        "recommended": "Start with Camera Apps (forms: sentence case)"
+      },
+      {
+        "concept": "Automatic backup",
+        "variants": [
+          {
+            "text": "Record with camera apps / Record with Camera Apps",
+            "pages": [
+              "sidebar",
+              "menubar",
+              "app-menus",
+              "single"
+            ]
+          },
+          {
+            "text": "Record when a camera app opens Ultracam",
+            "pages": [
+              "settings"
+            ]
+          }
+        ],
+        "recommended": "Record with Camera Apps"
+      },
+      {
+        "concept": "Processed signal",
+        "variants": [
+          {
+            "text": "Output",
+            "pages": [
+              "all picture pills",
+              "diagnostics"
+            ]
+          },
+          {
+            "text": "Processed Output",
+            "pages": [
+              "monitor-tools",
+              "settings"
+            ]
+          }
+        ],
+        "recommended": "Output (help: processed, as published)"
+      },
+      {
+        "concept": "Master pipeline switch",
+        "variants": [
+          {
+            "text": "Processing",
+            "pages": [
+              "menus",
+              "popover",
+              "spec"
+            ]
+          },
+          {
+            "text": "Effects (toolbar r2) / Effects active",
+            "pages": [
+              "main-collapsed",
+              "states"
+            ]
+          },
+          {
+            "text": "unlabelled switch",
+            "pages": [
+              "strip builder"
+            ]
+          }
+        ],
+        "recommended": "Processing"
+      },
+      {
+        "concept": "Auto switching",
+        "variants": [
+          {
+            "text": "Auto",
+            "pages": [
+              "toolbar",
+              "cut bar"
+            ]
+          },
+          {
+            "text": "Auto switching",
+            "pages": [
+              "sidebar"
+            ]
+          },
+          {
+            "text": "Automatic Switching / switching",
+            "pages": [
+              "menubar",
+              "app-menus",
+              "spec"
+            ]
+          }
+        ],
+        "recommended": "Automatic Switching (toolbar short label 'Auto' allowed)"
+      },
+      {
+        "concept": "Detach",
+        "variants": [
+          {
+            "text": "Detach",
+            "pages": [
+              "monitor-tools"
+            ]
+          },
+          {
+            "text": "Detach to Window",
+            "pages": [
+              "monitor-tools"
+            ]
+          },
+          {
+            "text": "Detach Focused Picture",
+            "pages": [
+              "app-menus"
+            ]
+          },
+          {
+            "text": "Detach Monitor",
+            "pages": [
+              "app-menus"
+            ]
+          },
+          {
+            "text": "Open Monitor Window",
+            "pages": [
+              "app-menus",
+              "menubar"
+            ]
+          }
+        ],
+        "recommended": "Open in Monitor Window"
+      },
+      {
+        "concept": "Director planned cut",
+        "variants": [
+          {
+            "text": "NEXT / Next",
+            "pages": [
+              "pictures",
+              "strips"
+            ]
+          },
+          {
+            "text": "queued / Queued",
+            "pages": [
+              "program-view",
+              "spec"
+            ]
+          }
+        ],
+        "recommended": "Next"
+      },
+      {
+        "concept": "Manual cut awaiting frame",
+        "variants": [
+          {
+            "text": "CUTTING… / Cut pending",
+            "pages": [
+              "states"
+            ]
+          }
+        ],
+        "recommended": "Cutting…"
+      },
+      {
+        "concept": "Dock visibility",
+        "variants": [
+          {
+            "text": "Hide from Dock",
+            "pages": [
+              "app-menus"
+            ]
+          },
+          {
+            "text": "Show Ultracam in: Dock and menu bar / Menu bar only",
+            "pages": [
+              "settings"
+            ]
+          }
+        ],
+        "recommended": "Show in Dock (toggle) everywhere"
+      },
+      {
+        "concept": "Diagnostics entry",
+        "variants": [
+          {
+            "text": "Diagnostics…",
+            "pages": [
+              "main-collapsed"
+            ]
+          },
+          {
+            "text": "Open Diagnostics",
+            "pages": [
+              "diagnostics popover"
+            ]
+          },
+          {
+            "text": "Diagnostics window",
+            "pages": [
+              "settings"
+            ]
+          },
+          {
+            "text": "Diagnostics",
+            "pages": [
+              "app-menus"
+            ]
+          }
+        ],
+        "recommended": "Diagnostics… (command), window title 'Diagnostics'"
+      },
+      {
+        "concept": "Time left",
+        "variants": [
+          {
+            "text": "1 h 35 m left",
+            "pages": [
+              "most"
+            ]
+          },
+          {
+            "text": "12 min left",
+            "pages": [
+              "states",
+              "menubar"
+            ]
+          },
+          {
+            "text": "3 h 10 m available",
+            "pages": [
+              "states"
+            ]
+          }
+        ],
+        "recommended": "'1 h 35 min left' / '12 min left'"
+      },
+      {
+        "concept": "Elapsed",
+        "variants": [
+          {
+            "text": "00:12:31",
+            "pages": [
+              "expanded strip"
+            ]
+          },
+          {
+            "text": "12:31",
+            "pages": [
+              "collapsed strip",
+              "sidebar",
+              "toolbar",
+              "REC pill"
+            ]
+          }
+        ],
+        "recommended": "m:ss under 1 h, h:mm:ss after"
+      },
+      {
+        "concept": "⌘0",
+        "variants": [
+          {
+            "text": "Fit zoom",
+            "pages": [
+              "monitor-tools"
+            ]
+          },
+          {
+            "text": "Main window",
+            "pages": [
+              "app-menus",
+              "spec"
+            ]
+          }
+        ],
+        "recommended": "Main window; zoom elsewhere"
+      },
+      {
+        "concept": "⌘1–⌘4",
+        "variants": [
+          {
+            "text": "Select Feed",
+            "pages": [
+              "app-menus"
+            ]
+          },
+          {
+            "text": "Focus feed (keyboard target)",
+            "pages": [
+              "spec"
+            ]
+          }
+        ],
+        "recommended": "One defined concept (see L7-05)"
+      }
+    ]
+  },
+  {
+    "id": "L7-states",
+    "unify_in_builders": [
+      "strip() expanded + collapsed: ready, no-folder, recording, paused, finishing, failed (message), dropped>0, stopped (Start Feed), waiting-for-HDMI, unsupported, bypass, automatic-failed (Retry); hover variant for collapsed; consistent Stop Feed placement",
+      "strip() collapsed: remove '0 drops' everywhere (states sbox still shows it); show drops only when > 0 (orange)",
+      "tile(): paused (orange pill, no ring), no-signal, unsupported, preview-hidden, frozen, reduced-monitoring; works outside .col3 (height fallback)",
+      "Tally rings: only on-air (red), next (green), cutting (dashed red), optional skipped-by-auto (orange, pending user decision), consumer on-air (red); paused never a ring",
+      "statusbar(): segment list param with fixed order; problem segment leftmost; no per-page hand-built bars",
+      "sidebar(): separate-mode multi-output, per-drive gauges, per-feed dot colors from state (recording red, paused orange, live green, stopped grey)",
+      "toolbar(): record control label rule (Record All / Stop All · elapsed · count); optional Pause All; window title rule",
+      "Effect chips: names as tooltip/accessibility labels; strip Processing switch labelled",
+      "Icons: unique symbol per command (no sliders for collapse/rename)"
+    ]
+  },
+  {
+    "id": "L7-suspects",
+    "verdicts": [
+      {
+        "suspect": "S15",
+        "verdict": "confirmed",
+        "note": "Hand-built or patched strips/status bars on main-collapsed, states, four-up, standalone and spec, with visible drift (L7-07, L7-08, L7-16, L7-17)."
+      },
+      {
+        "suspect": "S6",
+        "verdict": "confirmed",
+        "note": "Seven Stop names, and the same command named differently across menubar states (L7-02, L7-03)."
+      },
+      {
+        "suspect": "S2",
+        "verdict": "confirmed (terminology side)",
+        "note": "⌘1–⌘4 is 'select' in the menus and 'focus' in the spec (L7-05)."
+      },
+      {
+        "suspect": "S11",
+        "verdict": "partially confirmed",
+        "note": "NEW tagging of proposed shortcuts is inconsistent (L7-20). Inventions are out of this lens's scope."
+      }
+    ]
+  }
+]

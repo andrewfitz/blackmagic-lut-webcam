@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Main window · strips expanded</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Main window: two-camera Program meeting, both backing up, strips expanded</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 560px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 520px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 870px; top: 70px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1188px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 676px; top: 914px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The session sidebar holds the whole session: cameras with tally, the Program output with Auto and the shot timer, backup recording and space left, recent takes, and automation.</span></div>
+    <div><span class="n">2</span><span>No separate Program picture. The feed on air gets a red ring and "ON AIR · Program"; the next cut gets green. Click a picture or press ⌃1/⌃2 to cut.</span></div>
+    <div><span class="n">3</span><span>Channel strips give each feed its own recording (record, pause, stop, folder, time left) and output (cut, effects, processing, audio). ⋯ opens the rest; the chevron collapses the strip.</span></div>
+    <div><span class="n">4</span><span>In Program mode the toolbar has cut buttons and Auto. The layout picker adds an optional Program view.</span></div>
+    <div><span class="n">5</span><span>Collapse all strips (⌥⌘S) to reduce clutter. Record All shows elapsed time and the number of takes.</span></div>
+    <div><span class="n">6</span><span>Status bar: output → consumer, Program, recording with time left, audio, resources. Each segment opens a popover.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Meeting', subtitle: 'Program → Zoom · backup recording 2 feeds', layout: 'split' }));
+  mount('c1', tile(FEEDS.f1, { role: 'air' }) + strip(FEEDS.f1, { role: 'air' }) +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="luma" data-src="mcu"></canvas></div>');
+  mount('c2', tile(FEEDS.f2, { role: 'next' }) + strip(FEEDS.f2, { role: 'next' }) +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>RGB Parade</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="parade" data-src="wide"></canvas></div>');
+  mount('st', statusbar({ mode: 'program' }));
+</script>
+</body></html>

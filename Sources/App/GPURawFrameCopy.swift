@@ -80,6 +80,9 @@ final class GPURawFrameCopy {
     encoder.endEncoding()
     command.commit()
     command.waitUntilCompleted()
+    if command.status == .completed {
+      AppGPUActivity.shared.record(start: command.gpuStartTime, end: command.gpuEndTime)
+    }
 #if CAPTURE_LIFECYCLE_TESTS
     lastTiming.gpuMS = max(0, command.gpuEndTime - command.gpuStartTime) * 1000
 #endif

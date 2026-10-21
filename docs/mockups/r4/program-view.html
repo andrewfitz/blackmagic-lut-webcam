@@ -1,0 +1,135 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Program View (optional layout)</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .pv { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+  .mv { display: grid; grid-template-columns: minmax(0, 1fr) 345px; gap: 10px; flex: none; }
+  .mv .prog { border-radius: 14px; aspect-ratio: 16 / 9; }
+  .mv .srcs { display: flex; flex-direction: column; gap: 8px; }
+  .mv .srcs .picture { border-radius: 12px; }
+  .cutbar { border-radius: 12px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; gap: 9px; flex: none; }
+  .bigcut { height: 32px; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 13px 0 7px; font-weight: 600; font-size: 12.5px; background: var(--fill2); white-space: nowrap; }
+  .bigcut.air { background: rgba(255,69,58,0.92); color: #fff; }
+  .bigcut.air .kk { background: rgba(255,255,255,0.25); }
+  .bigcut.pend { box-shadow: inset 0 0 0 2px var(--green); }
+  .strips2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; flex: none; }
+  .cuts { flex: 1; border-radius: 12px; background: var(--fill); padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; }
+  .cuts .form .row { min-height: 30px; font-size: 12px; }
+  .alane { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  .alane .lt { flex: 1; height: 18px; position: relative; border-radius: 4px; background: rgba(127,127,127,0.08); overflow: hidden; }
+  .alane svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cutbtn { pointer-events: auto; }
+  .strips2 .strip3.collapsed .r { gap: 7px; }
+  .strips2 .fx4.sm span { padding: 0 4px; }
+  .strips2 .minimeter { width: 40px; }
+  html.light .badge.blue { color: #0062cc; }
+  .fmtchip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Program View (optional layout): same two-camera meeting, Program picture + sources</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="pv">
+        <div class="mv">
+          <div class="picture prog tally-air" data-scene="mcu" data-fx="" aria-label="Ultracam · Program, on air">
+            <div class="overlay" style="left:10px; top:10px;"><div class="pill glass"><i data-i="program" class="sm"></i>Ultracam · Program</div><span class="role air">ON AIR</span></div>
+            <div class="overlay" style="right:10px; top:10px;"><span class="pill sm glass" style="padding:0 7px"><i data-i="scope" class="sm"></i></span></div>
+            <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass mono">14:22:31:12</span><span class="pill sm glass">Camera 1 · shot 8.2 s</span><span class="pill sm glass">1080p 29.97 · 4:2:0</span><span class="fmtchip glass" style="color:#7ee49a"><i data-i="check" class="sm"></i>Formats match</span></div>
+            <div class="overlay" style="right:10px; bottom:10px;"><span class="pill sm glass recpill"><span class="dot red"></span><span class="tnum">REC 2 · 12:31</span></span></div>
+          </div>
+          <div class="srcs" id="srcs"></div>
+        </div>
+
+        <div class="cutbar">
+          <div style="display:flex; align-items:center; gap:8px">
+            <div class="bigcut air"><span class="kk">1</span>Camera 1<span style="font-weight:500;opacity:0.9;font-size:11px">on air</span></div>
+            <div class="bigcut pend"><span class="kk">2</span>Camera 2<span class="c2" style="font-weight:500;font-size:11px">next · at speech gap</span></div>
+            <div style="width:0.5px;height:24px;background:var(--sep);margin:0 4px"></div>
+            <span style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px"><i data-i="auto" class="sm"></i>Auto<div class="switch sm on"></div></span>
+            <span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span>
+            <span class="btn">Hold Shot</span>
+            <span style="margin-left:auto;font-size:11px;white-space:nowrap" class="c2">⌃1 / ⌃2 cut · ⌃⌥A Auto</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; font-size:11.5px">
+            <span style="width:140px; white-space:nowrap"><b class="tnum">Shot 8.2 s</b><span class="c2"> · Camera 1</span></span>
+            <div style="flex:1; padding-bottom:12px">
+              <div class="shot"><i style="width:27%"></i>
+                <span class="mk" style="left:33.3%"></span><span class="mk" style="left:66.6%"></span><span class="mk" style="left:100%; background:var(--red)"></span>
+                <span class="mkl" style="left:33.3%">min 10 s</span><span class="mkl" style="left:66.6%">soft max 20 s</span><span class="mkl" style="left:95%">max 30 s</span>
+              </div>
+            </div>
+            <span class="c2" style="width:270px; text-align:right; white-space:nowrap">Camera 2 is next, at the first speech gap after 10 s</span>
+          </div>
+        </div>
+
+        <div class="strips2" id="strips"></div>
+
+        <div class="cuts">
+          <div style="display:flex; align-items:center; gap:8px; font-size:12px; white-space:nowrap"><b>Recent Cuts</b><span class="c2">this session</span>
+            <span style="margin-left:auto;font-size:11px" class="c2 tnum">5 cuts · average shot 21 s · 0 forced</span></div>
+          <div class="alane"><span class="c2" style="width:84px">Program audio</span><div class="lt"><svg class="sp" viewBox="0 0 400 18" preserveAspectRatio="none"></svg></div><span class="c3" style="font-size:10.5px">last 2 min</span></div>
+          <div class="form">
+            <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:22:23</span><span class="lbl">Cut to <b>Camera 1</b></span><span class="c2" style="font-size:11px">Auto</span><span class="badge orange">max shot</span></div>
+            <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:21:58</span><span class="lbl">Cut to <b>Camera 2</b></span><span class="c2" style="font-size:11px">Auto</span><span class="badge">speech gap</span></div>
+            <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:21:31</span><span class="lbl">Cut to <b>Camera 1</b></span><span class="c2" style="font-size:11px">Manual · ⌃1</span><span class="badge blue">manual</span></div>
+            <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:21:02</span><span class="lbl">Cut to <b>Camera 2</b></span><span class="c2" style="font-size:11px">Auto</span><span class="badge">speech gap</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <div class="callout" style="left: 790px; top: 58px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 272px; top: 160px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1326px; top: 182px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 272px; top: 520px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 272px; top: 616px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 272px; top: 676px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Program View is <b>optional</b> (⌥⌘3). Side by Side with tally on each camera stays the default; use this when you want to watch exactly what "Ultracam · Program" sends.</span></div>
+    <div><span class="n">2</span><span>The Program picture shows its format. When the cameras' processed formats differ (for example one camera at 59.94 without the 29.97 limit), the chip turns orange: "Camera 2 differs · each cut renegotiates the output".</span></div>
+    <div><span class="n">3</span><span>Sources carry tally and an explicit <b>Cut</b> button. A click on a picture only selects it (blue ring); it never cuts. NEXT shows only while a cut is pending.</span></div>
+    <div><span class="n">4</span><span>Cut bar: numbered cuts, the pending cut, one Auto control, strategy, <b>Hold Shot</b> (pauses Auto on the current camera), and a shot timer marking min / soft max / max.</span></div>
+    <div><span class="n">5</span><span>Strips stay collapsed here: recording, effects, audio and the record control per camera. The chevron expands one; ⋯ opens the camera menu.</span></div>
+    <div><span class="n">6</span><span>Recent Cuts replaces the per-camera timeline: who was cut to, when, why (Auto reason or Manual), plus one Program audio lane, which is the only audio the director hears.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Program View', subtitle: 'Optional layout', layout: 'program', collapsedAll: true }));
+  const cutBtn = (n) => `<div class="overlay" style="right:8px; bottom:8px;"><span class="btn cutbtn" style="height:24px;background:rgba(18,18,20,0.78);color:#fff"><i data-i="cut" class="sm"></i>Cut<span style="opacity:0.7;margin-left:3px">⌃${n}</span></span></div>`;
+  const t1 = tile(CAMS.c1, { role: 'air', compact: true, height: 194, selected: true });
+  const t2 = tile(CAMS.c2, { role: 'next', compact: true, height: 194 }).replace(/<\/div>\s*$/, cutBtn(2) + '</div>');
+  // Source REC pills move left so the Cut button has the bottom-right corner.
+  mount('srcs', t1 + t2.replace('style="right:10px; bottom:10px;"', 'style="left:10px; bottom:10px;"'));
+  mount('strips', strip(CAMS.c1, { expanded: false, role: 'air', selected: true }) + strip(CAMS.c2, { expanded: false, role: 'next' }));
+  mount('st', statusbar({ mode: 'program' }));
+  (function bars() {
+    const svg = document.querySelector('.sp');
+    let s = 7, out = '';
+    const active = [[0, 0.2], [0.23, 0.39], [0.43, 0.6], [0.64, 0.8], [0.84, 1]];
+    for (let x = 0; x < 400; x += 3) {
+      s = (s * 9301 + 49297) % 233280;
+      const on = active.some(([a, b]) => x / 400 >= a && x / 400 <= b);
+      const h = on ? 4 + (s / 233280) * 13 : (s / 233280) * 2;
+      out += `<rect x="${x}" y="${18 - h}" width="2" height="${h}" fill="rgba(100,176,255,${on ? 0.8 : 0.3})"/>`;
+    }
+    svg.innerHTML = out;
+  })();
+</script>
+</body></html>

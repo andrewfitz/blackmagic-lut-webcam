@@ -84,7 +84,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   /// timing. The recorder retains the sample until its callback queue drains.
   @discardableResult
   func appendEmbeddedAudio(sample: CMSampleBuffer) -> Bool {
-    guard Self.hasValidTiming(sample) else { return reject() }
+    guard Self.hasValidTiming(sample) else { return reject(video: false) }
     return recorder.appendAudio(sample)
   }
 
@@ -99,7 +99,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
   @discardableResult
   func appendEmbeddedAudio(packet: EmbeddedAudioPacket) -> Bool {
     guard let sample = try? EmbeddedAudioRecording.makeSampleBuffer(for: packet) else {
-      return reject()
+      return reject(video: false)
     }
     return recorder.appendAudio(sample)
   }
@@ -118,7 +118,7 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
     channelCount: Int = EmbeddedAudioFormat.channelCount) -> Bool {
     guard let sample = try? EmbeddedAudioRecording.makeSampleBuffer(sourcePCM32: sourcePCM32,
       sampleFrameCount: sampleFrameCount, presentationTime: presentationTime,
-      channelCount: channelCount) else { return reject() }
+      channelCount: channelCount) else { return reject(video: false) }
     return recorder.appendAudio(sample)
   }
 
@@ -172,8 +172,8 @@ final class SourceRecordingCallbackAdapter: @unchecked Sendable {
       duration.isValid && duration.isNumeric && duration.epoch == 0 && duration.value > 0
   }
 
-  private func reject() -> Bool {
-    recorder.recordDrop(.invalidSample)
+  private func reject(video: Bool = true) -> Bool {
+    recorder.recordDrop(.invalidSample, video: video)
     return false
   }
 }

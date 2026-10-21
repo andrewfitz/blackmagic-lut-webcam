@@ -1,0 +1,216 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 2 · V2 · Channels</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css"><script src="../kit.js"></script>
+<style>
+  .desktop { height: 1170px; }
+  .chans { position: absolute; left: 12px; right: 12px; top: 62px; bottom: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .col { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .col .picture { height: 361px; border-radius: 14px; flex: none; }
+  .elapsed { font: 600 22px/1 var(--mono); }
+  .scopecard { flex: 1; border-radius: 12px; background: var(--fill); padding: 7px 10px 9px; display: flex; flex-direction: column; gap: 5px; min-height: 0; }
+  .scopecard canvas { flex: 1; width: 100%; border-radius: 6px; min-height: 0; }
+  .mini2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mini2 .picture { height: 92px; border-radius: 9px; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">V2 · Channels: standalone two-camera recording, independent controls per feed</div>
+
+  <div class="window win2">
+    <div class="toolbar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="tb-group glass" style="margin-left:12px"><div class="tb-btn"><i data-i="sidebar"></i></div></div>
+      <div class="title"><b>Recording Session</b><small>2 cameras · virtual cameras not in use</small></div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn dim"><i data-i="single"></i></div><div class="tb-btn on"><i data-i="split"></i></div><div class="tb-btn dim"><i data-i="grid"></i></div></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="plus"></i>Camera</div></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="pause"></i>Pause All</div></div>
+      <div class="tb-prominent red"><i data-i="stop" class="sm"></i>Stop All<span class="tnum" style="opacity:0.8;font-weight:500">· 12:31</span></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="inspector"></i></div></div>
+    </div>
+
+    <div class="chans">
+      <!-- Channel 1 -->
+      <div class="col">
+        <div class="picture" data-scene="mcu" data-fx="zebra,guides">
+          <div class="overlay" style="left:12px; top:12px;"><div class="pill glass">Feed 1<i data-i="chevud" class="sm"></i></div><span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 12:31</span></span></div>
+          <div class="overlay" style="right:12px; top:12px;">
+            <div class="tb-group glass" style="height:32px">
+              <div class="tb-btn on" style="height:26px"><i data-i="guides" class="sm"></i></div>
+              <div class="tb-btn on" style="height:26px"><i data-i="zebra" class="sm"></i></div>
+              <div class="tb-btn" style="height:26px"><i data-i="falsecolor" class="sm"></i></div>
+              <div class="tb-btn" style="height:26px"><i data-i="focus" class="sm"></i></div>
+              <div class="tb-btn on" style="height:26px"><i data-i="scope" class="sm"></i></div>
+            </div>
+          </div>
+          <div class="overlay" style="left:12px; bottom:12px;"><span class="pill sm glass mono">14:22:31:12</span><div class="pill sm glass">Output<i data-i="chevud" class="sm"></i></div><span class="pill sm glass c2">Zebra ≥ 95</span></div>
+          <div class="overlay" style="right:12px; bottom:12px;"><div class="tb-group glass" style="height:30px"><div class="tb-btn" style="height:24px"><i data-i="freeze" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="clean" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="zoom" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="detach" class="sm"></i></div></div></div>
+        </div>
+        <div class="chan">
+          <div class="crow">
+            <b style="font-size:14px">Feed 1</b><span class="c2">FX3 · Mini Recorder 12G</span><span class="badge green">Live · 2160p 59.94</span>
+            <span style="margin-left:auto" class="btn"><i data-i="stop" class="sm"></i>Stop Feed</span><span class="btn icon"><i data-i="ellipsis" class="sm"></i></span>
+          </div>
+          <div class="csep"></div>
+          <div class="crow">
+            <div class="recbtn on"></div>
+            <div style="display:flex;flex-direction:column;gap:3px"><span class="k2 cr" style="color:#ff6961">Recording</span><span class="elapsed tnum">00:12:31</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px;margin-left:8px" class="tnum"><span>18.4 GB · 184 Mb/s</span><span class="c2" style="font-size:11px">0 dropped · hardware ProRes</span></div>
+            <span style="margin-left:auto" class="btn"><i data-i="pause" class="sm"></i>Pause</span>
+          </div>
+          <div class="crow" style="font-size:11.5px">
+            <i data-i="folder" class="sm c2"></i><span>8TB › Takes › Feed 1</span><span class="c2 tnum">· 1 h 35 m left</span><span class="newtag">NEW</span>
+            <span style="margin-left:auto" class="badge">ProRes 422 · clean 2160p 10-bit</span>
+          </div>
+          <div class="csep"></div>
+          <div class="crow">
+            <i data-i="camlink" class="c2"></i><span style="display:flex;flex-direction:column;line-height:1.2"><span>Ultracam · Feed 1</span><span class="c2" style="font-size:11px">Not in use · ready for Zoom</span></span>
+            <div class="fx" style="margin-left:auto"><span class="on">LUT</span><span class="on">1080p</span><span class="on">4:2:0</span><span>29.97</span></div>
+            <div class="switch sm on" title="Processing"></div>
+          </div>
+          <div class="crow" style="gap:8px">
+            <span class="k2" style="width:46px">Audio</span>
+            <div class="meter" style="flex:1">L<div class="bar"><i style="width:64%"></i><b style="left:78%"></b></div></div>
+            <div class="meter" style="flex:1">R<div class="bar"><i style="width:60%"></i><b style="left:74%"></b></div></div>
+            <span class="c2 tnum" style="font-size:11px">−9.8 dB</span>
+          </div>
+        </div>
+        <div class="scopecard">
+          <div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>RGB Parade</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">Expand</span></div>
+          <canvas data-scope="parade" data-src="mcu"></canvas>
+        </div>
+      </div>
+
+      <!-- Channel 2 -->
+      <div class="col">
+        <div class="picture" data-scene="wide" data-tone="slog" data-fx="peak">
+          <div class="overlay" style="left:12px; top:12px;"><div class="pill glass">Feed 2<i data-i="chevud" class="sm"></i></div><span class="pill sm glass co"><i data-i="pause" class="sm"></i><span class="tnum">PAUSED 04:12</span></span></div>
+          <div class="overlay" style="right:12px; top:12px;">
+            <div class="tb-group glass" style="height:32px">
+              <div class="tb-btn" style="height:26px"><i data-i="guides" class="sm"></i></div>
+              <div class="tb-btn" style="height:26px"><i data-i="zebra" class="sm"></i></div>
+              <div class="tb-btn" style="height:26px"><i data-i="falsecolor" class="sm"></i></div>
+              <div class="tb-btn on" style="height:26px"><i data-i="focus" class="sm"></i></div>
+              <div class="tb-btn on" style="height:26px"><i data-i="scope" class="sm"></i></div>
+            </div>
+          </div>
+          <div class="overlay" style="left:12px; bottom:12px;"><span class="pill sm glass mono">14:22:31:12</span><div class="pill sm glass">Source · S-Log3<i data-i="chevud" class="sm"></i></div><span class="pill sm glass c2">Focus · red</span></div>
+          <div class="overlay" style="right:12px; bottom:12px;"><div class="tb-group glass" style="height:30px"><div class="tb-btn" style="height:24px"><i data-i="freeze" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="clean" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="zoom" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="detach" class="sm"></i></div></div></div>
+        </div>
+        <div class="chan">
+          <div class="crow">
+            <b style="font-size:14px">Feed 2</b><span class="c2">A7S III · UltraStudio 4K Mini</span><span class="badge green">Live · 2160p 29.97</span>
+            <span style="margin-left:auto" class="btn"><i data-i="stop" class="sm"></i>Stop Feed</span><span class="btn icon"><i data-i="ellipsis" class="sm"></i></span>
+          </div>
+          <div class="csep"></div>
+          <div class="crow">
+            <div class="recbtn"></div>
+            <div style="display:flex;flex-direction:column;gap:3px"><span class="k2" style="color:var(--orange)">Paused</span><span class="elapsed tnum c2">00:04:12</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px;margin-left:8px" class="tnum"><span>6.2 GB · take continues on resume</span><span class="c2" style="font-size:11px">0 dropped · paused time not counted</span></div>
+            <span style="margin-left:auto" class="btn"><i data-i="play" class="sm"></i>Resume</span><span class="btn"><i data-i="stop" class="sm"></i>Stop</span>
+          </div>
+          <div class="crow" style="font-size:11.5px">
+            <i data-i="folder" class="sm c2"></i><span>Archive › B-cam</span><span class="c2 tnum">· 5 h 40 m left</span><span class="badge" style="height:16px">Own folder</span>
+            <span style="margin-left:auto" class="badge">ProRes 422 · clean 2160p 10-bit</span>
+          </div>
+          <div class="csep"></div>
+          <div class="crow">
+            <i data-i="camlink" class="c3"></i><span style="display:flex;flex-direction:column;line-height:1.2"><span class="c2">Ultracam · Feed 2</span><span class="c3" style="font-size:11px">Not published</span></span><span class="newtag">NEW</span>
+            <div class="fx bypass" style="margin-left:auto"><span>LUT</span><span class="on">1080p</span><span class="on">4:2:0</span><span>29.97</span></div>
+            <div class="switch sm"></div>
+          </div>
+          <div class="crow" style="gap:8px">
+            <span class="k2" style="width:46px">Audio</span>
+            <div class="meter" style="flex:1">L<div class="bar"><i style="width:40%"></i><b style="left:52%"></b></div></div>
+            <div class="meter" style="flex:1">R<div class="bar"><i style="width:38%"></i><b style="left:50%"></b></div></div>
+            <span class="c2 tnum" style="font-size:11px">−21.4 dB</span>
+          </div>
+        </div>
+        <div class="scopecard">
+          <div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Source</span><span style="margin-left:auto" class="c3">Expand</span></div>
+          <canvas data-scope="luma" data-src="wide" data-tone="slog"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="sbar tnum">
+      <div class="seg2 c2"><i data-i="camlink" class="sm"></i>Virtual cameras not in use</div>
+      <div class="div"></div>
+      <div class="seg2 hover"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">Feed 1 12:31</span><span class="co">· ⏸ Feed 2 4:12</span></div>
+      <div class="div"></div>
+      <div class="seg2">8TB 1 h 35 m left · Archive 5 h 40 m<span class="newtag">NEW</span></div>
+      <div class="div"></div>
+      <div class="seg2"><i data-i="clock" class="sm"></i>Timecode: PC time</div>
+      <div class="sp"></div>
+      <div class="seg2">CPU 44.0% · GPU (video) 27.6% · Memory 1.62 GB</div>
+    </div>
+  </div>
+
+  <!-- ================= Hybrid dropdown: two previews ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="mini2">
+        <div class="picture" data-scene="mcu"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px"><span class="dot red" style="width:5px;height:5px"></span>12:31</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 1</span></div></div>
+        <div class="picture" data-scene="wide" data-tone="slog"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass co" style="height:18px;font-size:10px;padding:0 6px">⏸ 4:12</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 2</span></div></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2 tnum">
+        <span><span class="cr">●</span> Recording 1 of 2 · 24.6 GB</span><span>8TB 1 h 35 m left</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mh">Cameras</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Feed 1<small class="tnum">Recording 12:31</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi hl"><span class="ck"></span><span class="ico"><span class="dot orange"></span></span>Feed 2<small class="tnum">Paused 4:12</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop All Recordings<span class="key">⌥⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause All</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop All Feeds</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="program" class="sm"></i></span>Output Mode<span class="sub" style="font-size:12px">Separate Cameras<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 44% · GPU 28% · 1.62 GB</div>
+  </div>
+
+  <!-- Feed 2 submenu -->
+  <div class="menu glass" style="left: 1110px; top: 244px; width: 296px; background: rgba(40,40,44,0.84);">
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="play" class="sm"></i></span>Resume Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Folder<span class="sub" style="font-size:12px">Archive › B-cam<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sliders" class="sm"></i></span>Effects<span class="sub">2 of 4<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cube" class="sm"></i></span>Load LUT…</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="camlink" class="sm"></i></span>Publish as Camera<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feed 2</div>
+  </div>
+
+  <div class="callout" style="left: 30px; top: 132px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 52px; top: 590px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 52px; top: 676px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 1316px; top: 132px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1206px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Two cameras open in Side by Side, with the sidebar and inspector collapsed. Each half is a <b>channel</b>: the picture, then that feed's own controls underneath. One feed fills the window; 3–4 feeds switch to Four Up with compact strips.</span></div>
+    <div><span class="n">2</span><span>Each feed records on its own: record/pause/stop, elapsed, size, bitrate, drops, its own folder and time left. Pausing Feed 2 doesn't touch Feed 1.</span></div>
+    <div><span class="n">3</span><span>Each feed's output on its own: its virtual camera (name, in use or not), Processing, effect chips, audio. Recording stays the clean source whatever the effects are.</span></div>
+    <div><span class="n">4</span><span>Monitoring per channel: zebra and guides on Feed 1's output, focus peaking on Feed 2's S-Log3 source, a waveform under each.</span></div>
+    <div><span class="n">5</span><span>Toolbar handles the common case, Record/Pause/Stop All. The status bar sums both takes and shows the time left on each destination drive.</span></div>
+    <div><span class="n">6</span><span>The dropdown shows both feeds at once, with a submenu per camera (resume, folder, effects, <span class="newtag" style="margin:0">NEW</span> publish).</span></div>
+  </div>
+</div>
+</body></html>

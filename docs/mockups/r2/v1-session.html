@@ -1,0 +1,255 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 2 · V1 · Session sidebar</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css"><script src="../kit.js"></script>
+<style>
+  .desktop { height: 1170px; }
+  .content { position: absolute; left: 252px; right: 316px; top: 64px; bottom: 46px; display: flex; flex-direction: column; gap: 10px; }
+  .main-pic { height: 423px; border-radius: 14px; }
+  .strip { display: flex; align-items: center; gap: 16px; padding: 0 4px; font-size: 11px; white-space: nowrap; }
+  .tc { font: 600 20px/1 var(--mono); letter-spacing: 0.5px; }
+  .kv { display: flex; flex-direction: column; gap: 2px; }
+  .scopecard { flex: 1; border-radius: 12px; background: var(--fill); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .scopecard canvas { flex: 1; width: 100%; border-radius: 6px; min-height: 0; }
+  .sidebar { bottom: 38px; }
+  .inspector { bottom: 38px; }
+  .take { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; font-size: 12px; }
+  .take .tm { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+  .take small { font-size: 10.5px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 12px; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">V1 · Session sidebar: meeting with one camera + automatic backup recording</div>
+
+  <div class="window win2">
+    <!-- Session sidebar -->
+    <div class="sidebar glass" style="width: 236px; background: rgba(48,48,52,0.6);">
+      <div style="position:absolute; top:20px; left:18px;" class="traffic"><span></span><span></span><span></span></div>
+      <div style="position:absolute; top:12px; right:10px;" class="tb-btn"><i data-i="sidebar"></i></div>
+
+      <div class="side-h" style="display:flex;justify-content:space-between;align-items:center">Camera<i data-i="plus" class="sm c2"></i></div>
+      <div class="side-row sel">
+        <div class="thumb picture" data-scene="mcu"></div>
+        <div class="meta"><b>Feed 1</b><small>Live · 2160p 59.94</small></div>
+      </div>
+      <div class="side-row c3" style="font-size:11.5px; border:1px dashed rgba(255,255,255,0.12); margin:4px 0 0; justify-content:center">Connect a second camera to switch or record both</div>
+
+      <div class="side-h">Output</div>
+      <div class="mini-row"><i data-i="camlink" class="cg"></i><div class="meta" style="display:flex;flex-direction:column;flex:1;line-height:1.25"><b style="font-weight:600">Ultracam · Feed 1</b><small class="cg" style="font-size:11px">In use by Zoom</small></div></div>
+
+      <div class="side-h">Recording</div>
+      <div class="mini-row"><span class="dot red"></span><div style="display:flex;flex-direction:column;flex:1;line-height:1.25"><b style="font-weight:600">Backup · Feed 1</b><small class="c2 tnum" style="font-size:11px">12:31 · 18.4 GB · ProRes 422</small></div></div>
+      <div style="padding: 4px 8px 2px; display:flex; flex-direction:column; gap:5px">
+        <div style="display:flex;align-items:center;gap:6px;font-size:11.5px"><i data-i="folder" class="sm c2"></i>8TB › Takes<span class="newtag">NEW</span><span class="c2 tnum" style="margin-left:auto">2.1 TB free</span></div>
+        <div class="gauge"><i style="width:74%"></i></div>
+        <div class="c2 tnum" style="font-size:10.5px">About 3 h 10 m left at ProRes 422</div>
+      </div>
+
+      <div class="side-h" style="display:flex;justify-content:space-between">Recent Takes<span class="newtag">NEW</span></div>
+      <div class="take"><i data-i="video" class="sm c2"></i><div class="tm"><span>Today 08:02<span class="c2"> · 38:12</span></span><small>Feed 1_2026-10-20_08-02-11_001.mov</small></div><i data-i="search" class="sm c3"></i></div>
+      <div class="take"><i data-i="video" class="sm c2"></i><div class="tm"><span>Yesterday 16:30<span class="c2"> · 1:02:47</span></span><small>Feed 1_2026-10-19_16-30-05_002.mov</small></div><i data-i="search" class="sm c3"></i></div>
+      <div class="take" style="background:rgba(255,159,10,0.10)"><i data-i="info" class="sm co"></i><div class="tm"><span class="co">Interrupted take</span><small>Oct 19 11:15</small></div><span class="btn" style="height:22px;font-size:11.5px">Recover</span></div>
+
+      <div class="side-foot" style="padding:6px 0 0">
+        <div class="side-h" style="padding-top:0">Automation</div>
+        <div class="mini-row" style="padding:3px 8px"><span style="flex:1">Start with camera apps</span><div class="switch sm on"></div></div>
+        <div class="mini-row" style="padding:3px 8px"><span style="flex:1">Record with camera apps<span class="newtag">NEW</span></span><div class="switch sm on"></div></div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar" style="left: 252px; right: 8px; padding-left: 4px;">
+      <div class="title"><b>Feed 1</b><small>Live in Zoom · backup recording</small></div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="stop"></i>Stop</div></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="layers"></i>Effects</div><div class="tb-btn dim"><i data-i="bypass"></i>Bypass</div></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="single"></i></div><div class="tb-btn dim"><i data-i="split"></i></div><div class="tb-btn dim"><i data-i="grid"></i></div></div>
+      <div class="tb-prominent red"><i data-i="stop" class="sm"></i><span class="tnum">12:31</span></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="inspector"></i></div></div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="picture main-pic" data-scene="mcu">
+        <div class="overlay" style="left:12px; top:12px;">
+          <div class="pill glass">Feed 1<i data-i="chevud" class="sm"></i></div>
+          <span class="badge red" style="height:22px; background:rgba(255,69,58,0.85); color:#fff">ON AIR · Zoom</span>
+        </div>
+        <div class="overlay" style="right:12px; top:12px;">
+          <div class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 12:31</span></div>
+          <div class="tb-group glass" style="height:32px">
+            <div class="tb-btn" style="height:26px"><i data-i="guides" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="zebra" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="falsecolor" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="focus" class="sm"></i></div>
+            <div class="tb-btn on" style="height:26px"><i data-i="scope" class="sm"></i></div>
+          </div>
+        </div>
+        <div class="overlay" style="left:12px; bottom:12px;">
+          <div class="pill sm glass">Output · as Zoom sees it<i data-i="chevud" class="sm"></i></div>
+        </div>
+        <div class="overlay" style="right:12px; bottom:12px;">
+          <div class="tb-group glass" style="height:32px">
+            <div class="tb-btn" style="height:26px"><i data-i="freeze" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="clean" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px; font-size:11.5px">Fit<i data-i="chevd" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="detach" class="sm"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="strip">
+        <div class="kv"><span class="k2">Timecode</span><span class="tc">14:22:31:12</span></div>
+        <div class="kv" style="width:170px; gap:4px"><span class="k2">Audio · 48 kHz</span>
+          <div class="meter">L<div class="bar"><i style="width:64%"></i><b style="left:78%"></b></div><span class="tnum">−9.8</span></div>
+          <div class="meter">R<div class="bar"><i style="width:60%"></i><b style="left:74%"></b></div><span class="tnum">−11.2</span></div>
+        </div>
+        <div class="kv"><span class="k2">Source</span><span class="mono">2160p 59.94 · 10-bit 4:2:2</span></div>
+        <div class="kv"><span class="k2">To Zoom</span><span class="mono">1080p 29.97 · 4:2:0</span></div>
+        <div class="kv"><span class="k2">Delivered</span><span class="mono">29.97 fps · <span class="cg">0 drops</span></span></div>
+      </div>
+
+      <div class="scopecard">
+        <div style="display:flex; align-items:center; gap:8px; font-size:12px">
+          <b>Luma Waveform</b><span class="c2">Output · 15 Hz</span>
+          <div style="margin-left:auto" class="seg"><div>Parade</div><div class="on">Luma</div></div>
+          <div class="btn icon"><i data-i="xmark" class="sm"></i></div>
+        </div>
+        <canvas data-scope="luma" data-src="mcu"></canvas>
+      </div>
+    </div>
+
+    <!-- Inspector -->
+    <div class="inspector glass" style="width: 300px; background: rgba(40,40,44,0.7);">
+      <div style="padding: 0 12px">
+        <div class="tabs">
+          <div class="on"><i data-i="video" class="sm"></i>Feed</div>
+          <div><i data-i="scope" class="sm"></i>Monitor</div>
+          <div><i data-i="recordring" class="sm"></i>Record</div>
+          <div><i data-i="info" class="sm"></i>Info</div>
+        </div>
+      </div>
+      <div class="scroll">
+        <div class="form-h">Output <span style="display:flex;gap:6px;align-items:center;font-weight:500">Processing<div class="switch sm on"></div></span></div>
+        <div class="form">
+          <div class="row"><i data-i="camlink" class="cg"></i><span class="lbl">Ultracam · Feed 1<small class="cg">In use by Zoom</small></span></div>
+          <div class="row"><div class="check on"></div><span class="lbl">LUT</span><span class="val" style="font-size:11.5px">S-Log3 → 709</span></div>
+          <div class="row"><div class="check on"></div><span class="lbl">Downscale</span><span class="val" style="font-size:11.5px">1080p Lanczos-3</span></div>
+          <div class="row"><div class="check on"></div><span class="lbl">Color</span><span class="val" style="font-size:11.5px">4:2:0 8-bit</span></div>
+          <div class="row"><div class="check"></div><span class="lbl">Frame rate</span><span class="val" style="font-size:11.5px">Limit to 29.97</span></div>
+        </div>
+        <div class="note cg" style="display:flex;gap:5px;align-items:center"><i data-i="check" class="sm"></i>Effects active · 1920×1080 29.97p to Zoom</div>
+
+        <div class="form-h">LUT</div>
+        <div class="form">
+          <div class="row"><i data-i="cube" class="c2"></i><span class="lbl" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">FX3_SLog3_to_709.cube<small>33-point · Rec.709 out</small></span><span class="btn">Change…</span></div>
+          <div class="row"><span class="lbl">LUT input</span><span class="popup plain">S-Gamut3.Cine / S-Log3<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        </div>
+
+        <div class="form-h">Source</div>
+        <div class="form">
+          <div class="row"><span class="lbl">Input</span><span class="popup plain">Mini Recorder 12G<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+          <div class="row"><span class="lbl">Signal</span><span class="val mono">2160p 59.94 · 4:2:2</span></div>
+          <div class="row"><span class="lbl">Timecode</span><span class="val mono">14:22:31:12</span></div>
+        </div>
+
+        <div class="form-h">Recording</div>
+        <div class="form">
+          <div class="row"><span class="lbl">Records clean source<small>2160p 10-bit 4:2:2 · audio · no effects baked in</small></span></div>
+          <div class="row"><span class="lbl">Folder</span><span class="val" style="font-size:11.5px">Default · 8TB › Takes</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="sbar tnum">
+      <div class="seg2 hover cg"><i data-i="camlink" class="sm"></i>Ultracam · Feed 1 → Zoom</div>
+      <div class="div"></div>
+      <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 12:31</span> · 8TB · 3 h 10 m left<span class="newtag">NEW</span></div>
+      <div class="div"></div>
+      <div class="seg2"><i data-i="wave" class="sm"></i>Audio OK</div>
+      <div class="sp"></div>
+      <div class="seg2">CPU 31.4% · GPU (video) 18.2% · Memory 1.08 GB</div>
+    </div>
+  </div>
+
+  <!-- ================= Hybrid dropdown ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="picture" data-scene="mcu" style="height:184px; border-radius:11px;">
+        <div class="overlay" style="left:7px; top:7px;"><div class="pill sm glass">Ultracam · Feed 1<i data-i="chevud" class="sm"></i></div></div>
+        <div class="overlay" style="right:7px; top:7px;"><span class="badge red" style="background:rgba(255,69,58,0.85);color:#fff">ON AIR</span></div>
+        <div class="overlay" style="left:7px; right:7px; bottom:7px; justify-content:space-between">
+          <span class="pill sm glass mono" style="font-weight:600">14:22:31:12</span>
+          <span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 12:31</span></span>
+          <div class="pill sm glass" style="width:84px; gap:3px; flex-direction:column; justify-content:center; align-items:stretch; padding:0 7px">
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:64%"></i></div></div>
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:60%"></i></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2">
+        <span><span class="cg">●</span> Live in Zoom · effects active</span><span class="mono" style="font-size:10.5px">1080p29.97</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feed<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="msep"></div>
+    <div class="mh">Feed 1</div>
+    <div class="mi hl"><span class="ck"></span><span class="ico"><i data-i="sliders" class="sm"></i></span>Effects<span class="sub">3 of 4<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cube" class="sm"></i></span>LUT<span class="sub" style="font-size:12px">FX3_SLog3_to_709<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="video" class="sm"></i></span>Capture Input<span class="sub" style="font-size:12px">Mini Recorder 12G<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mh">Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop Recording<small class="tnum">12:31</small><span class="key">⌥⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Start with Camera Apps</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"></span>Record with Camera Apps<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 31% · GPU 18% · 1.08 GB · 8TB 3 h 10 m left</div>
+  </div>
+
+  <!-- Effects submenu -->
+  <div class="menu glass" style="left: 1116px; top: 374px; width: 290px; background: rgba(40,40,44,0.82);">
+    <div class="mi"><span class="ck">✓</span>Processing<small>off = complete bypass</small><span class="key">⇧⌘B</span></div>
+    <div class="msep"></div>
+    <div class="mh" style="padding-left:29px">Applied in order</div>
+    <div class="mi"><span class="ck">✓</span>1 · LUT<small>S-Log3 → 709</small></div>
+    <div class="mi"><span class="ck">✓</span>2 · Downscale to 1080p</div>
+    <div class="mi"><span class="ck">✓</span>3 · Color 4:2:0 8-bit</div>
+    <div class="mi"><span class="ck"></span>4 · Limit to 29.97 fps</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span>Show in Inspector…</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 268px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1034px; top: 182px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 600px; top: 914px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 214px; top: 840px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>With one or two cameras, the sidebar becomes the <b>session</b> panel: cameras (up to 4 compact rows), the published output, the recording destination with space left, recent takes, and interrupted takes with Recover.</span></div>
+    <div><span class="n">2</span><span>The picture says who is watching (ON AIR · Zoom) and that the backup is rolling (REC). "Output · as Zoom sees it" vs Source is one pop-up.</span></div>
+    <div><span class="n">3</span><span>The inspector puts the meeting order first: Output (what Zoom gets) → LUT → Source → Recording. It states plainly that recordings are the clean source.</span></div>
+    <div><span class="n">4</span><span>C's status bar: virtual camera → consumer, recording with time left, audio health, and resources. Each segment opens a popover.</span></div>
+    <div><span class="n">5</span><span>Menu bar dropdown: a published preview with tally/REC/TC/meters, plus compact native rows (submenus for effects, LUT and input; ⌥⌘R record).</span></div>
+    <div><span class="n">6</span><span><span class="newtag" style="margin:0 4px 0 0">NEW</span>"Record with camera apps": a backup take starts when Zoom opens the camera and stops when it closes. Set it once and every meeting is backed up.</span></div>
+  </div>
+</div>
+</body></html>

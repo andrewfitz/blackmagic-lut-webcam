@@ -1,0 +1,726 @@
+[
+ {
+  "id": "L3-01",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "monitor-tools",
+   "app-menus",
+   "spec"
+  ],
+  "location": "picture click",
+  "issue": "A single click on a feed picture is defined as cut-to-Program, focus-tile and (implicitly) select-feed at the same time.",
+  "evidence": "main-expanded legend 2 'Click a picture or press ⌃1/⌃2 to cut'; monitor-tools 'Click a tile to focus it (blue ring). Shortcuts act on the focused tile'; current code MonitorWorkspaceShell surface() TapGesture sets focusedTile; app-menus 'Feed acts on Feed 1' (selected).",
+  "scenario": "Mid-meeting the user clicks Feed 2 to open its zebra settings or freeze it; Zoom cuts to Feed 2.",
+  "severity": "P0",
+  "confidence": "high",
+  "recommendation": "Picture click = focus/select only. Cut only from explicit cut controls (toolbar cut buttons, strip 'Cut to Feed N', ⌃n, dropdown thumbnails).",
+  "alternatives": [
+   "double-click picture to cut",
+   "⌥-click to cut",
+   "setting 'Click picture to cut' off by default"
+  ],
+  "affects": [
+   "r3.js tile()",
+   "main-expanded",
+   "program-view",
+   "menubar (thumbnails are fine: dedicated cut surface)",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-02",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "four-up",
+   "app-menus",
+   "spec",
+   "monitor-tools"
+  ],
+  "location": "selected feed",
+  "issue": "The 'selected feed' (target of ⇧⌘B, Feed menu, ⌘R, ⌘O) has no visible indicator and is conflated with tile focus: spec calls ⌘1–⌘4 'Focus feed (keyboard target)' while app-menus calls the same keys 'Select Feed'.",
+  "evidence": "Only cue is an unlabeled highlighted first row in sidebar() Cameras (r3.js i===0 background); hidden entirely when the sidebar is hidden (four-up). spec.html §6 '⌘1–⌘4 Focus feed (keyboard target)' vs app-menus.html 'Select Feed ⌘1'. AppModel.selectedFeedID drives pipelineEnabled/configuration/LUT/start().",
+  "scenario": "User presses ⇧⌘B intending to bypass Feed 2 (the picture they last looked at) and bypasses Feed 1, which is on air.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Make focus and selection one concept ('focused feed'), shown with an accent outline on picture+strip header distinct from tally, and name the target in menu items ('Bypass Feed 1  ⇧⌘B').",
+  "alternatives": [
+   "remove the selected concept: all per-feed commands live on strips; menu items become submenus per feed"
+  ],
+  "affects": [
+   "r3.js tile()/strip()",
+   "app-menus",
+   "menubar",
+   "spec §1/§6",
+   "AppModel (selectFeed on focus)"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L3-03",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "standalone",
+   "program-view",
+   "four-up"
+  ],
+  "location": "channel strip data model",
+  "issue": "Every strip shows live per-feed state (timecode, audio meters, format, processing switch, effect chips, LUT) for all feeds at once, but AppModel only publishes and edits the selected feed.",
+  "evidence": "AppModel installCaptureUpdateHandler: 'guard self.selectedFeedID == feedID else { return }' drops updates for other feeds; configuration, pipelineEnabled, lut*, previewEnabled, automaticFeedEnabled are single properties bound to selectedFeedID; non-selected Program sources run headless with Apply LUT off until restoreHeadlessLUT.",
+  "scenario": "Feed 2's strip shows frozen or empty meters/TC, and toggling its LUT chip actually edits Feed 1 unless selection silently switches first.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Treat the strip as the source of truth and add a per-feed observable model (e.g. FeedState keyed by FeedID: update, configuration, pipelineEnabled, LUT, preview, automatic). Note it in spec §4 as a required model change.",
+  "alternatives": [
+   "interaction auto-selects the feed before editing (rebinds main native preview; flicker risk)"
+  ],
+  "affects": [
+   "AppModel",
+   "CaptureController wiring",
+   "spec §4/§9",
+   "AUDIT L8"
+  ],
+  "effort": "L"
+ },
+ {
+  "id": "L3-04",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "standalone",
+   "four-up"
+  ],
+  "location": "feed start/stop",
+  "issue": "No visible Start/Stop Feed control exists in the main window on 5 of 6 window pages; the r3 toolbar() and expanded strip() header dropped it. It is reachable only via ⌘↩, the Feed menu or the dropdown.",
+  "evidence": "grep: 'Stop Feed' absent from main-expanded, main-collapsed, program-view, standalone, four-up (present only in single.html and states 'Feed stopped' strip). r3.js toolbar() has cuts/layout/collapse/record only. Current app's primary control is StartStopButton.",
+  "scenario": "User wants to stop capture after a meeting (or restart a misbehaving feed) and can't find the control in the window.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Add a per-feed capture control to the strip header (the 'Live · 2160p' badge becomes a Live/Stopped menu button) and a toolbar Start/Stop (Program mode: all sources, labeled 'Stop All Feeds').",
+  "alternatives": [
+   "only in ⋯ popover footer (too hidden)"
+  ],
+  "affects": [
+   "r3.js toolbar()/strip()",
+   "all window pages",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-05",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "single",
+   "standalone"
+  ],
+  "location": "recording state",
+  "issue": "Recording state for the same takes is printed in 7 places at once with no hierarchy: sidebar camera rows, sidebar Recording section, picture REC pill, strip 'RECORDING 00:12:31', toolbar '12:31 · 2', status bar 'REC 2 feeds 12:31', menu bar icon dot.",
+  "evidence": "main-expanded render; r3.js sidebar() camRows 'REC ${t}', sidebar Recording row, tile() rec pill, strip(), toolbar recLabel, statusbar().",
+  "scenario": "Visual noise competes with the one thing that must stand out (on-air), and a single failing take is hard to spot among identical timers.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Primary = strip (per feed, with controls). On-picture echo = small REC pill. Aggregate control = toolbar Record All. Status bar summary only when the sidebar is hidden. Remove per-camera REC text from sidebar rows; menu bar dot stays.",
+  "alternatives": [
+   "sidebar Recording section as the only aggregate and drop status bar REC"
+  ],
+  "affects": [
+   "r3.js sidebar()/statusbar()",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-06",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single",
+   "states"
+  ],
+  "location": "expanded strip recording controls",
+  "issue": "The expanded strip has two stop-recording controls side by side (the record button in its stop state and a 'Stop' button) next to Pause, and 'Stop' means stop recording here but stop capture in 'Stop Feed(s)' elsewhere.",
+  "evidence": "r3.js strip(): recBtn 'recbtn on' + '<span class=\"btn\">Pause</span><span class=\"btn\">Stop</span>'; menubar 'Stop Feed ⌘↩' vs strip 'Stop'.",
+  "scenario": "User aims for Pause and hits Stop (or the record button), ending the take.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "One record control per feed (record ↔ stop, labeled 'Stop Recording' in its tooltip/accessibility), Pause as a separate secondary button; reserve 'Stop' wording for recording and rename capture to 'Turn Off Feed'/'Stop Capture'.",
+  "alternatives": [
+   "keep Stop button, make record button record-only (disabled while recording)"
+  ],
+  "affects": [
+   "r3.js strip()",
+   "states",
+   "spec §5 strip matrix"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-07",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view"
+  ],
+  "location": "Program controls",
+  "issue": "Auto switching has two or three live toggles on one screen (toolbar 'Auto', sidebar 'Auto switching' switch, Program view cut bar 'Auto') and strategy has two pop-ups (sidebar + cut bar).",
+  "evidence": "r3.js toolbar() cuts group 'Auto'; sidebar() program output 'Auto switching' switch + strategy popup; program-view.html lines 68–69 Auto + strategy in cut bar.",
+  "scenario": "Two controls for one setting suggests they differ; the user isn't sure which one is authoritative.",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "Toolbar owns cut + Auto. Sidebar Output shows Program status read-only (on-air feed, shot timer, strategy as text that opens the Program menu). Program view cut bar replaces the toolbar group instead of adding to it.",
+  "alternatives": [
+   "sidebar owns Auto/strategy, toolbar only cuts"
+  ],
+  "affects": [
+   "r3.js toolbar()/sidebar()",
+   "program-view"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-08",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "single",
+   "program-view",
+   "diagnostics",
+   "menubar",
+   "states"
+  ],
+  "location": "consumer state",
+  "issue": "The design names the consuming app ('In use by Zoom', 'ON AIR · Zoom', 'Ultracam · Program → Zoom') but the app only knows a boolean demand per virtual camera route; no client identity exists.",
+  "evidence": "CameraDemandMonitor: CameraDemandChange { route, requested: Bool?, error } — no app name; current UI says 'Camera connected'. r3.js statusbar '→ ${consumer}', tile consumer badge.",
+  "scenario": "With Zoom and Teams both open, or Photo Booth previewing, the UI states something it can't know.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Use 'In use' / 'ON AIR · In use' unless app identity becomes available; list consumer naming as an explicit NEW proposal needing a feasibility check.",
+  "alternatives": [
+   "show 'In use by a camera app' with count if multiple routes"
+  ],
+  "affects": [
+   "r3.js tile()/statusbar()/sidebar()",
+   "all pages",
+   "AUDIT L8"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-09",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "single",
+   "settings",
+   "menubar"
+  ],
+  "location": "automation scope",
+  "issue": "Automation is presented as two global session switches in the sidebar, but automatic start is stored per feed, and the NEW 'Record with camera apps' has no defined scope in Separate mode.",
+  "evidence": "FeedDescriptor.automaticFeed; AppModel.startFeed checks descriptor.automaticFeed for other sources; settings.html Camera 'Default for new cameras · each camera can override'; r3.js sidebar() 'Start with camera apps' single switch.",
+  "scenario": "User turns 'Start with camera apps' off in the sidebar expecting all cameras to stop auto-starting; Feed 2 still starts when its camera opens.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Per-feed control in the ⋯ popover, a default in Settings, and a sidebar summary ('Auto start: 2 of 2'). Define Record-with-camera-apps: Separate = the feed whose camera is in use; Program = all enabled sources.",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "main-collapsed popover",
+   "settings Camera/Recording",
+   "spec"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L3-10",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "standalone",
+   "single"
+  ],
+  "location": "sidebar Cameras section",
+  "issue": "With 1–2 cameras the sidebar Cameras list repeats what the strips already show (name, format, REC, tally dot), the redundancy the user rejected in round 2.",
+  "evidence": "r3.js sidebar() camRows render every feed; strips directly beside show the same fields.",
+  "scenario": "Space the user explicitly asked not to waste.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Show only cameras not visible in the current layout (e.g. Single layout with 2 feeds), plus 'Add Camera'; otherwise a one-line summary ('2 cameras · both live').",
+  "alternatives": [
+   "keep list only in Four Up/Program view where pictures are small"
+  ],
+  "affects": [
+   "r3.js sidebar()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-11",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "single",
+   "standalone"
+  ],
+  "location": "status bar vs sidebar",
+  "issue": "When the sidebar is visible, the status bar repeats its output→consumer, recording and disk information; their jobs overlap.",
+  "evidence": "statusbar() segments: output→consumer, Program on air, REC + time left; sidebar() Output, Recording, disk gauge.",
+  "scenario": "Two summaries of the same thing push out warnings and resources.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Status bar = warnings + resources + timecode mode when the sidebar is visible; full session summary only when the sidebar is hidden.",
+  "alternatives": [
+   "keep status bar constant and slim the sidebar instead"
+  ],
+  "affects": [
+   "r3.js statusbar()",
+   "spec §1"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-12",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "program-view",
+   "main-collapsed"
+  ],
+  "location": "processing / bypass state",
+  "issue": "The master Processing switch in the strip is an unlabeled toggle after the effect chips, and the applied-state feedback ('Applying change…', 'Effects active', 'Complete bypass active') from the current app appears on no r3 page.",
+  "evidence": "r3.js strip(): `${fxChips(f)}<div class=\"switch sm on\"></div>` with no label; grep 'Applying change' → no r3 matches; inventory §2.1 AppliedPipelineState.",
+  "scenario": "User flips a green switch not knowing it bypasses everything, then can't tell whether the change has reached Zoom yet.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Label it 'Processing' in the expanded strip with applied-state text (Effects active / Applying… / Complete bypass); collapsed strip shows a 'Bypass' badge when off.",
+  "alternatives": [],
+  "affects": [
+   "r3.js strip()",
+   "states",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-13",
+  "lens": "information-architecture",
+  "pages": [
+   "menubar",
+   "states",
+   "settings"
+  ],
+  "location": "menu bar icon",
+  "issue": "The menu bar icon encodes one feed's processing/bypass state (video.fill vs arrow.right.square) but the session has up to 4 feeds with independent processing; mixed states are undefined.",
+  "evidence": "menubar.html icon strip; current MenuBarStatusIcon uses model.update.pipelineEnabledApplied (selected feed only).",
+  "scenario": "Feed 1 processing, Feed 2 bypassed: the icon shows whichever feed is selected.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Icon priority: attention > recording > live (any published feed) > waiting > stopped; drop the bypass glyph from the icon and show bypass in the dropdown.",
+  "alternatives": [],
+  "affects": [
+   "menubar",
+   "spec §2",
+   "MenuBarStatusIcon"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-14",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "four-up",
+   "states"
+  ],
+  "location": "sidebar status dots",
+  "issue": "The same sidebar dot changes meaning by mode: green = next in Program mode but live in Separate mode; orange = paused, skipped-by-Auto or warning.",
+  "evidence": "r3.js sidebar(): program mode i===0 red / else green; separate mode all green; standalone/states use orange for paused and skipped.",
+  "scenario": "Switching modes silently changes what the colors mean.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Sidebar dot = recording/health only; tally role as text ('On air', 'Next') where needed.",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "spec §2"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-15",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "single",
+   "diagnostics",
+   "states"
+  ],
+  "location": "drops",
+  "issue": "'Drops' refers to two different counters without saying which: recording dropped video frames (strip '0 dropped') and capture/pipeline drops ('Delivered 29.97 fps · 0 drops', diagnostics stages).",
+  "evidence": "r3.js strip uses f.rec.drops (RecordingStatistics.droppedVideoFrames); single.html signal path 'Delivered … 0 drops' (CaptureUpdate.videoDrops); diagnostics 'Drops by stage'.",
+  "scenario": "A collapsed strip shows '3 dropped' and the user can't tell whether the recording or the Zoom output lost frames.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Name them: 'Recording · 3 frames dropped' vs 'Output · 3 drops'; collapsed warning states which.",
+  "alternatives": [],
+  "affects": [
+   "r3.js strip()",
+   "single",
+   "diagnostics"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-16",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single",
+   "monitor-tools"
+  ],
+  "location": "'Output' term",
+  "issue": "'Output' names three concepts: the picture-signal choice (Output vs Source pop-up on each picture), the strip's virtual-camera row, and the sidebar/status bar destination.",
+  "evidence": "tile() bottom-left `${f.signal}` = 'Output'; strip output row 'Ultracam · Feed 1'; sidebar 'Output' section.",
+  "scenario": "'Output' on the picture is read as 'what's going out', which is true only when processing is on and the feed is published.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Picture pop-up: 'Processed / Source' (or 'As sent / Camera'). Keep 'Output' for the destination only.",
+  "alternatives": [],
+  "affects": [
+   "r3.js tile()",
+   "monitor-tools",
+   "spec"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-17",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "settings",
+   "menubar"
+  ],
+  "location": "placement of rare vs session decisions",
+  "issue": "Set-once automation switches occupy permanent sidebar space, while Output mode, a per-session decision that locks once live, appears only in Settings, the Program menu and the dropdown.",
+  "evidence": "r3.js sidebar() Automation section; settings.html Camera 'Output mode · Change while stopped'; sidebar Output section has no mode control.",
+  "scenario": "Before a two-camera meeting the user must go to Settings to switch to Program mode.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Sidebar Output header gets a Separate/Program segmented control (enabled while stopped, locked note while live). Automation moves to Settings + ⋯ with a one-line sidebar summary.",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "settings"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-18",
+  "lens": "information-architecture",
+  "pages": [
+   "settings",
+   "menubar",
+   "monitor-tools"
+  ],
+  "location": "preview visibility",
+  "issue": "Video preview appears as a Settings toggle, a dropdown row (⇧⌘P) and a tile 'Hide Preview' context item; it is per-feed runtime state in code, so its scope and home are unclear.",
+  "evidence": "settings.html General 'Video preview'; FeedDescriptor.previewEnabled; AppModel.previewEnabled (selected feed); monitor-tools context menu 'Hide Preview'.",
+  "scenario": "User hides preview in Settings and can't find why one picture is black.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Runtime only: View menu + picture context menu, scoped and named per feed ('Hide Feed 2 Preview'); remove from Settings.",
+  "alternatives": [],
+  "affects": [
+   "settings",
+   "menubar",
+   "app-menus"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-19",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "main-collapsed"
+  ],
+  "location": "topology edits while live",
+  "issue": "Add Camera (+) and Rename… look available while feeds run or record, but the model blocks add/remove/rename until all sources stop and no take is active.",
+  "evidence": "AppModel.canEditFeedTopology false when any source active or recording; r3.js sidebar '+' always enabled; main-collapsed popover Rename… enabled (only Remove shows 'Stop Feed 2 to remove it').",
+  "scenario": "User tries to rename a camera mid-recording; nothing happens.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Show them disabled with the reason ('Stop all feeds to add a camera'), or make rename live-safe in the model.",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "main-collapsed",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-20",
+  "lens": "information-architecture",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single"
+  ],
+  "location": "time left",
+  "issue": "A drive-level 'time left' (which depends on how many feeds write to that drive) is printed in each strip as if it were that feed's own budget.",
+  "evidence": "Feed 1 strip '8TB › Takes › Feed 1 · 1 h 35 m left' equals sidebar '8TB 1 h 35 m left' for 2 takes.",
+  "scenario": "User stops Feed 2 and expects Feed 1's figure to stay the same; it doubles.",
+  "severity": "P3",
+  "confidence": "medium",
+  "recommendation": "Strip: '8TB · 1 h 35 m left with 2 takes'; drive figure lives in sidebar/status bar.",
+  "alternatives": [],
+  "affects": [
+   "r3.js strip()/sidebar()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L3-statemap",
+  "lens": "information-architecture",
+  "states": [
+   {
+    "state": "running (capture on)",
+    "locations": [
+     "strip badge 'Live · 2160p59.94'",
+     "sidebar camera row format",
+     "menu bar icon",
+     "dropdown Stop Feed row"
+    ],
+    "primary": "strip header capture control (missing today, see L3-04)",
+    "echoes": [
+     "menu bar icon"
+    ],
+    "note": "No window-level control on most pages."
+   },
+   {
+    "state": "live (frames flowing / effects applied)",
+    "locations": [
+     "strip badge",
+     "picture status"
+    ],
+    "primary": "strip header badge with applied state",
+    "echoes": [
+     "picture overlay only on problems"
+    ],
+    "note": "Applied-state transitions missing (L3-12)."
+   },
+   {
+    "state": "recording",
+    "locations": [
+     "sidebar camera rows",
+     "sidebar Recording",
+     "picture REC pill",
+     "strip",
+     "toolbar Record All",
+     "status bar",
+     "menu bar dot"
+    ],
+    "primary": "strip",
+    "echoes": [
+     "picture REC pill",
+     "toolbar aggregate",
+     "menu bar dot",
+     "status bar only when sidebar hidden"
+    ],
+    "note": "Remove sidebar per-camera REC text (L3-05)."
+   },
+   {
+    "state": "paused",
+    "locations": [
+     "picture PAUSED pill",
+     "strip",
+     "sidebar dot (orange)",
+     "status bar"
+    ],
+    "primary": "strip",
+    "echoes": [
+     "picture pill"
+    ],
+    "note": ""
+   },
+   {
+    "state": "on air (Program)",
+    "locations": [
+     "picture ring + badge",
+     "strip 'On air in Program'",
+     "toolbar cut button",
+     "sidebar dot",
+     "sidebar shot timer",
+     "status bar"
+    ],
+    "primary": "picture ring + badge",
+    "echoes": [
+     "toolbar cut button state"
+    ],
+    "note": "Drop sidebar dot meaning; keep shot timer."
+   },
+   {
+    "state": "next / queued cut",
+    "locations": [
+     "picture green ring",
+     "toolbar outline",
+     "sidebar green dot"
+    ],
+    "primary": "picture ring + badge",
+    "echoes": [
+     "toolbar outline"
+    ],
+    "note": "Green dot collides with 'live' in Separate mode (L3-14)."
+   },
+   {
+    "state": "consumer (camera in use)",
+    "locations": [
+     "sidebar Output",
+     "status bar",
+     "picture ON AIR · Zoom (Separate)",
+     "strip output row"
+    ],
+    "primary": "sidebar Output / strip output row",
+    "echoes": [
+     "picture ring in Separate mode"
+    ],
+    "note": "App name unknowable today (L3-08)."
+   },
+   {
+    "state": "bypass",
+    "locations": [
+     "strip switch + struck chips",
+     "menu bar icon glyph",
+     "dropdown Processing row"
+    ],
+    "primary": "strip (labeled)",
+    "echoes": [
+     "collapsed 'Bypass' badge",
+     "dropdown"
+    ],
+    "note": "Remove from menu bar icon (L3-13)."
+   },
+   {
+    "state": "automatic",
+    "locations": [
+     "sidebar Automation switches",
+     "Settings Camera",
+     "dropdown rows",
+     "states waiting placeholder"
+    ],
+    "primary": "per-feed ⋯ popover + Settings default",
+    "echoes": [
+     "sidebar summary",
+     "dropdown"
+    ],
+    "note": "Stored per feed (L3-09)."
+   },
+   {
+    "state": "disk / time left",
+    "locations": [
+     "sidebar gauge",
+     "strip folder line",
+     "status bar",
+     "dropdown stat",
+     "Settings"
+    ],
+    "primary": "sidebar Recording",
+    "echoes": [
+     "status bar when sidebar hidden",
+     "strip only for warnings"
+    ],
+    "note": "L3-20."
+   },
+   {
+    "state": "drops",
+    "locations": [
+     "strip '0 dropped'",
+     "collapsed strip when >0",
+     "single signal path",
+     "diagnostics"
+    ],
+    "primary": "strip (only when >0, named by source)",
+    "echoes": [
+     "diagnostics detail"
+    ],
+    "note": "Two counters share a name (L3-15)."
+   },
+   {
+    "state": "selected / focused feed",
+    "locations": [
+     "unlabeled sidebar row highlight",
+     "monitor focus ring (blue)",
+     "menu headers 'acts on Feed 1'"
+    ],
+    "primary": "accent outline on picture + strip header",
+    "echoes": [
+     "menu item titles naming the feed"
+    ],
+    "note": "Invisible today; unify focus = selection (L3-02)."
+   }
+  ]
+ },
+ {
+  "id": "S1",
+  "lens": "L3",
+  "verdict": "confirmed",
+  "evidence": "main-expanded legend 2 (click to cut) + monitor-tools (click to focus) + selection implied by Feed menu."
+ },
+ {
+  "id": "S2",
+  "lens": "L3",
+  "verdict": "confirmed",
+  "evidence": "Only an unlabeled sidebar row highlight; spec/app-menus disagree on ⌘1–⌘4 semantics; hidden in four-up."
+ },
+ {
+  "id": "S5",
+  "lens": "L3",
+  "verdict": "confirmed",
+  "evidence": "7 locations on main-expanded (see statemap)."
+ },
+ {
+  "id": "S6",
+  "lens": "L3",
+  "verdict": "confirmed, worse",
+  "evidence": "Strip 'Stop' = recording; menus 'Stop Feed(s)' = capture; window has no Stop Feed at all on 5 pages (L3-04); duplicate stop controls in strip (L3-06)."
+ },
+ {
+  "id": "S7",
+  "lens": "L3",
+  "verdict": "partially confirmed",
+  "evidence": "Dropdown distinguishes 'Stop Feed' vs 'Stop Feeds'; the window hides the difference by omitting the control."
+ },
+ {
+  "id": "S10",
+  "lens": "L3",
+  "verdict": "confirmed",
+  "evidence": "sidebar() lists all feeds beside identical strips."
+ },
+ {
+  "id": "S11",
+  "lens": "L3",
+  "verdict": "partially confirmed (L3 scope)",
+  "evidence": "Consumer app naming ('Zoom') is an untagged invention relative to CameraDemandMonitor (L3-08)."
+ }
+]

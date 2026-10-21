@@ -1,0 +1,99 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam UI mockups · round 2</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css">
+<style>
+  body { background: #111214; padding: 32px 40px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 40px 0 10px; }
+  h3 { font-size: 14px; margin: 22px 0 6px; }
+  p, li { color: var(--label2); max-width: 1040px; }
+  li { margin: 3px 0; }
+  b { color: var(--label); }
+  table { border-collapse: collapse; margin-top: 14px; font-size: 12.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 14px 8px 0; border-bottom: 0.5px solid var(--sep); max-width: 360px; }
+  th { color: var(--label2); font-weight: 600; }
+  td:first-child { color: var(--label2); width: 170px; }
+  a { color: #64b0ff; }
+  img { width: 100%; max-width: 1760px; border-radius: 10px; display: block; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 520px)); gap: 8px 40px; }
+</style></head>
+<body>
+<h1>Ultracam UI redesign: mockups, round 2</h1>
+<p>Built on round 1's <b>A · Studio</b>, with C's status bar and C's compact native menu rows added to A's
+graphical menu bar dropdown. Designed for one or two cameras most of the time, scaling to four. Proposals the current app
+doesn't have are marked <span class="newtag">NEW</span>. <a href="../index.html">Round 1</a></p>
+
+<h2>What changed from your feedback</h2>
+<ul>
+  <li><b>No full sidebar just to list 1–2 feeds.</b> V1 turns the sidebar into a <b>session panel</b> (output, recording destination and space left, recent takes, Recover, automation). V2 removes it, so each feed gets a channel. V3 shrinks it to a 64 pt <b>rail</b>.</li>
+  <li><b>C's status bar is in every variation</b>: virtual camera → who's using it, recording with time left, Program, resources.</li>
+  <li><b>Hybrid dropdown</b>: A's live preview of the published feed (both feeds when recording two, Program plus cut thumbnails in Program mode), followed by C-style compact rows with checkmarks, shortcuts and per-camera submenus.</li>
+  <li><b>Side-by-side monitoring with independent controls per feed</b> (V2): each feed has its own record/pause/stop, folder, time left, virtual camera, processing, effects, audio and monitor tools.</li>
+  <li><b>Recording as backup or standalone</b>: recordings are always the clean 2160p 10-bit source (that's what the app records today), whether or not anything uses the virtual camera.</li>
+</ul>
+
+<h2>Real-life use cases walked through</h2>
+<div class="cols">
+  <div><h3>1 · Everyday meeting, one camera (V1)</h3><ul>
+    <li>With "Start with camera apps" on, the feed starts when Zoom opens Ultracam. <span class="newtag">NEW</span> "Record with camera apps" starts a backup take at the same time.</li>
+    <li>A glance at the menu bar dropdown shows what Zoom sees, ON AIR, REC with elapsed time, timecode and audio.</li>
+    <li>LUT on/off or bypass straight from the dropdown (⇧⌘B, Effects submenu). No need to open the window.</li>
+    <li>When Zoom closes, the feed stops and the take finalizes. It shows up under Recent Takes.</li></ul></div>
+  <div><h3>2 · Standalone two-camera recording (V2)</h3><ul>
+    <li>No virtual camera involved; the status bar says so. Each channel shows its picture with exposure and focus tools.</li>
+    <li>Record All from the toolbar or ⌥⌘R, then pause or stop either camera on its own.</li>
+    <li>Each camera can record to a different drive, with time left per drive and a warning before it runs out <span class="newtag">NEW</span>.</li>
+    <li>Drops, bitrate and encoder details stay with each channel, so a problem on one camera is obvious.</li></ul></div>
+  <div><h3>3 · Two-camera meeting with switching (V3)</h3><ul>
+    <li>Zoom gets "Ultracam · Program". The multiview shows Program large and both sources with red/green tally.</li>
+    <li>Cut by clicking a source, pressing ⌃1/⌃2, or clicking the cut thumbnails in the dropdown. Or let Auto run the natural talking-head director.</li>
+    <li>A shot timer and the director timeline <span class="newtag">NEW</span> show why and when it cuts.</li>
+    <li>Both clean sources are recorded as backup, alongside the cut timeline sidecar, so the meeting can be re-edited.</li></ul></div>
+  <div><h3>4 · Setup, problems and recovery (States, Settings)</h3><ul>
+    <li>First run: Install Camera inline (or "needs a signed build"). Recording defaults, switcher tuning and the camera extension live in Settings (⌘,).</li>
+    <li>Each problem appears where it happens, with one action: No signal, Unsupported mode, LUT Locate…, Choose folder, Retry, Recover.</li>
+    <li>The menu bar icon shows recording (red dot) and needs-attention (orange dot) <span class="newtag">NEW</span>, so a backup can be checked without opening anything.</li>
+    <li>Quitting while recording shows exactly what's still being written.</li></ul></div>
+</div>
+
+<h2>Variations</h2>
+<table>
+  <tr><th></th><th>V1 · Session sidebar</th><th>V2 · Channels</th><th>V3 · Rail + Multiview</th></tr>
+  <tr><td>Shown with</td><td>1 camera, meeting + backup</td><td>2 cameras, standalone recording</td><td>2 cameras, Program meeting + backup</td></tr>
+  <tr><td>Left side</td><td>Session panel: output, destination, takes, automation</td><td>Nothing (toggle brings back session panel)</td><td>64 pt rail: cameras, Program, Output, Recording</td></tr>
+  <tr><td>Per-feed controls</td><td>Inspector Feed tab (selected feed)</td><td>Channel strip under each picture</td><td>Inspector follows rail selection</td></tr>
+  <tr><td>Monitoring</td><td>One big picture + scope</td><td>Two pictures, tools and scope per channel</td><td>Program + 2 sources, timeline</td></tr>
+  <tr><td>Dropdown</td><td>Published preview + rows + Effects submenu</td><td>Two previews + per-camera submenus</td><td>Program + cut thumbnails + rows</td></tr>
+  <tr><td>Trade-off</td><td>Inspector edits one feed at a time</td><td>Deep settings move to ⋯ / inspector</td><td>Densest; rail needs labels on hover</td></tr>
+</table>
+<p>These are layouts of one app rather than competing designs. A reasonable build would make V2's channels the
+Side by Side layout, V3's multiview the Program layout, and let the left column switch between the session panel and the rail.</p>
+
+<h2>Proposals marked NEW (need model/runtime work)</h2>
+<ul>
+  <li>Record with camera apps (start/stop a backup with the virtual camera session); stop when the last app closes.</li>
+  <li>Time left per destination drive, based on codec and number of recording feeds, with low-space warnings.</li>
+  <li>Recent takes list with Reveal in Finder (the Recover flow already exists).</li>
+  <li>A per-feed "Publish as camera" toggle (the virtual camera registry already has an enabled flag per feed).</li>
+  <li>A director timeline view (the data already goes to the timeline sidecar). Menu bar icon recording and attention dots.</li>
+  <li>Shortcuts: ⌃1–⌃4 cut, ⌃A auto, ⌥⌘R record all.</li>
+</ul>
+
+<h2>Implementation notes</h2>
+<ul>
+  <li><b>Hybrid dropdown</b>: SwiftUI <code>MenuBarExtra(.menu)</code> can't host video. Two options: an AppKit <code>NSStatusItem</code> + <code>NSMenu</code> whose first item is a custom view with the preview (real menu rows, submenus and keyboard navigation for free; needs a spike to confirm the native video layer renders inside a menu), or keep <code>.window</code> and draw rows that look like a menu (easy video, but submenus and keyboard navigation are hand-built). Recommendation: spike the NSMenu option first.</li>
+  <li><b>Previews</b>: V2/V3 show 2–3 live pictures plus thumbnails in the dropdown. Today there is one main native preview, one menu bar preview and the monitor surfaces. Extra pictures should use monitor surfaces (which already suspend when hidden), and V1's sidebar thumbnail can be a periodic still.</li>
+  <li><b>Start/Stop</b> applies to the selected feed in Separate mode and to all sources in Program mode (current behavior). V2's per-channel Stop Feed keeps that model.</li>
+</ul>
+
+<h2>V1 · Session sidebar · <a href="v1-session.html">HTML</a></h2>
+<img src="png/v1-session.png" alt="V1">
+<h2>V2 · Channels · <a href="v2-channels.html">HTML</a></h2>
+<img src="png/v2-channels.png" alt="V2">
+<h2>V3 · Rail + Multiview · <a href="v3-multiview.html">HTML</a></h2>
+<img src="png/v3-multiview.png" alt="V3">
+<h2>States &amp; edge cases · <a href="states.html">HTML</a></h2>
+<img src="png/states.png" alt="States">
+<h2>Settings window · <a href="settings.html">HTML</a></h2>
+<img src="png/settings.png" alt="Settings">
+</body></html>

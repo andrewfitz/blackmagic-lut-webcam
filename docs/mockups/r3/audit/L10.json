@@ -1,0 +1,818 @@
+[
+  {
+    "id": "L10-matrix",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "menubar",
+      "main-expanded",
+      "main-collapsed",
+      "standalone",
+      "four-up",
+      "monitor-tools",
+      "settings",
+      "spec"
+    ],
+    "location": "components × conditions",
+    "issue": "Coverage matrix of round-3 states",
+    "evidence": "rendered text of all 13 pages; code refs per finding",
+    "matrix": {
+      "legend": {
+        "designed": "drawn on a round-3 page (page noted)",
+        "implied": "follows from a stated rule or another drawn state, not drawn",
+        "missing": "not drawn and not derivable",
+        "n/a": "component has no role in this condition"
+      },
+      "conditions": {
+        "stopped / idle": {
+          "picture": "designed: states 3.12",
+          "strip_expanded": "designed: states 1.8",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "implied",
+          "toolbar": "missing: r3 toolbar has no Start/Stop and no idle Record All",
+          "status_bar": "missing",
+          "dropdown": "designed: states 6.2, menubar f",
+          "app_menus": "implied",
+          "menubar_icon": "designed: states 6.4"
+        },
+        "starting / connecting (Opening UltraStudio…, Connecting, Ready)": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "live": {
+          "picture": "designed: main-expanded",
+          "strip_expanded": "designed: main-expanded",
+          "strip_collapsed": "designed: main-collapsed",
+          "sidebar": "designed: main-expanded",
+          "toolbar": "designed",
+          "status_bar": "designed: states 5 Normal",
+          "dropdown": "designed: menubar a,b",
+          "app_menus": "designed: app-menus",
+          "menubar_icon": "designed"
+        },
+        "recording": {
+          "picture": "designed: REC pill",
+          "strip_expanded": "designed: states 1.3",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "designed",
+          "toolbar": "designed: Stop All · 12:31 · 2",
+          "status_bar": "designed: states 5",
+          "dropdown": "designed: menubar a-c",
+          "app_menus": "designed: app-menus Record",
+          "menubar_icon": "designed NEW red dot"
+        },
+        "paused": {
+          "picture": "designed: standalone",
+          "strip_expanded": "designed: states 1.4",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "designed: standalone",
+          "toolbar": "implied: standalone shows Stop All + Pause All, mixed label undefined",
+          "status_bar": "designed: standalone",
+          "dropdown": "designed: menubar c",
+          "app_menus": "implied",
+          "menubar_icon": "missing: paused vs recording dot undefined"
+        },
+        "finishing": {
+          "picture": "implied: REC pill removal undefined",
+          "strip_expanded": "designed: states 1.5",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "implied",
+          "menubar_icon": "missing"
+        },
+        "saved (after normal stop, before next take)": {
+          "picture": "n/a",
+          "strip_expanded": "missing: Ready resets to 00:00:00",
+          "strip_collapsed": "missing",
+          "sidebar": "implied: Recent Takes",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "n/a"
+        },
+        "recording failed": {
+          "picture": "implied",
+          "strip_expanded": "designed: states 1.6",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing: error example is failed start",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "designed NEW attention dot"
+        },
+        "no signal": {
+          "picture": "designed: states 3.6",
+          "strip_expanded": "designed: states 1.9",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "designed: states 4.7",
+          "toolbar": "n/a",
+          "status_bar": "designed: four-up",
+          "dropdown": "designed: menubar g",
+          "app_menus": "n/a",
+          "menubar_icon": "designed NEW attention dot"
+        },
+        "no signal while recording": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "unsupported HDMI mode": {
+          "picture": "designed: states 3.7",
+          "strip_expanded": "designed: states 1.10",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "implied",
+          "toolbar": "n/a",
+          "status_bar": "implied",
+          "dropdown": "implied",
+          "app_menus": "n/a",
+          "menubar_icon": "implied"
+        },
+        "complete bypass": {
+          "picture": "missing: picture still labelled Output",
+          "strip_expanded": "designed: states 1.12",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "missing",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "implied: Processing unchecked",
+          "app_menus": "implied",
+          "menubar_icon": "designed: states 6.4"
+        },
+        "applying effect change / format renegotiation": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "automatic · waiting": {
+          "picture": "designed: states 3.8",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing: no place for automaticFeedStatus",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "designed: menubar d",
+          "app_menus": "implied",
+          "menubar_icon": "designed"
+        },
+        "automatic · preview-only demand": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "implied: Show Live Preview leads here",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "automatic · start failed": {
+          "picture": "implied: menubar e placeholder",
+          "strip_expanded": "designed: states 1.11",
+          "strip_collapsed": "designed: states 2",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "designed: states 5 Error",
+          "dropdown": "designed: menubar e",
+          "app_menus": "implied",
+          "menubar_icon": "designed NEW"
+        },
+        "LUT restoring at launch (loading)": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "disk low": {
+          "picture": "n/a",
+          "strip_expanded": "missing: time-left text not shown orange",
+          "strip_collapsed": "missing",
+          "sidebar": "designed: states 4.5 NEW",
+          "toolbar": "n/a",
+          "status_bar": "designed: states 5 Warning",
+          "dropdown": "designed: menubar g",
+          "app_menus": "n/a",
+          "menubar_icon": "designed NEW"
+        },
+        "disk full mid-take": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "camera extension not installed": {
+          "picture": "n/a",
+          "strip_expanded": "implied",
+          "strip_collapsed": "n/a",
+          "sidebar": "designed: states 4.2",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "implied",
+          "menubar_icon": "n/a"
+        },
+        "unsigned build": {
+          "picture": "n/a",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "designed: states 4.3",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "n/a"
+        },
+        "extension approval pending": {
+          "picture": "n/a",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "missing",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "capture device unplugged / missing": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "implied: first-run card only",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "monitoring reduced": {
+          "picture": "designed: states 3.10, monitor-tools",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "n/a",
+          "toolbar": "n/a",
+          "status_bar": "n/a",
+          "dropdown": "n/a",
+          "app_menus": "n/a",
+          "menubar_icon": "n/a"
+        },
+        "preview hidden": {
+          "picture": "designed: states 3.9",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "n/a",
+          "toolbar": "n/a",
+          "status_bar": "n/a",
+          "dropdown": "implied",
+          "app_menus": "designed: View menu",
+          "menubar_icon": "n/a"
+        },
+        "preview error (Retry preview)": {
+          "picture": "missing",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "n/a",
+          "toolbar": "n/a",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "n/a"
+        },
+        "cut pending": {
+          "picture": "designed: states 3.3 dashed CUTTING",
+          "strip_expanded": "missing: Cut to button has no pending state",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing: toolbar cut buttons",
+          "status_bar": "n/a",
+          "dropdown": "missing: cut thumbnails",
+          "app_menus": "implied",
+          "menubar_icon": "n/a"
+        },
+        "Auto skipped source": {
+          "picture": "designed: states 3.5",
+          "strip_expanded": "implied: states 1.9 caption",
+          "strip_collapsed": "missing",
+          "sidebar": "designed: states 4.7",
+          "toolbar": "missing: cut button disabled state",
+          "status_bar": "n/a",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "n/a"
+        },
+        "no healthy Program source": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "sleep / wake, lid close": {
+          "picture": "missing",
+          "strip_expanded": "missing",
+          "strip_collapsed": "missing",
+          "sidebar": "missing",
+          "toolbar": "missing",
+          "status_bar": "missing",
+          "dropdown": "missing",
+          "app_menus": "n/a",
+          "menubar_icon": "missing"
+        },
+        "quit while recording": {
+          "picture": "n/a",
+          "strip_expanded": "n/a",
+          "strip_collapsed": "n/a",
+          "sidebar": "n/a",
+          "toolbar": "n/a",
+          "status_bar": "n/a",
+          "dropdown": "implied",
+          "app_menus": "designed: app-menus note",
+          "menubar_icon": "n/a"
+        }
+      },
+      "notes": "Quit sheet is drawn (states 6.6). Frozen/clean/zoom picture states are drawn in monitor-tools. App menus are drawn in one state only; enabling rules elsewhere are implied by spec §5."
+    },
+    "severity": "info",
+    "confidence": "high",
+    "recommendation": "Fill the P0/P1 missing cells in round 4; rows with no designed cell are listed as findings below.",
+    "alternatives": [],
+    "affects": [
+      "states.html",
+      "r3.js strip()/tile()/statusbar()",
+      "menubar.html",
+      "spec §5"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-01",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "standalone",
+      "menubar"
+    ],
+    "location": "strip + picture + status bar: HDMI lost during a take",
+    "issue": "No design for 'recording but no signal'. The recorder rejects no-signal frames while the take stays open, but the UI shows either REC or No signal, never both.",
+    "evidence": "SourceRecordingAdapter.swift:59-63 (signalValid=false → reject()); states 1.3 Recording and 1.9 Waiting for HDMI are separate cards; no combined state on any page",
+    "scenario": "Cable bumped mid-meeting: the strip still says Recording 00:31:44 while nothing is written for 40 s; the user trusts a backup with a hole in it.",
+    "severity": "P0",
+    "confidence": "high",
+    "recommendation": "Add a combined state: strip 'REC · no signal 0:42 · not writing frames' (red text, counter keeps running), picture No-signal overlay keeps the REC pill, status bar error segment, attention dot. Define whether the take continues or splits when signal returns.",
+    "alternatives": [
+      "Auto-pause the take on signal loss and resume on return (needs runtime change)",
+      "Split into a new take when signal returns"
+    ],
+    "affects": [
+      "r3.js strip()/tile()",
+      "states.html §1-3,5",
+      "menubar g",
+      "spec §5 strip states"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-02",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "menubar"
+    ],
+    "location": "disk low → full → stopped",
+    "issue": "The disk sequence stops at '2 min left: recording will stop when the drive is full'. The state at full (writer failure on every take on that drive, what was saved, whether Recover applies) is not designed.",
+    "evidence": "states 4.5 and menubar g end at the warning; RecordingModel.swift:361-378 a failed flush throws writerFailure(lastError ?? 'Recording stopped after a source error.'); no disk-capacity check exists in code",
+    "scenario": "Two feeds back up to 8TB; it fills at 1:42:10. Both strips show the generic source-error text, or nothing distinguishable, and the user doesn't know the takes were saved up to the last fragment.",
+    "severity": "P0",
+    "confidence": "high",
+    "recommendation": "Design 'Stopped · drive full · saved to 1:41:58 (last fragment)' per strip, a single status-bar error naming the drive, the attention dot, and a recovery note if finalization failed. Map the writer error text to a plain 'drive full' message.",
+    "alternatives": [
+      "Stop takes cleanly at ~1 min left, before the drive is actually full (needs runtime support; time-left is NEW)"
+    ],
+    "affects": [
+      "states.html §1,4,5",
+      "menubar g",
+      "r3.js strip()",
+      "diagnostics Recording popover"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-03",
+    "lens": "states-matrix",
+    "pages": [
+      "main-expanded",
+      "main-collapsed",
+      "single",
+      "states"
+    ],
+    "location": "effect chips / Processing switch while a consumer is live",
+    "issue": "There is no transitional state for an effect or Processing change. The current app shows 'Applying change…' while pipelineEnabledApplied differs from the selection, and the producer drains and renegotiates format on effect changes. Round 3 dropped both the label and any warning.",
+    "evidence": "FeedInterface.swift:431-444 AppliedPipelineState ('Applying change…'); README: 'The producer stops and drains its camera transport before negotiating a changed output format'; grep 'Applying' finds nothing in r3",
+    "scenario": "Mid-call the user toggles Downscale on Feed 1; Zoom's picture blanks or reconnects and the UI gives no sign that this was expected or when it's done.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Add 'Applying…' to the strip chips and result line, and an 'Output restarting' badge on the picture. Warn before format-changing toggles while a consumer is connected ('Zoom may briefly lose video').",
+    "alternatives": [
+      "Defer format-changing toggles until the camera is not in use",
+      "Mark which effects are live-safe (LUT) vs format-changing (Downscale, Color, Frame rate)"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "states.html §1-2",
+      "main-collapsed ⋯ popover",
+      "spec §5"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-04",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "main-expanded"
+    ],
+    "location": "strip after a normal Stop",
+    "issue": "There's no 'saved' state. After Finishing, the Ready card resets the counter to 00:00:00. The current app keeps final take statistics visible until the next take, and that's the user's confirmation the backup exists.",
+    "evidence": "README 'Final take statistics remain visible until the next take'; states 1.1 Ready shows 00:00:00; states 1.6 Failed keeps stats but no success equivalent",
+    "scenario": "After a meeting the user stops recording and sees a zeroed strip: did it save? They must open Finder to check.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Strip state 'Saved · 38:12 · 56.1 GB · Show in Finder' (collapsed: 'Saved 38:12'), kept until the next take; Record still enabled.",
+    "alternatives": [
+      "Transient banner plus Recent Takes highlight"
+    ],
+    "affects": [
+      "r3.js strip()",
+      "states.html §1-2",
+      "spec §5"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-05",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "settings"
+    ],
+    "location": "sidebar Output / onboarding step 1 during camera install",
+    "issue": "The extension approval-pending state is missing. The installer moves through 'Requesting activation…' to 'Approve Ultracam in System Settings → … Camera Extensions', but round 3 only draws not-installed and installed.",
+    "evidence": "ExtensionInstaller.swift:140-161 (pending, status strings); states 4.2/4.3 and the settings Camera pane have no pending or needs-approval visual",
+    "scenario": "First launch: the user clicks Install Camera and nothing visible changes while macOS waits for approval; Zoom doesn't list Ultracam.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Add Output states 'Requesting…' (spinner, buttons disabled) and 'Needs approval' (Open System Settings button). Echo them in the onboarding card, status bar and dropdown.",
+    "alternatives": [],
+    "affects": [
+      "states.html §4,6",
+      "settings Camera pane",
+      "menubar"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-06",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "four-up",
+      "menubar"
+    ],
+    "location": "capture device missing or unplugged",
+    "issue": "'Device gone' is not distinguished from 'no HDMI signal'. Only the first-run no-device card exists. The app reports 'Connect the UltraStudio and refresh inputs.' and disables Start when the selected device is missing, and a pull mid-take ends in a source error.",
+    "evidence": "AppModel.swift:966 automatic status; canStartFeed requires a device; no device-removal handling in code (no matches); states 3.6 No HDMI signal assumes the device is present",
+    "scenario": "The USB-C/Thunderbolt cable to the UltraStudio is unplugged: the UI says 'No HDMI signal, check the FX3', pointing at the wrong cable.",
+    "severity": "P1",
+    "confidence": "medium",
+    "recommendation": "Add a 'Device disconnected' state (picture + strip + attention dot) with Refresh, separate from no signal. Define the mid-take outcome (take finalized to last fragment).",
+    "alternatives": [],
+    "affects": [
+      "states.html §1,3",
+      "r3.js tile()/strip()"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-07",
+    "lens": "states-matrix",
+    "pages": [
+      "main-expanded",
+      "program-view",
+      "states",
+      "spec",
+      "menubar"
+    ],
+    "location": "green NEXT tally and dashed CUTTING",
+    "issue": "NEXT has three definitions. Main pages show NEXT permanently on the non-air feed with 'cut after 10 s'. States uses NEXT for the director's queued cut and dashed CUTTING for a manual pending cut. Spec §5 defines NEXT as any queued cut (pending feed). The model only knows pendingCut/pendingCutTime (any queued cut) and pendingDirectorCut, with no predicted next feed when nothing is queued.",
+    "evidence": "SwitcherCoordinator.swift:28-31,131-134; states 3.2/3.3; spec Picture tally table 'Next = Queued cut (pending feed)'; main-expanded Feed 2 NEXT with no pending cut",
+    "scenario": "In a two-camera manual meeting Feed 2 always wears green NEXT, so green stops meaning anything. When a cut really is queued there's no visible change.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "One rule: no ring when nothing is queued; green NEXT only while pendingCut != nil (with the time from pendingCutTime). Drop the separate dashed state or keep it for manual cuts only, and drop predicted 'after 10 s' copy unless the director exposes it.",
+    "alternatives": [
+      "Neutral 'Preview' outline for the idle non-air feed, broadcast-switcher style"
+    ],
+    "affects": [
+      "r3.js tile()/sidebar()/toolbar()",
+      "main-expanded",
+      "main-collapsed",
+      "program-view",
+      "menubar a",
+      "states §3",
+      "spec §5"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-08",
+    "lens": "states-matrix",
+    "pages": [
+      "main-expanded",
+      "program-view",
+      "states"
+    ],
+    "location": "Program when the on-air source stops or every source is unhealthy",
+    "issue": "Two Program transitions are undesigned: stopping (or losing) the feed currently on air, and the evaluator's noHealthyFeed state, where Zoom ends up with black after 0.5 s.",
+    "evidence": "SwitcherCoordinator.swift:6-11 SwitcherEvaluation.noHealthyFeed; AppModel.swift:929 setProgramSourceHealth(false); states 3.12 says only 'a stopped feed has no tally'",
+    "scenario": "The on-air FX3 overheats and drops out. Does Program cut to Feed 2, hold the last frame or go black? The operator can't tell from the UI what Zoom now sees.",
+    "severity": "P1",
+    "confidence": "medium",
+    "recommendation": "Define and draw: (a) on-air source lost → automatic cut to a healthy source or 'Program: no source · Zoom receiving black' (red, status bar error, attention dot); (b) a warning when Stop Feed targets the on-air feed.",
+    "alternatives": [],
+    "affects": [
+      "states §3,5",
+      "program-view",
+      "menubar"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-09",
+    "lens": "states-matrix",
+    "pages": [
+      "main-expanded",
+      "single",
+      "states",
+      "menubar"
+    ],
+    "location": "automatic-mode status text",
+    "issue": "Round 3 has nowhere to show automaticFeedStatus outside the dropdown. Its sub-states (preview-only demand, camera in use, restoring LUT, device missing, retry needed) have no window design. The old UI showed the status under the toggle.",
+    "evidence": "AppModel.swift:958-967 (six status strings); sidebar Automation rows are bare switches; states 1.11 covers only failed start",
+    "scenario": "With automatic mode on, the user opens the window and sees capture running with no camera app open; nothing says the visible preview is what's keeping it running.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Add a status line under 'Start with camera apps' in the sidebar, mirrored in the strip header badge (e.g. 'Automatic · kept alive by preview').",
+    "alternatives": [],
+    "affects": [
+      "r3.js sidebar()",
+      "states §1,4"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-10",
+    "lens": "states-matrix",
+    "pages": [
+      "states"
+    ],
+    "location": "toolbar Record All / Stop All control",
+    "issue": "The primary record control is drawn only while recording (Stop All · 12:31 · N). Idle, disabled (no live feed or no folder), finishing, mixed paused and all-paused states are missing.",
+    "evidence": "main-expanded/standalone/four-up toolbars all recording; menus show Record All disabled ('start a feed first') but the toolbar never does",
+    "scenario": "Before a meeting the user looks for Record and the toolbar shows a red button with no label they've seen before.",
+    "severity": "P1",
+    "confidence": "high",
+    "recommendation": "Draw all toolbar record states in states.html and spec §5, with labels: Record All / Stop All · 12:31 · 2 / Finishing… / Resume All when all are paused.",
+    "alternatives": [],
+    "affects": [
+      "r3.js toolbar()",
+      "states §6",
+      "spec §5"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-11",
+    "lens": "states-matrix",
+    "pages": [
+      "states"
+    ],
+    "location": "starting / connecting",
+    "issue": "There's no starting state anywhere. The capture path reports 'Opening UltraStudio…' and passes through Connecting, Waiting for HDMI and Ready before Live.",
+    "evidence": "FeedInterface.swift:361-367 FeedStateLabel; AppModel.swift:685 'Opening UltraStudio…'",
+    "scenario": "Pressing ⌘↩ shows nothing for a second; the user presses it again and stops the feed.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Strip badge 'Starting…' with a spinner, picture placeholder 'Opening UltraStudio…', Start control disabled until established.",
+    "alternatives": [],
+    "affects": [
+      "r3.js strip()/tile()",
+      "states §1,3"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-12",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "monitor-tools"
+    ],
+    "location": "picture preview error",
+    "issue": "Preview error with Retry preview (existing PreviewErrorNotice) and the 'insufficient presentation capacity' state for extra monitor windows are both absent from round 3.",
+    "evidence": "FeedInterface.swift:119-136; README Monitor tools 'Additional windows can report insufficient presentation capacity'",
+    "scenario": "The preview renderer fails: the picture stays black with no explanation, though camera output is fine.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Picture overlay 'Preview failed · camera output continues · Retry Preview'; detached window 'Monitor unavailable · close another window'.",
+    "alternatives": [],
+    "affects": [
+      "states §3",
+      "monitor-tools"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-13",
+    "lens": "states-matrix",
+    "pages": [
+      "states"
+    ],
+    "location": "LUT restoring at launch",
+    "issue": "The loading state ('Restoring your LUT…') is missing. Start is disabled while it runs and the effects are disabled.",
+    "evidence": "AppModel canStartFeed (!loading); automaticFeedStatus 'Restoring your LUT…'; LUTControls 'Loading LUT…'",
+    "scenario": "Launch, immediately ⌘↩: nothing happens and there's no reason given.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Strip LUT chip spinner + 'Restoring LUT…'; Start disabled with tooltip.",
+    "alternatives": [],
+    "affects": [
+      "r3.js strip()",
+      "states §1"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-14",
+    "lens": "states-matrix",
+    "pages": [
+      "states"
+    ],
+    "location": "menu bar icon and status bar precedence",
+    "issue": "Icon states for paused, finishing and starting are undefined, as is precedence when recording and attention coincide. Stopped, automatic waiting, finishing, recording-failed and extension-pending status bar states aren't drawn either.",
+    "evidence": "states 6.4 icon strip (6 states); states §5 status bar (5 states, 'worst wins' only for warning/error)",
+    "scenario": "During a paused backup the icon still shows a red dot, so the user believes it's recording.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Add a precedence table (error > attention > recording > paused > live > waiting > stopped) and draw paused (orange dot) and finishing.",
+    "alternatives": [],
+    "affects": [
+      "states §5,6",
+      "spec §5",
+      "menubar"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-15",
+    "lens": "states-matrix",
+    "pages": [
+      "states"
+    ],
+    "location": "sleep / wake, lid close",
+    "issue": "Neither the code nor the design handles system sleep during a live feed or recording.",
+    "evidence": "no willSleep/didWake handling in Sources; no state on any page",
+    "scenario": "A laptop lid closes mid-take: capture and the encoder stop abruptly and the take needs recovery; on wake nothing explains why.",
+    "severity": "P2",
+    "confidence": "medium",
+    "recommendation": "Runtime: hold a power assertion while recording or published (NEW). UI: 'Keeping your Mac awake while recording' in the status popover, plus a post-wake banner when a take was interrupted.",
+    "alternatives": [],
+    "affects": [
+      "states §6",
+      "diagnostics Recording popover",
+      "settings General"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-16",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "program-view",
+      "main-expanded"
+    ],
+    "location": "cut controls while a cut is pending or the target is skipped",
+    "issue": "Only the picture shows pending or skipped state. The toolbar cut buttons, strip 'Cut to Feed N', sidebar camera rows and dropdown cut thumbnails have no pending or disabled-with-reason state.",
+    "evidence": "states 3.3/3.5 picture-only; toolbar() and strip() builders have no pending branch",
+    "scenario": "The user presses the toolbar Feed 2 button, sees no change for a frame-boundary wait, and presses again.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Mirror pending (pulsing or dashed) and skipped (disabled with reason in the tooltip) on every cut control.",
+    "alternatives": [],
+    "affects": [
+      "r3.js toolbar()/strip()/sidebar()",
+      "menubar a",
+      "states §3"
+    ],
+    "effort": "S"
+  },
+  {
+    "id": "L10-17",
+    "lens": "states-matrix",
+    "pages": [
+      "states",
+      "main-collapsed"
+    ],
+    "location": "transitions",
+    "issue": "Several key transitions are not specified: Recording→Finishing→Saved→Ready (what the strip shows at each step); Failed→new take (does the record button reuse the folder, keep the failed stats?); Automatic start failed→Retry→fails again (one attempt per session, then what?); disk low→full→stopped; no signal mid-take→signal returns (same take or new take?); bypass on→off while live (format renegotiation).",
+    "evidence": "states captions describe single frames only; no transition notes in spec §5",
+    "scenario": "Engineers implement each state differently because the in-between behavior is undefined.",
+    "severity": "P2",
+    "confidence": "high",
+    "recommendation": "Add a transition table to spec §5: state → trigger → next state → what each component shows, with duration and cancellability.",
+    "alternatives": [
+      "Small state diagrams per component"
+    ],
+    "affects": [
+      "spec §5",
+      "states.html"
+    ],
+    "effort": "M"
+  },
+  {
+    "id": "L10-S3",
+    "lens": "states-matrix",
+    "suspect": "S3",
+    "verdict": "confirmed",
+    "issue": "Effect changes renegotiate output format mid-meeting and no round-3 state warns or shows progress (see L10-03).",
+    "evidence": "README format renegotiation; no 'Applying' state in r3",
+    "severity": "P1",
+    "confidence": "high"
+  },
+  {
+    "id": "L10-S7",
+    "lens": "states-matrix",
+    "suspect": "S7",
+    "verdict": "confirmed, and worse",
+    "issue": "Round-3 toolbars and expanded strips have no Start/Stop Feed control at all while live (only the stopped-strip state and the menus/dropdown have it), so per-mode Start/Stop semantics aren't visible in the window.",
+    "evidence": "r3.js toolbar() and strip() expanded header contain no Stop Feed; states 1.8/3.12 show Start Feed only when stopped; menubar rows 'Stop Feed'/'Stop Feeds'",
+    "severity": "P1",
+    "confidence": "high"
+  },
+  {
+    "id": "L10-S15",
+    "lens": "states-matrix",
+    "suspect": "S15",
+    "verdict": "confirmed",
+    "issue": "Paused, no-signal and pending states are hand-built per page and diverge: paused ring orange on standalone vs no ring elsewhere; NEXT semantics differ (L10-07); the builder strip has no paused or failed branch.",
+    "evidence": "standalone/four-up/states page-local strips; r3.js strip() branches only rec / not recording",
+    "severity": "P2",
+    "confidence": "high"
+  },
+  {
+    "id": "L10-S8",
+    "lens": "states-matrix",
+    "suspect": "S8",
+    "verdict": "confirmed (state side)",
+    "issue": "No 'confirm stop' or undo state exists for Stop Recording or Stop All in any component; Finishing begins immediately.",
+    "evidence": "states 1.3/1.5; menubar rows",
+    "severity": "P1",
+    "confidence": "medium"
+  }
+]

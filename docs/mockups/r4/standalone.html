@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Standalone two-camera recording</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .mini2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mini2 .picture { height: 92px; border-radius: 9px; }
+  html.light .newtag { color: #7a2fb0; background: rgba(191,90,242,0.14); box-shadow: inset 0 0 0 0.5px rgba(122,47,176,0.5); }
+  html.light .meter .bar b { background: rgba(0,0,0,0.7); }
+  .cols2 .strip3 .fx4 span { padding: 0 6px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Standalone recording: two cameras, no meeting, each recorded independently</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- ================= Hybrid dropdown: two cameras ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="mini2">
+        <div class="picture" data-scene="mcu"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass recpill" style="height:18px;font-size:10px;padding:0 6px"><span class="dot red" style="width:5px;height:5px"></span>REC 12:31</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Camera 1</span></div></div>
+        <div class="picture" data-scene="wide" data-tone="slog"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px"><span class="co">❚❚</span>Paused 4:12</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Camera 2</span></div></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2 tnum">
+        <span><span class="cr">●</span> 1 recording · 1 paused</span><span>Virtual cameras not in use</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mh">Cameras</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Camera 1<small class="tnum">Recording 12:31</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot orange"></span></span>Camera 2<small class="tnum">Paused 4:12</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop All Recordings<span class="key">⌥⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause All</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="mi dis tnum" style="font-size:12px"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>8TB 1 h 52 m · Archive 5 h 40 m left<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Cameras<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam<span class="key">⌘0</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 44% · GPU 28% · 1.62 GB</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 820px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 520px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 272px; top: 584px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 916px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The sidebar reflects a recording session: both virtual cameras not in use, takes in progress, and time left on each destination drive (Camera 2 records to Archive).</span></div>
+    <div><span class="n">2</span><span>Monitoring per camera: zebra and guides on Camera 1's output, focus peaking on Camera 2's S-Log3 source (hover shows its tools and signal). Paused is a neutral pill, never a red tally.</span></div>
+    <div><span class="n">3</span><span>Each camera records on its own: Camera 1 is rolling, and Camera 2 is paused with Resume. The record control ends the take; paused time doesn't count as elapsed time or as dropped frames.</span></div>
+    <div><span class="n">4</span><span>Each camera's output is its own too: its virtual camera is ready but not in use, with independent effects and Processing. Recordings are always the camera original.</span></div>
+    <div><span class="n">5</span><span>Toolbar: Pause All, Stop Cameras, and "Stop All (2)", which ends both takes (the paused one too). No cut buttons in Separate mode.</span></div>
+    <div><span class="n">6</span><span>Dropdown in its two-camera form: both pictures side by side, a submenu per camera, Stop All Recordings (⌥⌘R), Pause All, and time left per drive.</span></div>
+  </div>
+</div>
+<script>
+  const s1 = { ...CAMS.c1, fxview: 'zebra,guides', tools: [1, 1, 0, 0, 1] };
+  const s2 = { ...CAMS.c2, tone: 'slog', fxview: 'peak', tools: [0, 0, 0, 1, 1], signal: 'Source',
+    rec: { state: 'paused', t: '00:04:12', size: '11.2 GB', rate: '354 Mb/s', drops: 0 } };
+  mount('sb', sidebar({ mode: 'separate', cams: ['c1', 'c2'], inUse: [] })
+    .replace('<b style="font-weight:600">2 recording</b>', '<b style="font-weight:600">1 recording · 1 paused</b>')
+    .replace('12:31 · ProRes 422', '12:31 and 4:12 · ProRes 422'));
+  mount('tb', toolbar({ title: 'Recording', subtitle: '2 cameras · virtual cameras not in use', mode: 'separate', layout: 'split', rec: 'stopall', recCount: 2 })
+    .replace('<div class="tb-group glass"><div class="tb-btn" title="Stop All Cameras">',
+      '<div class="tb-group glass"><div class="tb-btn" title="Pause All"><i data-i="pause" class="sm"></i>Pause All</div></div><div class="tb-group glass"><div class="tb-btn" title="Stop All Cameras">'));
+  const narrow = (h, name) => h.replace(`<span>Ultracam · ${name}</span>`, `<span title="Ultracam · ${name}">Virtual camera</span>`);
+  mount('c1', tile(s1, { mode: 'separate', selected: true }) + narrow(strip(s1, { mode: 'separate', selected: true }), 'Camera 1') +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>RGB Parade</b><span class="c2">Output · 15 Hz</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="parade" data-src="mcu"></canvas></div>');
+  mount('c2', tile(s2, { mode: 'separate', state: 'paused', hover: true }) + narrow(strip(s2, { mode: 'separate', state: 'paused' }), 'Camera 2') +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Source · S-Log3 code values</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="luma" data-src="wide" data-tone="slog"></canvas></div>');
+  mount('st', statusbar({ mode: 'separate', cams: ['c1', 'c2'], inUse: [], programInUse: false })
+    .replace('<span style="color:var(--label)">REC 2 · 12:31</span>', '<span style="color:var(--label)">REC 12:31</span><span class="co">· ❚❚ 4:12</span>'));
+</script>
+</body></html>

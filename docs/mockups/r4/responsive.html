@@ -1,0 +1,144 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Responsive window sizes</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .desktop { height: 1420px; }
+  .frame { position: absolute; overflow: visible; }
+  .frame .scaler { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .frame .window { left: 0 !important; top: 0 !important; }
+  .flabel { position: absolute; font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.6); white-space: nowrap; }
+  .flabel small { font-weight: 500; font-size: 11.5px; color: rgba(255,255,255,0.82); margin-left: 8px; }
+  .content3.flexcol { display: flex; flex-direction: column; gap: 10px; }
+  .content3.flexcol .cols2 { height: auto; flex: none; }
+  .cuts { border-radius: 12px; background: var(--fill); padding: 9px 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cuts .row { min-height: 28px; font-size: 11.5px; }
+  .trunc-board { position: absolute; left: 40px; top: 790px; width: 940px; border-radius: 18px; padding: 16px 18px 18px; background: rgba(20,20,22,0.72);
+    box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14), 0 20px 50px rgba(0,0,0,0.4); backdrop-filter: blur(20px); }
+  .trunc-board h3 { margin: 0 0 10px; font-size: 13px; }
+  .trunc-grid { display: grid; grid-template-columns: 560px 1fr; gap: 22px; align-items: start; }
+  .tt { display: inline-block; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .ovmenu { position: absolute; width: 230px; z-index: 30; }
+  html.light .flabel { color: #111; text-shadow: none; }
+  html.light .flabel small { color: rgba(0,0,0,0.6); }
+  html.light .trunc-board { background: rgba(255,255,255,0.78); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 20px 50px rgba(0,0,0,0.15); }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right"><div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div><i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i><span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span></div>
+  </div>
+  <div class="tag">Round 4 · Responsive: the same two-camera Program meeting at full screen, 13" default and minimum size, plus long names</div>
+
+  <div class="flabel" style="left:40px; top:94px">Full screen · 1728 × 1117<small>expanded strips + scopes · drawn at 56%</small></div>
+  <div class="frame" id="fC" style="left:40px; top:118px"></div>
+
+  <div class="flabel" style="left:1040px; top:94px">13" default · 1280 × 800<small>collapsed strips · drawn at 53.5%</small></div>
+  <div class="frame" id="fB" style="left:1040px; top:118px"></div>
+
+  <div class="flabel" style="left:1040px; top:582px">Minimum · 980 × 680<small>sidebar hidden · overflow » · drawn at 69%</small></div>
+  <div class="frame" id="fA" style="left:1040px; top:606px"></div>
+
+  <div class="trunc-board glass" style="top:810px">
+    <h3>Long camera names at 1:1 · "Interview A-cam — Sony FX3 with very long name"</h3>
+    <div class="trunc-grid">
+      <div style="display:flex; flex-direction:column; gap:10px" id="truncL"></div>
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <div class="col3" style="width:100%" id="truncPic"></div>
+        <ul class="l" style="margin:0; padding-left:18px; font-size:12px; line-height:1.45">
+          <li>Strip header and collapsed row: <b>middle</b> truncation keeps the start and the end ("Interview A-cam…ery long name"); the full name is in the tooltip and the ⋯ menu's Rename.</li>
+          <li>Picture pill: <b>tail</b> truncation at 168 pt so the tally badge never moves.</li>
+          <li>Menus and Settings show the full name; the virtual camera is published as "Ultracam · " + full name.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout" style="left: 60px; top: 160px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 1060px; top: 230px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1620px; top: 616px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 1060px; top: 730px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 24px; top: 852px;"><span class="n">5</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Full screen: sidebar, expanded strips and scopes all fit. Pictures grow with the column (728 pt), and the inspector (⌥⌘I) can open without collapsing anything.</span></div>
+    <div><span class="n">2</span><span>13" default (1280 × 800): sidebar stays, strips open collapsed so both 16:9 pictures and their scopes fit without scrolling. Expanding one strip pushes only its own scope down.</span></div>
+    <div><span class="n">3</span><span>Minimum 980 × 680: below 1100 pt the sidebar hides behind its toggle; toolbar labels never wrap, cut buttons shrink to numbers and low-priority items move to the » overflow menu (layout, collapse, Stop Cameras, inspector).</span></div>
+    <div><span class="n">4</span><span>At minimum size strips are collapsed and the status bar drops the resources segment; Recent Cuts fills the space instead of scopes, so the window stays calm.</span></div>
+    <div><span class="n">5</span><span>Long names truncate in the middle in strips and at the tail in picture pills. Full names appear in tooltips, menus, Settings and the published camera name.</span></div>
+  </div>
+</div>
+<script>
+  // A scaled frame holding a real window built with the round-4 builders.
+  function frame(id, W, H, s, inner) {
+    const el = document.getElementById(id);
+    el.style.width = `${W * s}px`; el.style.height = `${H * s}px`;
+    el.innerHTML = `<div class="scaler" style="width:${W}px;height:${H}px;transform:scale(${s})"><div class="window" style="width:${W}px;height:${H}px">${inner}</div></div>`;
+  }
+  const scope = (kind, src, label) => `<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>${kind === 'luma' ? 'Luma Waveform' : 'RGB Parade'}</b><span class="c2">${label}</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="${kind}" data-src="${src}"></canvas></div>`;
+  const cutsCard = `<div class="cuts"><div style="display:flex;align-items:center;gap:8px;font-size:12px"><b>Recent Cuts</b><span class="c2">Auto · Natural talking head</span><span style="margin-left:auto" class="c3" style="font-size:11px">5 cuts · average shot 21 s</span></div>
+    <div class="form">
+      <div class="row"><span class="mono c2" style="font-size:11px;width:70px">14:22:23</span><span class="lbl">Cut to <b>Camera 1</b><span class="c2"> · Camera 2 reached max shot 30 s</span></span><span class="badge orange">max shot</span></div>
+      <div class="row"><span class="mono c2" style="font-size:11px;width:70px">14:21:58</span><span class="lbl">Cut to <b>Camera 2</b><span class="c2"> · speech gap after 12.4 s</span></span><span class="badge">speech gap</span></div>
+      <div class="row"><span class="mono c2" style="font-size:11px;width:70px">14:21:31</span><span class="lbl">Cut to <b>Camera 1</b><span class="c2"> · manual (⌃1)</span></span><span class="badge blue">manual</span></div>
+    </div></div>`;
+
+  // C · Full screen 1728 × 1117
+  frame('fC', 1728, 1117, 0.56,
+    sidebar({ mode: 'program' }) +
+    toolbar({ title: 'Meeting', subtitle: 'Ultracam · Program in use · 2 recording', layout: 'split' }) +
+    `<div class="content3"><div class="cols2">
+      <div class="col3">${tile(CAMS.c1, { role: 'air', selected: true })}${strip(CAMS.c1, { role: 'air', selected: true })}${scope('luma', 'mcu', 'Output')}</div>
+      <div class="col3">${tile(CAMS.c2, {})}${strip(CAMS.c2, {})}${scope('parade', 'wide', 'Output')}</div>
+    </div></div>` + statusbar({ mode: 'program' }));
+
+  // B · 13" default 1280 × 800
+  frame('fB', 1280, 800, 0.535,
+    sidebar({ mode: 'program' }) +
+    toolbar({ title: 'Meeting', subtitle: 'Program in use · 2 recording', layout: 'split', collapsedAll: true }) +
+    `<div class="content3"><div class="cols2">
+      <div class="col3">${tile(CAMS.c1, { role: 'air', selected: true })}${strip(CAMS.c1, { expanded: false, role: 'air', selected: true })}${scope('luma', 'mcu', 'Output')}</div>
+      <div class="col3">${tile(CAMS.c2, {})}${strip(CAMS.c2, { expanded: false })}${scope('parade', 'wide', 'Output')}</div>
+    </div></div>` + statusbar({ mode: 'program' }));
+
+  // A · Minimum 980 × 680: sidebar hidden, compact toolbar with overflow, compact status bar.
+  const kk = (n, air) => `<span class="kk" style="width:16px;height:16px;font-size:10px;${air ? 'background:rgba(255,255,255,0.25)' : ''}">${n}</span>`;
+  const tbMin = `<div class="toolbar" style="left:8px; right:8px; padding-left:18px;">
+    <div class="traffic" style="margin-right:8px"><span></span><span></span><span></span></div>
+    <div class="tb-group glass"><div class="tb-btn" title="Show Sidebar (⌃⌘S)">${ic('sidebar', '')}</div></div>
+    <div class="title"><b>Meeting</b><small>Program in use · 2 recording</small></div>
+    <div class="flex"></div>
+    <div class="tb-group glass"><div class="tb-btn" style="background:rgba(255,69,58,0.9);color:#fff" title="Camera 1 · on air">${kk(1, true)}</div><div class="tb-btn" title="Cut to Camera 2 (⌃2)">${kk(2)}</div><div class="tb-sep"></div><div class="tb-btn on" title="Automatic switching (⌃⌥A)">${ic('auto')}</div></div>
+    <div class="tb-prominent red" title="Stop All Recordings (⌥⌘R)">${ic('stop')}Stop All (2)</div>
+    <div class="tb-group glass"><div class="tb-btn on" title="More toolbar items" style="font-weight:700">»</div></div>
+  </div>
+  <div class="menu glass ovmenu" style="right:12px; top:52px">
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('split')}</span>Layout<span class="sub" style="font-size:12px">Side by Side${ic('chevr')}</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico">${ic('chevud')}</span>Collapse All Strips<span class="key">⌥⌘S</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('stop')}</span>Stop Cameras<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('inspector')}</span>Inspector<span class="key">⌥⌘I</span></div>
+  </div>`;
+  const sbMin = `<div class="sbar tnum">
+    <div class="seg2 cg">${ic('camlink')}Program · in use</div><div class="div"></div>
+    <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 · 12:31</span> · 8TB 1 h 52 m · Archive 5 h 40 m</div>
+    <div class="sp"></div><div class="seg2" title="Resources are in the Window menu › Diagnostics">${ic('wave')}Audio 2 of 2</div>
+  </div>`;
+  frame('fA', 980, 680, 0.69,
+    tbMin +
+    `<div class="content3 nosb flexcol"><div class="cols2">
+      <div class="col3">${tile(CAMS.c1, { role: 'air', selected: true })}${strip(CAMS.c1, { expanded: false, role: 'air', selected: true })}</div>
+      <div class="col3">${tile(CAMS.c2, {})}${strip(CAMS.c2, { expanded: false })}</div>
+    </div>${cutsCard}</div>` + sbMin);
+
+  // Long names
+  const full = 'Interview A-cam — Sony FX3 with very long name';
+  const mid = 'Interview A-cam…ery long name';
+  const longCam = Object.assign({}, CAMS.c1, { name: full });
+  const midCam = Object.assign({}, CAMS.c1, { name: mid });
+  const fixTitle = (html) => html.replace(`title="${CAMS.c1.input}">${mid}</b>`, `title="${full}">${mid}</b>`);
+  document.getElementById('truncL').innerHTML =
+    fixTitle(strip(midCam, { role: 'air' })) + strip(midCam, { expanded: false, role: 'air' });
+  document.getElementById('truncPic').innerHTML =
+    tile(longCam, { role: 'air' }).replace(`<div class="pill glass">${full}`, `<div class="pill glass" title="${full}"><span class="tt">${full}</span>`);
+</script>
+</body></html>

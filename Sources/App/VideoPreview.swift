@@ -39,6 +39,10 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 
   @MainActor fileprivate let displayLayer: AVSampleBufferDisplayLayer
   @MainActor private weak var hostingView: VideoPreviewView?
+  @MainActor var onVisibilityChange: (() -> Void)?
+  // A preview in an open window still requests capture while another app
+  // covers it. Rendering itself continues to follow native occlusion below.
+  @MainActor private(set) var isPresented = false
   private let videoRenderer: AVSampleBufferVideoRenderer
   private let queue = DispatchQueue(label: "org.ultracam.preview", qos: .userInteractive)
   private let lock = NSLock()
@@ -57,6 +61,7 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   private var pendingCount = 0
   private var scheduledGeneration: UInt64?
   private var visible = false
+  private var boundSourceID: String?
   private var metricsPending = false
   private var metricsRequestedAt = -Double.infinity
 #if CAPTURE_LIFECYCLE_TESTS
@@ -120,9 +125,18 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   // A fixed ring absorbs short native display/host scheduling stalls. It holds
   // only sample references, plus at most one executing sample/work item. On
   // overflow, evict the oldest queued image so latency cannot grow unbounded.
-  func enqueue(_ sample: CMSampleBuffer) {
+  func bindSource(_ sourceID: String) {
+    lock.withLock {
+      guard boundSourceID != sourceID else { return }
+      boundSourceID = sourceID
+      flushLocked(resetDiagnostics: true)
+    }
+  }
+
+  func enqueue(_ sample: CMSampleBuffer, sourceID: String? = nil) {
     lock.withLock {
       guard visible else { return }
+      if let boundSourceID, sourceID != boundSourceID { return }
       diagnostics.received &+= 1
       if pendingCount == Self.pendingCapacity {
         _ = popPendingLocked()
@@ -144,19 +158,26 @@ final class VideoPreviewRenderer: @unchecked Sendable {
 
   @MainActor fileprivate func ownsView(_ view: VideoPreviewView) -> Bool { hostingView === view }
 
-  @MainActor fileprivate func publishViewVisibility(_ value: Bool, from view: VideoPreviewView) {
+  @MainActor fileprivate func publishViewVisibility(_ value: Bool, from view: VideoPreviewView,
+    presented: Bool? = nil) {
     guard ownsView(view) else { return }
 #if CAPTURE_LIFECYCLE_TESTS
     guard !renderWhenUnattached else { return }
 #endif
-    setVisible(value)
+    let nextPresented = presented ?? (view.window?.isVisible == true && view.window?.isMiniaturized == false
+      && !view.isHiddenOrHasHiddenAncestor && !view.visibleRect.isEmpty)
+    let presentationChanged = nextPresented != isPresented
+    isPresented = nextPresented
+    let visibilityChanged = setVisible(value)
+    if presentationChanged || visibilityChanged { onVisibilityChange?() }
   }
 
-  private func setVisible(_ value: Bool) {
+  @discardableResult private func setVisible(_ value: Bool) -> Bool {
     lock.withLock {
-      guard visible != value else { return }
+      guard visible != value else { return false }
       visible = value
       if !value { flushLocked(resetDiagnostics: false) }
+      return true
     }
   }
 
@@ -210,10 +231,16 @@ final class VideoPreviewRenderer: @unchecked Sendable {
   @MainActor func makeView() -> VideoPreviewView {
     let view = VideoPreviewView(renderer: self, displayLayer: displayLayer)
     hostingView = view
+    let wasPresented = isPresented
+    isPresented = false
 #if CAPTURE_LIFECYCLE_TESTS
-    if !renderWhenUnattached { setVisible(false) }
+    if !renderWhenUnattached {
+      let wasVisible = setVisible(false)
+      if wasPresented || wasVisible { onVisibilityChange?() }
+    }
 #else
-    setVisible(false)
+    let wasVisible = setVisible(false)
+    if wasPresented || wasVisible { onVisibilityChange?() }
 #endif
     return view
   }
@@ -464,11 +491,17 @@ struct VideoPreview: NSViewRepresentable {
     super.viewDidMoveToWindow()
     NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
     NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
+    NotificationCenter.default.removeObserver(self, name: NSWindow.didMiniaturizeNotification, object: nil)
+    NotificationCenter.default.removeObserver(self, name: NSWindow.didDeminiaturizeNotification, object: nil)
     if let window {
       NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
         name: NSWindow.didChangeOcclusionStateNotification, object: window)
       NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
         name: NSWindow.willCloseNotification, object: window)
+      NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
+        name: NSWindow.didMiniaturizeNotification, object: window)
+      NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged),
+        name: NSWindow.didDeminiaturizeNotification, object: window)
     }
     publishVisibility()
   }
@@ -484,7 +517,9 @@ struct VideoPreview: NSViewRepresentable {
   }
 
   @objc private func windowVisibilityChanged(_ notification: Notification) {
-    if notification.name == NSWindow.willCloseNotification { renderer.publishViewVisibility(false, from: self) }
+    if notification.name == NSWindow.willCloseNotification {
+      renderer.publishViewVisibility(false, from: self, presented: false)
+    }
     else { publishVisibility() }
   }
 

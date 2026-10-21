@@ -18,18 +18,11 @@ struct ContentView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 12) {
         HStack(alignment: .top, spacing: 18) {
-          VStack(spacing: 8) {
-            HStack {
-              Text("Output preview").font(.callout.weight(.medium))
-              Spacer()
-              PreviewVisibilityControl(model: model)
-            }
-            FeedPreview(model: model, compact: false)
-            PreviewErrorNotice(model: model)
-          }
-          .frame(maxWidth: .infinity)
+          MonitorWorkspaceView(coordinator: model.monitorCoordinator, model: model)
+            .frame(maxWidth: .infinity)
           FeedControls(model: model).frame(width: 292)
         }
+        AppResourceSummary()
         ControlPanel {
           RecordingControls(model: recordingModel, feeds: recordingFeeds)
         }
@@ -100,7 +93,7 @@ private struct PreviewPlaceholder: View {
         Text(!model.previewEnabled
           ? (model.running && model.update.cameraOutputActive ? "Camera output continues with your selected settings." : "Show preview to monitor the output.")
           : model.running ? "The preview appears when a supported HDMI signal arrives." : model.automaticFeedEnabled
-            ? "Open Ultracam in Zoom or another camera app to start the feed." : "Start the feed to view the HDMI input.")
+            ? "Show preview or open Ultracam in a camera app to start the feed." : "Start the feed to view the HDMI input.")
           .font(.caption).foregroundStyle(.white.opacity(0.45))
           .multilineTextAlignment(.center).padding(.horizontal, 24)
       }
@@ -118,7 +111,7 @@ struct PreviewVisibilityControl: View {
     }
     .toggleStyle(.switch).controlSize(.mini)
     .fixedSize()
-    .help("Show or hide both previews. Camera output continues independently. ⇧⌘P")
+    .help("Show or hide both previews. In automatic mode, a visible preview starts capture. Camera output continues independently. ⇧⌘P")
     .accessibilityLabel("Video preview")
   }
 }
@@ -389,7 +382,7 @@ struct StartStopButton: View {
 
   var body: some View {
     if model.automaticFeedEnabled {
-      if model.cameraRequested && !model.running {
+      if model.automaticCaptureRequested && !model.running {
         Button("Retry feed", action: model.retryAutomaticFeed)
           .disabled(model.loading || !model.canStartFeed)
       }
@@ -413,7 +406,7 @@ struct AutomaticFeedControl: View {
     VStack(alignment: .leading, spacing: 5) {
       Toggle("Start when camera is in use", isOn: $model.automaticFeedEnabled)
         .toggleStyle(.switch).controlSize(.mini).font(.caption)
-        .help("Automatically start for Zoom or another camera app, then stop capture and GPU work when the last app closes the camera. Keep Ultracam open in the menu bar. Turn off to manage the feed manually.")
+        .help("Start for a camera app or a visible preview. Stop capture and GPU work when neither needs the feed. Hide preview to leave Ultracam waiting in the menu bar. Turn off to manage the feed manually.")
       if model.automaticFeedEnabled {
         Text(model.automaticFeedStatus).font(.caption2).foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)

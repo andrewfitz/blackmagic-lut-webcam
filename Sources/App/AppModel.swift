@@ -1,4 +1,5 @@
 import AppKit
+import MonitorToolsCore
 import CoreVideo
 import Observation
 import UniformTypeIdentifiers
@@ -8,8 +9,15 @@ struct InputDevice: Identifiable {
   let name: String
 }
 
+@MainActor protocol AppVirtualCameraRegistryPublishing {
+  func publish(_ snapshot: VirtualCameraRegistrySnapshot)
+}
+
+extension VirtualCameraRegistryPublisher: AppVirtualCameraRegistryPublishing {}
+
 @MainActor @Observable
 final class AppModel {
+  private let registryPublisher: any AppVirtualCameraRegistryPublishing
   var hideFromDock = false {
     didSet {
       guard hideFromDock != oldValue else { return }
@@ -76,7 +84,13 @@ final class AppModel {
     return running ? "Waiting for two enabled feeds" : "Starts with Program output"
   }
 
-  var canEditFeedTopology: Bool { !running && !loading }
+  var canEditFeedTopology: Bool {
+    FeedLifecycleDemandPolicy.canEditTopology(loading: loading,
+      sourceActive: feedDescriptors.contains {
+        feedCoordinator.isFeedRunning($0.id) ||
+          feedCoordinator.capturePool.existingController(for: $0.id)?.hasActiveFeed == true
+      }, recordingActive: recordingModel.feeds.contains { $0.isActive })
+  }
   var selectedFeedName: String {
     feedCoordinator.selectedDescriptor.name
   }
@@ -104,11 +118,13 @@ final class AppModel {
       saveSettings()
       if !previewEnabled { previewReady = false }
       capture.setPreviewEnabled(previewEnabled)
+      if !restoringSettings { reconcileAutomaticFeed() }
     }
   }
   var automaticFeedEnabled = false {
     didSet {
       guard automaticFeedEnabled != oldValue, !restoringSettings else { return }
+      if !automaticFeedEnabled { demandStartedFeeds.remove(selectedFeedID) }
       saveSettings()
       // A live feed stays up under manual Start/Stop. Only the demand monitor
       // changes, so closing the camera app no longer stops a feed the user
@@ -132,6 +148,22 @@ final class AppModel {
   // controls. This used to be permanently bound to the primary controller,
   // which left selection changes publishing frames from the wrong feed.
   private var capture: CaptureController
+  let monitorCoordinator: MonitorCoordinator
+  private var monitorDemand: Set<MonitorTargetID> = []
+  private var feedPolicies: [FeedID: AutomaticFeedPolicy] = [:]
+  private var routeDemand: [String: Bool] = [:]
+  private var demandStartedFeeds: Set<FeedID> = []
+  private var manuallyStoppedFeeds: Set<FeedID> = []
+  private var programTransportRequired = false
+  private var programTransportConfiguration: PipelineConfiguration?
+  private var detectedInputCadence: [FeedID: Bool] = [:]
+  /// The latest status from every camera, not just the selected one. The new
+  /// interface shows live state for each camera's strip.
+  private(set) var cameraUpdates: [FeedID: CaptureUpdate] = [:]
+  /// Program cuts applied this session, newest first (bounded).
+  private(set) var recentCuts: [UICutRecord] = []
+  /// When the camera now on Program went on air.
+  private(set) var programShotStartedAt: Date?
   let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
@@ -154,13 +186,21 @@ final class AppModel {
   private var pendingAutoTargetFeedID: FeedID?
 
   init(settingsStore: AppSettingsStore? = nil, lutLoader: LUTFileLoader = LUTFileLoader(),
-       registryStore: VirtualCameraRegistryStore? = nil) {
+       registryStore: VirtualCameraRegistryStore? = nil,
+       registryPublisher: (any AppVirtualCameraRegistryPublishing)? = nil,
+       recordingFolderStore: RecordingFolderStore? = nil) {
     let store = settingsStore ?? AppSettingsStore()
     self.settingsStore = store
+    self.registryPublisher = registryPublisher ?? VirtualCameraRegistryPublisher()
     hideFromDock = store.hideFromDock
     self.virtualCameraRegistryStore = registryStore ?? VirtualCameraRegistryStore()
     let snapshot = store.loadSnapshot()
     persistedSnapshot = snapshot
+    var monitorConfigurations = Dictionary(uniqueKeysWithValues: snapshot.feeds.map {
+      (MonitorTargetID($0.id.rawValue), $0.monitorConfiguration)
+    })
+    monitorConfigurations[MonitorTargetID("program")] = snapshot.programMonitorConfiguration
+    monitorCoordinator = MonitorCoordinator(configurations: monitorConfigurations, workspace: snapshot.monitorWorkspace)
 
     let renderer = VideoPreviewRenderer()
     let miniRenderer = VideoPreviewRenderer()
@@ -170,32 +210,85 @@ final class AppModel {
     let primaryCapture = CaptureController(services: .live(feedID: initialFeedID),
       previewRenderer: renderer, additionalPreviewRenderers: [miniRenderer])
     let capturePool = FeedCapturePool(initial: [initialFeedID: primaryCapture], factory: { feedID in
-      CaptureController(services: .live(feedID: feedID), previewRenderer: renderer,
+      let controller = CaptureController(services: .live(feedID: feedID), previewRenderer: renderer,
         additionalPreviewRenderers: [miniRenderer])
+      controller.setLegacyPreviewOwnership(false)
+      return controller
     })
     feedCoordinator = FeedCoordinator(snapshot: snapshot, capturePool: capturePool)
     let coordinator = feedCoordinator
     previewRenderer = renderer
     miniPreviewRenderer = miniRenderer
+    renderer.bindSource(initialFeedID.rawValue)
+    miniRenderer.bindSource(initialFeedID.rawValue)
     capture = primaryCapture
     recordingModel = RecordingModel(
       feeds: feedCoordinator.descriptors.map { RecordingFeedDescriptor(id: $0.id, name: $0.name) },
       driver: NativeRecordingSessionDriver(capture: primaryCapture, rawAudioCallbackAvailable: true,
-        captureForFeed: { id in coordinator.capture(for: id) }))
+        captureForFeed: { id in coordinator.capture(for: id) }),
+      folderStore: recordingFolderStore ?? RecordingFolderStore())
     self.lutLoader = lutLoader
+    monitorCoordinator.onConfigurationChange = { [weak self] target, configuration in
+      guard let self else { return }
+      if target == MonitorTargetID("program") {
+        self.feedCoordinator.programMonitorConfiguration = configuration
+      } else if var descriptor = self.feedDescriptors.first(where: { $0.id.rawValue == target.rawValue }) {
+        descriptor.monitorConfiguration = configuration
+        self.feedCoordinator.update(descriptor)
+      }
+      self.saveSettings()
+    }
+    monitorCoordinator.onWorkspaceChange = { [weak self] workspace in
+      guard let self else { return }
+      self.feedCoordinator.monitorWorkspace = workspace
+      self.saveSettings()
+    }
+    monitorCoordinator.onDemandChange = { [weak self] targets in
+      guard let self else { return }
+      self.monitorDemand = targets
+      self.reconcileAutomaticFeed()
+    }
+    monitorCoordinator.onPreviewEnabledChange = { [weak self] target, enabled in
+      guard let self else { return }
+      if target.rawValue == self.selectedFeedID.rawValue {
+        self.previewEnabled = enabled
+      } else if var descriptor = self.feedDescriptors.first(where: { $0.id.rawValue == target.rawValue }) {
+        descriptor.previewEnabled = enabled
+        self.feedCoordinator.update(descriptor)
+        self.saveSettings()
+      }
+    }
+    feedCoordinator.programOutput.onMonitorFrame = { [weak monitorCoordinator] feedID, frame, sourcePTS, programPTS, cutApplied in
+      monitorCoordinator?.offerProgram(feedID: feedID, frame: frame, sourcePTS: sourcePTS,
+        programPTS: programPTS, cutApplied: cutApplied)
+    }
+    monitorCoordinator.updateTargets(feeds: feedCoordinator.descriptors, programAvailable: snapshot.outputMode == .program)
     recordingModel.onOutputFolderChanged = { [weak self] folder in
       self?.autoSwitcherTimeline?.setOutputFolder(folder)
     }
     recordingModel.onRecordingStarted = { [weak self] feedID, url in
-      guard let self, let timeline = self.autoSwitcherTimeline else { return }
+      guard let self else { return }
+      self.reconcileAutomaticFeed()
+      guard let timeline = self.autoSwitcherTimeline else { return }
       self.recordingTimelines[feedID] = timeline
       timeline.recordingStarted(feedID: feedID, url: url, mediaStart: self.update.mediaTime)
     }
     recordingModel.onRecordingFinished = { [weak self] feedID, url in
-      guard let self, let timeline = self.recordingTimelines.removeValue(forKey: feedID) else { return }
+      guard let self else { return }
+      self.reconcileAutomaticFeed()
+      guard let timeline = self.recordingTimelines.removeValue(forKey: feedID) else { return }
       timeline.recordingFinished(feedID: feedID, url: url, mediaEnd: self.update.mediaTime)
     }
     feedCoordinator.onProgramCutApplied = { [weak self] feedID, sourceTime, programTime in
+      self?.reconcileProgramTransportDemand()
+      if let self {
+        let automatic = self.pendingAutoDecisionID != nil && self.pendingAutoTargetFeedID == feedID
+        let name = self.feedDescriptors.first { $0.id == feedID }?.name ?? feedID.rawValue
+        self.recentCuts.insert(UICutRecord(at: Date(), cameraID: feedID.rawValue, cameraName: name,
+          automatic: automatic), at: 0)
+        if self.recentCuts.count > 20 { self.recentCuts.removeLast(self.recentCuts.count - 20) }
+        self.programShotStartedAt = Date()
+      }
       guard let self, let decisionID = self.pendingAutoDecisionID,
         self.pendingAutoTargetFeedID == feedID else { return }
       self.pendingAutoDecisionID = nil
@@ -227,16 +320,25 @@ final class AppModel {
       enabled: snapshot.outputMode != .program)
     installProcessedFrameHandler(for: initialFeedID)
     installCaptureUpdateHandler(for: initialFeedID)
+    let previewVisibilityChanged: () -> Void = { [weak self] in
+      // Native visibility changes can arrive during SwiftUI layout. Read both
+      // surfaces on the next main turn so replacing a view cannot stop a feed.
+      Task { @MainActor [weak self] in self?.reconcileAutomaticFeed() }
+    }
+    previewRenderer.onVisibilityChange = previewVisibilityChanged
+    miniPreviewRenderer.onVisibilityChange = previewVisibilityChanged
     refresh()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
     demandMonitor.onRouteChange = { [weak self] change in
-      guard let self, self.automaticFeedEnabled,
-        change.route.id == self.automaticDemandRouteID else { return }
-      self.cameraDemandError = change.error
-      self.automaticPolicy.demand(change.requested == true)
+      guard let self else { return }
+      self.routeDemand[change.route.id] = change.requested == true
+      if change.route.id == self.automaticDemandRouteID {
+        self.cameraDemandError = change.error
+        self.automaticPolicy.demand(change.requested == true)
+      }
       self.reconcileAutomaticFeed()
     }
-    if automaticFeedEnabled { demandMonitor.start() }
+    if outputMode == .program || feedDescriptors.contains(where: \.automaticFeed) { demandMonitor.start() }
   }
 
   func refresh() {
@@ -246,7 +348,7 @@ final class AppModel {
     if !devices.isEmpty, !devices.contains(where: { $0.id == selectedDevice }) {
       selectedDevice = devices.first!.id
     }
-    if automaticFeedEnabled, !restoringSettings {
+    if feedDescriptors.contains(where: \.automaticFeed), !restoringSettings {
       demandMonitor.refresh()
       reconcileAutomaticFeed()
     }
@@ -333,11 +435,16 @@ final class AppModel {
   /// previous feed are committed before the new descriptor is applied.
   @discardableResult
   func selectFeed(_ id: FeedID) -> Bool {
-    guard canEditFeedTopology,
+    guard !loading,
       feedCoordinator.descriptors.contains(where: { $0.id == id }) else { return false }
     saveSettings()
     guard feedCoordinator.select(id) else { return false }
+    capture.setLegacyPreviewOwnership(false)
     capture = feedCoordinator.capture(for: id)
+    previewRenderer.bindSource(id.rawValue)
+    miniPreviewRenderer.bindSource(id.rawValue)
+    capture.setLegacyPreviewOwnership(true)
+    running = feedCoordinator.isFeedRunning(id)
     let descriptor = feedCoordinator.selectedDescriptor
     applySelectedDescriptor(descriptor)
     persistedSnapshot = feedCoordinator.snapshot
@@ -370,13 +477,20 @@ final class AppModel {
     guard feedCoordinator.remove(id) else { return false }
     syncRecordingFeeds()
     if wasSelected {
+      capture.setLegacyPreviewOwnership(false)
       capture = feedCoordinator.capture(for: feedCoordinator.selectedFeedID)
+      previewRenderer.bindSource(feedCoordinator.selectedFeedID.rawValue)
+      miniPreviewRenderer.bindSource(feedCoordinator.selectedFeedID.rawValue)
+      capture.setLegacyPreviewOwnership(true)
       applySelectedDescriptor(feedCoordinator.selectedDescriptor)
       installCaptureUpdateHandler(for: feedCoordinator.selectedFeedID)
       installProcessedFrameHandler(for: feedCoordinator.selectedFeedID)
     }
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
+    demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
+    publishVirtualCameraRegistry(persistedSnapshot)
+    monitorCoordinator.updateTargets(feeds: feedDescriptors, programAvailable: outputMode == .program)
     return true
   }
 
@@ -395,10 +509,11 @@ final class AppModel {
   }
 
   func setOutputMode(_ mode: FeedOutputMode) {
-    guard !running, feedCoordinator.outputMode != mode else { return }
+    guard canEditFeedTopology, feedCoordinator.outputMode != mode else { return }
     saveSettings()
     feedCoordinator.setOutputMode(mode)
     saveSettings()
+    installAutomaticFeedMonitor()
     reconcileAutoSwitcher()
   }
 
@@ -464,35 +579,47 @@ final class AppModel {
     // Assignments above ran while restoring, so the automatic-feed didSet
     // did not retarget the demand monitor. Do that after the new descriptor
     // is in place, then restore this feed's LUT.
-    installAutomaticFeedMonitor()
     if let bookmark = lutBookmark { restoreLUT(bookmark: bookmark) }
+    installAutomaticFeedMonitor()
     capture.setPreviewEnabled(previewEnabled)
   }
 
-  /// Points camera-demand listening at the selected feed without starting or
-  /// stopping capture. Each feed stores its own automatic-feed choice.
+  /// Retargets camera demand and applies the selected feed's automatic mode.
+  /// A visible preview also keeps capture alive in automatic mode.
   private func installAutomaticFeedMonitor() {
-    automaticPolicy = AutomaticFeedPolicy()
     cameraDemandError = nil
     demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
-    if automaticFeedEnabled { demandMonitor.start() }
+    if outputMode == .program || feedDescriptors.contains(where: \.automaticFeed) { demandMonitor.start() }
     else { demandMonitor.stop() }
+    reconcileAutomaticFeed()
   }
 
   func saveSettings() {
     guard !restoringSettings else { return }
     let oldName = feedCoordinator.selectedDescriptor.name
+    var monitorConfiguration = feedCoordinator.selectedDescriptor.monitorConfiguration
+    if feedCoordinator.selectedDescriptor.selectedDevice != selectedDevice {
+      monitorConfiguration.sourceProfileID = nil
+      monitorConfiguration.sourceCodeRange = nil
+      monitorConfiguration.sourceLogMapping = .native10Bit
+      monitorConfiguration.falseColor.profileID = nil
+      monitorConfiguration.falseColor.specificationVersion = nil
+      monitorConfiguration.falseColor.exposureIndex = 800
+      monitorConfiguration.falseColor.referenceOffsetStops = 0
+    }
     let descriptor = FeedDescriptor(id: selectedFeedID, name: oldName, selectedDevice: selectedDevice,
       applyLUT: lutLoaded ? configuration.applyLUT : rememberedLUTEnabled,
       downscale: configuration.downscale, convertTo420: configuration.convertTo420,
       reduceFrameRate: configuration.reduceFrameRate, gamut: gamut,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled, lutBookmark: lutBookmark,
-      automaticFeed: automaticFeedEnabled)
+      automaticFeed: automaticFeedEnabled, enabled: feedCoordinator.selectedDescriptor.enabled,
+      monitorConfiguration: monitorConfiguration)
     feedCoordinator.update(descriptor)
     persistedSnapshot = feedCoordinator.snapshot
     settingsStore.saveSnapshot(persistedSnapshot)
     demandMonitor.setRoutes(feedCoordinator.virtualCameraDescriptors)
     publishVirtualCameraRegistry(persistedSnapshot)
+    monitorCoordinator.updateTargets(feeds: feedDescriptors, programAvailable: outputMode == .program)
   }
 
   private func syncRecordingFeeds() {
@@ -502,14 +629,15 @@ final class AppModel {
   }
 
   /// Publishes the complete feed topology in one transaction. The camera
-  /// extension reads this snapshot from the shared app group and can retain
-  /// existing CMIO devices until their clients release them during reconcile.
+  /// extension receives it through CMIO and retains existing devices until
+  /// their clients release them during reconciliation.
   private func publishVirtualCameraRegistry(_ snapshot: AppSettingsSnapshot) {
     let previous = virtualCameraRegistryStore.load()
     let candidate = VirtualCameraRegistrySnapshot.forFeeds(snapshot.feeds,
       outputMode: snapshot.outputMode, previous: previous)
     do {
       try virtualCameraRegistryStore.save(candidate)
+      registryPublisher.publish(candidate)
     } catch {
       update.message = "Virtual cameras could not be updated: \(error.localizedDescription)"
     }
@@ -525,11 +653,7 @@ final class AppModel {
     update.pipelineEnabledApplied = nil
     update.output = ""
     capture.reconfigure(configuration: effectiveConfiguration, pipelineEnabled: pipelineEnabled)
-    guard running, feedCoordinator.outputMode == .program else { return }
-    // The Program sink negotiates once. A later processing change has to
-    // renegotiate that contract or every new frame is rejected.
-    try? feedCoordinator.setProgramOutputDemand(true, configuration: effectiveConfiguration,
-      passthroughFormat: kCVPixelFormatType_422YpCbCr10)
+    reconcileProgramTransportDemand()
   }
 
   var canStartFeed: Bool {
@@ -537,7 +661,8 @@ final class AppModel {
   }
 
   func start() {
-    guard !automaticFeedEnabled else { return }
+    manuallyStoppedFeeds.remove(selectedFeedID)
+    guard !automaticFeedEnabled else { retryAutomaticFeed(); return }
     startFeed()
   }
 
@@ -548,7 +673,10 @@ final class AppModel {
       // selected feed keeps the existing preview controller; additional
       // sources run headless and publish only into the Program route.
       for descriptor in feedCoordinator.descriptors where descriptor.enabled &&
-        descriptor.id != selectedFeedID && !descriptor.selectedDevice.isEmpty {
+        descriptor.id != selectedFeedID && !descriptor.selectedDevice.isEmpty &&
+        !manuallyStoppedFeeds.contains(descriptor.id) &&
+        (!automaticFeedEnabled || descriptor.automaticFeed) {
+        if automaticFeedEnabled { demandStartedFeeds.insert(descriptor.id) }
         installCaptureUpdateHandler(for: descriptor.id)
         installProcessedFrameHandler(for: descriptor.id)
         feedCoordinator.setProgramSourceHealth(descriptor.id, healthy: true)
@@ -558,6 +686,7 @@ final class AppModel {
         var headlessConfiguration = descriptor.configuration
         let applySavedLUT = headlessConfiguration.applyLUT
         headlessConfiguration.applyLUT = false
+        detectedInputCadence[descriptor.id] = nil
         _ = feedCoordinator.startCapture(feedID: descriptor.id,
           deviceID: descriptor.selectedDevice, configuration: headlessConfiguration,
           pipelineEnabled: descriptor.pipelineEnabled, previewEnabled: false)
@@ -574,32 +703,24 @@ final class AppModel {
     if feedCoordinator.outputMode == .program {
       feedCoordinator.setProgramSourceHealth(selectedFeedID, healthy: true)
       feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: false)
-      do {
-        try feedCoordinator.setProgramOutputDemand(true, configuration: effectiveConfiguration,
-          passthroughFormat: kCVPixelFormatType_422YpCbCr10)
-      } catch {
-        update.message = "Program camera unavailable: \(error.localizedDescription)"
-      }
       reconcileAutoSwitcher()
     } else {
       feedCoordinator.setCameraOutputEnabled(feedID: selectedFeedID, enabled: true)
     }
+    detectedInputCadence[selectedFeedID] = nil
     capture.start(feedID: selectedFeedID, deviceID: selectedDevice, configuration: effectiveConfiguration,
       pipelineEnabled: pipelineEnabled, previewEnabled: previewEnabled)
+    reconcileProgramTransportDemand()
   }
 
   func stop() {
+    manuallyStoppedFeeds.insert(selectedFeedID)
     running = false
     previewReady = false
-    if feedCoordinator.outputMode == .program {
-      try? feedCoordinator.setProgramOutputDemand(false, configuration: effectiveConfiguration,
-        passthroughFormat: kCVPixelFormatType_422YpCbCr10)
-    }
-    for descriptor in feedCoordinator.descriptors where descriptor.id != selectedFeedID {
-      feedCoordinator.stopCapture(feedID: descriptor.id)
-    }
     feedCoordinator.stop(selectedFeedID)
-    recordingModel.stopAll()
+    demandStartedFeeds.remove(selectedFeedID)
+    recordingModel.stop(feedID: selectedFeedID)
+    reconcileProgramTransportDemand()
     stopAutoSwitcher()
   }
 
@@ -743,21 +864,19 @@ final class AppModel {
   /// work drains, so stale updates are ignored by feed identity.
   private func installCaptureUpdateHandler(for feedID: FeedID) {
     let controller = feedCoordinator.capture(for: feedID)
+    controller.setLegacyPreviewOwnership(feedID == selectedFeedID)
+    controller.setMonitorSink(monitorCoordinator.captureSink(for: MonitorTargetID(feedID.rawValue)))
     controller.onUpdate = { [weak self] update in
       MainActor.assumeIsolated {
-        guard let self else { return }
+        guard let self, self.feedDescriptors.contains(where: { $0.id == feedID }) else { return }
+        self.cameraUpdates[feedID] = update
         if update.stopped {
+          self.monitorCoordinator.sourceStateChanged(target: MonitorTargetID(feedID.rawValue), running: false, message: update.message)
+          self.detectedInputCadence[feedID] = nil
           self.feedCoordinator.stopCapture(feedID: feedID)
           if self.selectedFeedID == feedID {
-            if self.feedCoordinator.outputMode == .program {
-              try? self.feedCoordinator.setProgramOutputDemand(false,
-                configuration: self.effectiveConfiguration,
-                passthroughFormat: kCVPixelFormatType_422YpCbCr10)
-            }
-            for descriptor in self.feedCoordinator.descriptors where descriptor.id != feedID {
-              self.feedCoordinator.stopCapture(feedID: descriptor.id)
-            }
-            self.recordingModel.stopAll()
+            self.recordingModel.stop(feedID: feedID)
+            self.retireProgramSource(feedID)
             self.running = false
             self.previewReady = false
             self.stopAutoSwitcher()
@@ -768,7 +887,12 @@ final class AppModel {
             self.recordingModel.stop(feedID: feedID)
             self.retireProgramSource(feedID)
           }
+          self.reconcileProgramTransportDemand()
           return
+        }
+        if let inputFast = update.inputFast, self.detectedInputCadence[feedID] != inputFast {
+          self.detectedInputCadence[feedID] = inputFast
+          self.reconcileProgramTransportDemand()
         }
         guard self.selectedFeedID == feedID else { return }
         self.update = update
@@ -787,22 +911,28 @@ final class AppModel {
   /// Loads one non-selected feed's saved LUT into that feed's controller, then
   /// enables Apply LUT. The camera is already running without the LUT.
   private func restoreHeadlessLUT(feedID: FeedID, bookmark: Data, pipelineEnabled: Bool) {
+    let controller = feedCoordinator.capture(for: feedID)
+    let generation = controller.generationToken
     Task { [weak self, lutLoader] in
       let loaded: LoadedLUT
       do { loaded = try await lutLoader.restore(bookmark: bookmark) }
       catch { return }
       await MainActor.run { [weak self] in
-        guard let self, self.running, self.feedCoordinator.isFeedRunning(feedID) else { return }
-        self.feedCoordinator.capture(for: feedID).load(loaded.cube) { [weak self] result in
+        guard let self, self.feedCoordinator.isFeedRunning(feedID),
+          controller.generationToken == generation,
+          let descriptor = self.feedCoordinator.descriptors.first(where: { $0.id == feedID }),
+          descriptor.lutBookmark == bookmark, descriptor.applyLUT else { return }
+        controller.load(loaded.cube, expectedGeneration: generation) { [weak self] result in
           MainActor.assumeIsolated {
-            guard let self, case .success = result, self.running,
+            guard let self, case .success = result,
               self.feedCoordinator.isFeedRunning(feedID),
+              controller.generationToken == generation,
               let descriptor = self.feedCoordinator.descriptors.first(where: { $0.id == feedID }),
-              descriptor.applyLUT else { return }
+              descriptor.lutBookmark == bookmark, descriptor.applyLUT else { return }
             var configuration = descriptor.configuration
             configuration.applyLUT = true
             self.feedCoordinator.reconfigureCapture(feedID: feedID,
-              configuration: configuration, pipelineEnabled: pipelineEnabled)
+              configuration: configuration, pipelineEnabled: descriptor.pipelineEnabled)
           }
         }
       }
@@ -831,6 +961,7 @@ final class AppModel {
   }
 
   var cameraRequested: Bool { automaticPolicy.requested }
+  var automaticCaptureRequested: Bool { automaticPolicy.captureRequested }
 
   private var automaticDemandRouteID: String {
     if feedCoordinator.outputMode == .program {
@@ -841,15 +972,23 @@ final class AppModel {
 
   var automaticFeedStatus: String {
     if let cameraDemandError { return cameraDemandError }
-    if !cameraRequested { return "Waiting for a camera app. Capture and video processing are off." }
-    if loading { return "Camera requested. Restoring your LUT…" }
-    if running { return "Camera in use. Stops when the last camera app closes it." }
-    if !devices.contains(where: { $0.id == selectedDevice }) { return "Camera requested. Connect the UltraStudio and refresh inputs." }
-    return "Camera requested. Feed stopped; retry or reopen the camera in your app."
+    if !automaticCaptureRequested { return "Waiting for a camera app or visible preview. Capture and video processing are off." }
+    if loading { return "Restoring your LUT…" }
+    if running {
+      return cameraRequested
+        ? "Camera in use. Hide preview without interrupting camera output."
+        : "Preview is live. Hide it to stop capture until a camera app needs it."
+    }
+    if !devices.contains(where: { $0.id == selectedDevice }) { return "Connect the UltraStudio and refresh inputs." }
+    return "Feed stopped. Retry to resume preview or camera output."
   }
 
   func retryAutomaticFeed() {
+    manuallyStoppedFeeds.remove(selectedFeedID)
     automaticPolicy.retry()
+    feedPolicies[selectedFeedID]?.retry()
+    programTransportRequired = false
+    programTransportConfiguration = nil
     // `start()` is idempotent while the monitor is healthy, and retries the
     // listener registration after an initial setup failure. `refresh()` alone
     // is a no-op in that failed state because the monitor is disabled there.
@@ -859,16 +998,240 @@ final class AppModel {
   }
 
   private func reconcileAutomaticFeed() {
-    guard automaticFeedEnabled else { return }
-    switch automaticPolicy.action(ready: canStartFeed, running: running) {
-    case .start: startFeed()
-    case .stop: stop()
-    case nil: break
+    let programRequested = monitorDemand.contains(MonitorTargetID("program")) ||
+      routeDemand[VirtualCameraDescriptor.program().id] == true ||
+      (outputMode == .program && previewEnabled &&
+        (previewRenderer.isPresented || miniPreviewRenderer.isPresented)) ||
+      (outputMode == .program && running && !demandStartedFeeds.contains(selectedFeedID))
+    for descriptor in feedDescriptors where descriptor.enabled {
+      let id = descriptor.id
+      if !FeedLifecycleDemandPolicy.retainsAutomaticOwnership(automaticEnabled: descriptor.automaticFeed,
+        wasAutomaticallyStarted: demandStartedFeeds.contains(id)) {
+        demandStartedFeeds.remove(id)
+      }
+      let recording = recordingModel.feeds.contains {
+        $0.id == id && ($0.status == .recording || $0.status == .paused)
+      }
+      var policy = feedPolicies[id] ?? AutomaticFeedPolicy()
+      let camera = routeDemand[VirtualCameraDescriptor.feed(feedID: id.rawValue).id] == true
+      policy.demand(camera || (outputMode == .program && programRequested) || recording)
+      let legacyVisible = id == selectedFeedID && descriptor.previewEnabled &&
+        (previewRenderer.isPresented || miniPreviewRenderer.isPresented)
+      policy.previewDemand(legacyVisible || (descriptor.previewEnabled && monitorDemand.contains(MonitorTargetID(id.rawValue))))
+      let isRunning = feedCoordinator.isFeedRunning(id)
+      let ready = FeedLifecycleDemandPolicy.canStartSource(automaticEnabled: descriptor.automaticFeed,
+        manuallyStopped: manuallyStoppedFeeds.contains(id),
+        deviceAvailable: devices.contains { $0.id == descriptor.selectedDevice },
+        loading: id == selectedFeedID && loading)
+      let action = policy.action(ready: ready && (id != selectedFeedID || canStartFeed), running: isRunning)
+      feedPolicies[id] = policy
+      if id == selectedFeedID { automaticPolicy = policy }
+      switch action {
+      case .start:
+        demandStartedFeeds.insert(id)
+        if id == selectedFeedID { startFeed() }
+        else {
+          installCaptureUpdateHandler(for: id)
+          installProcessedFrameHandler(for: id)
+          feedCoordinator.setProgramSourceHealth(id, healthy: true)
+          feedCoordinator.setCameraOutputEnabled(feedID: id, enabled: outputMode != .program)
+          var configuration = descriptor.configuration
+          configuration.applyLUT = false
+          detectedInputCadence[id] = nil
+          _ = feedCoordinator.startCapture(feedID: id, deviceID: descriptor.selectedDevice,
+            configuration: configuration, pipelineEnabled: descriptor.pipelineEnabled, previewEnabled: false)
+          if descriptor.applyLUT, let bookmark = descriptor.lutBookmark {
+            restoreHeadlessLUT(feedID: id, bookmark: bookmark, pipelineEnabled: descriptor.pipelineEnabled)
+          }
+        }
+      case .stop:
+        guard demandStartedFeeds.contains(id), !recording else { continue }
+        demandStartedFeeds.remove(id)
+        feedCoordinator.stopCapture(feedID: id)
+        monitorCoordinator.sourceStateChanged(target: MonitorTargetID(id.rawValue), running: false, message: "Waiting for demand")
+        if id == selectedFeedID {
+          running = false; previewReady = false
+          if outputMode == .program { stopAutoSwitcher() }
+        }
+      case nil: break
+      }
+    }
+    reconcileProgramTransportDemand()
+  }
+
+  /// Program transport follows its camera clients and the actual on-air source,
+  /// which can be a headless feed while another feed owns the settings controls.
+  private func reconcileProgramTransportDemand() {
+    let producerID = feedCoordinator.programOutput.selectedFeedID
+    let producer = feedDescriptors.first { $0.id == producerID && $0.enabled }
+    let required = FeedLifecycleDemandPolicy.programTransportRequired(
+      programMode: outputMode == .program,
+      cameraRequested: routeDemand[VirtualCameraDescriptor.program().id] == true,
+      onAirProducerRunning: producer.map { feedCoordinator.isFeedRunning($0.id) } ?? false)
+    let sourceConfiguration = producerID == selectedFeedID ? effectiveConfiguration :
+      (producer?.configuration ?? effectiveConfiguration)
+    let contract = FeedLifecycleDemandPolicy.programContract(configuration: sourceConfiguration,
+      pipelineEnabled: producer?.pipelineEnabled ?? pipelineEnabled,
+      detectedInputFast: producerID.flatMap { detectedInputCadence[$0] })
+    guard required != programTransportRequired || (required && contract != programTransportConfiguration) else { return }
+    programTransportRequired = required
+    programTransportConfiguration = required ? contract : nil
+    do {
+      try feedCoordinator.setProgramOutputDemand(required, configuration: contract,
+        passthroughFormat: kCVPixelFormatType_422YpCbCr10)
+    } catch {
+      update.message = "Program camera unavailable: \(error.localizedDescription)"
     }
   }
 
   func resetPreview() {
     previewRenderer.flush()
     miniPreviewRenderer.flush()
+  }
+
+  // MARK: - Per-camera control (new interface)
+
+  func descriptor(for id: FeedID) -> FeedDescriptor? { feedDescriptors.first { $0.id == id } }
+
+  func isCameraRunning(_ id: FeedID) -> Bool { feedCoordinator.isFeedRunning(id) }
+
+  /// The latest status for any camera. The selected camera uses the app's live `update`.
+  func cameraUpdate(_ id: FeedID) -> CaptureUpdate? { id == selectedFeedID && running ? update : cameraUpdates[id] }
+
+  /// Program mode: the "Ultracam · Program" virtual camera has at least one client.
+  var programInUse: Bool { routeDemand[VirtualCameraDescriptor.program().id] == true }
+
+  /// Separate mode: this camera's virtual camera has at least one client.
+  func cameraInUse(_ id: FeedID) -> Bool {
+    routeDemand[VirtualCameraDescriptor.feed(feedID: id.rawValue).id] == true
+  }
+
+  /// Starts one camera without changing the selection. The selected camera
+  /// uses the established path; others start headless, like Program sources.
+  func startCamera(_ id: FeedID) {
+    guard let descriptor = descriptor(for: id), descriptor.enabled else { return }
+    if id == selectedFeedID { start(); return }
+    guard !feedCoordinator.isFeedRunning(id),
+      devices.contains(where: { $0.id == descriptor.selectedDevice }) else { return }
+    manuallyStoppedFeeds.remove(id)
+    installCaptureUpdateHandler(for: id)
+    installProcessedFrameHandler(for: id)
+    feedCoordinator.setProgramSourceHealth(id, healthy: true)
+    feedCoordinator.setCameraOutputEnabled(feedID: id, enabled: outputMode != .program)
+    var configuration = descriptor.configuration
+    configuration.applyLUT = false
+    detectedInputCadence[id] = nil
+    _ = feedCoordinator.startCapture(feedID: id, deviceID: descriptor.selectedDevice,
+      configuration: configuration, pipelineEnabled: descriptor.pipelineEnabled, previewEnabled: false)
+    if descriptor.applyLUT, let bookmark = descriptor.lutBookmark {
+      restoreHeadlessLUT(feedID: id, bookmark: bookmark, pipelineEnabled: descriptor.pipelineEnabled)
+    }
+    reconcileProgramTransportDemand()
+  }
+
+  /// Stops one camera: capture, its output and its recording. Other cameras keep running.
+  func stopCamera(_ id: FeedID) {
+    if id == selectedFeedID { stop(); return }
+    guard feedCoordinator.isFeedRunning(id) else { return }
+    manuallyStoppedFeeds.insert(id)
+    demandStartedFeeds.remove(id)
+    recordingModel.stop(feedID: id)
+    feedCoordinator.stopCapture(feedID: id)
+    if outputMode == .program { retireProgramSource(id) }
+    monitorCoordinator.sourceStateChanged(target: MonitorTargetID(id.rawValue), running: false, message: "Camera stopped")
+    cameraUpdates[id] = nil
+    reconcileProgramTransportDemand()
+  }
+
+  func startAllCameras() {
+    if !running { start() }
+    for descriptor in feedDescriptors where descriptor.enabled && descriptor.id != selectedFeedID {
+      startCamera(descriptor.id)
+    }
+  }
+
+  func stopAllCameras() {
+    for descriptor in feedDescriptors where descriptor.id != selectedFeedID && feedCoordinator.isFeedRunning(descriptor.id) {
+      stopCamera(descriptor.id)
+    }
+    if running { stop() }
+  }
+
+  /// Edits one camera's saved settings and applies them to its running
+  /// capture, without changing the selection. The selected camera goes
+  /// through the existing bindings so their side effects still run.
+  func updateCamera(_ id: FeedID, _ mutate: (inout FeedDescriptor) -> Void) {
+    guard var descriptor = descriptor(for: id) else { return }
+    let before = descriptor
+    mutate(&descriptor)
+    guard descriptor != before else { return }
+    if id == selectedFeedID {
+      if descriptor.configuration.downscale != configuration.downscale ||
+        descriptor.configuration.convertTo420 != configuration.convertTo420 ||
+        descriptor.configuration.reduceFrameRate != configuration.reduceFrameRate ||
+        descriptor.applyLUT != before.applyLUT {
+        var next = configuration
+        next.downscale = descriptor.configuration.downscale
+        next.convertTo420 = descriptor.configuration.convertTo420
+        next.reduceFrameRate = descriptor.configuration.reduceFrameRate
+        if descriptor.applyLUT != before.applyLUT { next.applyLUT = descriptor.applyLUT && lutLoaded }
+        configuration = next
+      }
+      if descriptor.pipelineEnabled != pipelineEnabled { pipelineEnabled = descriptor.pipelineEnabled }
+      if descriptor.gamut != gamut { gamut = descriptor.gamut }
+      if descriptor.previewEnabled != previewEnabled { previewEnabled = descriptor.previewEnabled }
+      if descriptor.automaticFeed != automaticFeedEnabled { automaticFeedEnabled = descriptor.automaticFeed }
+      if descriptor.selectedDevice != selectedDevice, !running { selectedDevice = descriptor.selectedDevice }
+      return
+    }
+    if feedCoordinator.isFeedRunning(id) && descriptor.selectedDevice != before.selectedDevice {
+      descriptor.selectedDevice = before.selectedDevice
+    }
+    feedCoordinator.update(descriptor)
+    persistedSnapshot = feedCoordinator.snapshot
+    settingsStore.saveSnapshot(persistedSnapshot)
+    publishVirtualCameraRegistry(persistedSnapshot)
+    if descriptor.previewEnabled != before.previewEnabled {
+      monitorCoordinator.setPreviewEnabled(descriptor.previewEnabled, for: MonitorTargetID(id.rawValue))
+    }
+    if descriptor.automaticFeed != before.automaticFeed { installAutomaticFeedMonitor() }
+    if feedCoordinator.isFeedRunning(id),
+      descriptor.configuration != before.configuration || descriptor.pipelineEnabled != before.pipelineEnabled {
+      var configuration = descriptor.configuration
+      // A headless camera's LUT is applied only once its file is loaded.
+      configuration.applyLUT = false
+      cameraUpdates[id]?.pipelineEnabledApplied = nil
+      feedCoordinator.reconfigureCapture(feedID: id, configuration: configuration,
+        pipelineEnabled: descriptor.pipelineEnabled)
+      if descriptor.applyLUT, let bookmark = descriptor.lutBookmark {
+        restoreHeadlessLUT(feedID: id, bookmark: bookmark, pipelineEnabled: descriptor.pipelineEnabled)
+      }
+      reconcileProgramTransportDemand()
+    }
+  }
+
+  /// Holds the current Program shot: automatic switching stays on but makes no cuts.
+  func setAutoHold(_ hold: Bool) {
+    var settings = switcherSettings
+    guard settings.naturalTalkingHead.manualHold != hold else { return }
+    settings.naturalTalkingHead.manualHold = hold
+    updateSwitcher(settings)
+  }
+
+  /// True when running Program sources would deliver different camera formats,
+  /// so each cut between them renegotiates the Program output.
+  var programFormatMismatch: Bool {
+    guard outputMode == .program else { return false }
+    // The LUT changes pixel values, not the camera format, so it is ignored here.
+    let contracts = feedDescriptors.filter { $0.enabled && feedCoordinator.isFeedRunning($0.id) }.map { descriptor in
+      var contract = FeedLifecycleDemandPolicy.programContract(
+        configuration: descriptor.id == selectedFeedID ? effectiveConfiguration : descriptor.configuration,
+        pipelineEnabled: descriptor.id == selectedFeedID ? pipelineEnabled : descriptor.pipelineEnabled,
+        detectedInputFast: detectedInputCadence[descriptor.id])
+      contract.applyLUT = false
+      return contract
+    }
+    guard let first = contracts.first else { return false }
+    return contracts.contains { $0 != first }
   }
 }

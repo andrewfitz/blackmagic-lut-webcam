@@ -31,6 +31,7 @@ app += native
 camera = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/CameraExtension").glob("*.swift")) + [
     "Sources/Shared/VideoContract.swift", "Sources/Shared/VideoBufferLayout.swift",
     "Sources/Shared/VirtualCameraRegistry.swift",
+    "Sources/Shared/VirtualCameraRegistryTransport.swift",
 ]
 def source_type(path):
     if path.endswith(".metal"): return "sourcecode.metal"
@@ -83,10 +84,16 @@ def configs(key, settings):
 project_configs = configs("project", dict(SDKROOT="macosx", MACOSX_DEPLOYMENT_TARGET="15.0", SWIFT_VERSION="5.0", CLANG_ENABLE_MODULES="YES", CLANG_ENABLE_OBJC_ARC="YES", CLANG_CXX_LANGUAGE_STANDARD="c++17", ENABLE_HARDENED_RUNTIME="YES", CODE_SIGN_STYLE="Automatic", SWIFT_STRICT_CONCURRENCY="complete", SWIFT_TREAT_WARNINGS_AS_ERRORS="YES", ARCHS="arm64"))
 
 
+monitor_package = add("monitor-package", "XCLocalSwiftPackageReference", relativePath="Packages/MonitorTools")
+monitor_products = [add(f"monitor-product-{name}", "XCSwiftPackageProductDependency", package=monitor_package, productName=name)
+                    for name in ("MonitorToolsCore", "MonitorToolsMetal", "MonitorToolsUI")]
+
+
 def target(key, name, sources, product, product_type, bundle_id, plist, entitlements):
     builds = [add(f"{key}-{path}", "PBXBuildFile", fileRef=source_refs[path]) for path in sources if path.endswith((".swift", ".mm", ".cpp"))]
     phase = add(f"{key}-sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=builds, runOnlyForDeploymentPostprocessing=0)
-    frameworks = add(f"{key}-frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0)
+    package_builds = [add(f"{key}-package-{product}", "PBXBuildFile", productRef=product) for product in monitor_products] if key == "app" else []
+    frameworks = add(f"{key}-frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=package_builds, runOnlyForDeploymentPostprocessing=0)
     settings = dict(PRODUCT_NAME=name, PRODUCT_BUNDLE_IDENTIFIER=bundle_id, INFOPLIST_FILE=plist, CODE_SIGN_ENTITLEMENTS=entitlements, GENERATE_INFOPLIST_FILE="NO", LD_RUNPATH_SEARCH_PATHS="$(inherited) @executable_path/../Frameworks", COMBINE_HIDPI_IMAGES="YES")
     if key == "camera":
         settings.update(PRODUCT_NAME=bundle_id, SKIP_INSTALL="YES")
@@ -104,7 +111,7 @@ def target(key, name, sources, product, product_type, bundle_id, plist, entitlem
     if key == "app":
         icon_build = add("app-icon-build", "PBXBuildFile", fileRef=icon_catalog_ref)
         phases.append(add("app-icon-resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[icon_build], runOnlyForDeploymentPostprocessing=0))
-    return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=phases, buildRules=[], dependencies=[], name=name, productName=name, productReference=product, productType=product_type)
+    return add(f"{key}-target", "PBXNativeTarget", buildConfigurationList=configs(key, settings), buildPhases=phases, buildRules=[], dependencies=[], packageProductDependencies=monitor_products if key == "app" else [], name=name, productName=name, productReference=product, productType=product_type)
 
 
 camera_id = target("camera", "UltracamCamera", camera, camera_product, "com.apple.product-type.system-extension", "org.ultracam.app.camera", "Config/Camera-Info.plist", "Config/Camera.entitlements")
@@ -115,7 +122,7 @@ embed_file = add("embed-camera-file", "PBXBuildFile", fileRef=camera_product, se
 embed = add("embed-camera", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="$(CONTENTS_FOLDER_PATH)/Library/SystemExtensions", dstSubfolderSpec=16, files=[embed_file], name="Embed Camera Extension", runOnlyForDeploymentPostprocessing=0)
 objects[app_id]["dependencies"] = [dependency]
 objects[app_id]["buildPhases"].append(embed)
-project = add("project", "PBXProject", attributes=dict(BuildIndependentTargetsInParallel=1, LastUpgradeCheck="2700"), buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="en", hasScannedForEncodings=0, knownRegions=["en", "Base"], mainGroup=group, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app_id, camera_id])
+project = add("project", "PBXProject", attributes=dict(BuildIndependentTargetsInParallel=1, LastUpgradeCheck="2700"), buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="en", hasScannedForEncodings=0, knownRegions=["en", "Base"], mainGroup=group, productRefGroup=products, projectDirPath="", projectRoot="", targets=[app_id, camera_id], packageReferences=[monitor_package])
 
 
 def encode(value, level=0):

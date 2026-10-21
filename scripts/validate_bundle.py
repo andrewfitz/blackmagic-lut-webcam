@@ -23,6 +23,20 @@ def validate(app):
         executable = info.get("CFBundleExecutable", "")
         if not executable or Path(executable).name != executable or not (bundle / "Contents/MacOS" / executable).is_file():
             raise ValueError(f"Missing bundle executable: {bundle}")
+        if bundle == app:
+            signature = subprocess.run(
+                ["/usr/bin/codesign", "-d", "--entitlements", ":-", str(bundle)], capture_output=True)
+            if signature.returncode == 0 and signature.stdout:
+                app_entitlements = plistlib.loads(signature.stdout)
+            else:
+                template = Path(__file__).resolve().parents[1] / "Config/App.entitlements"
+                app_entitlements = plistlib.loads(template.read_bytes())
+            if app_entitlements.get("com.apple.security.files.user-selected.read-write") is not True:
+                raise ValueError("Recording requires read/write access to user-selected folders.")
+            if app_entitlements.get("com.apple.security.files.user-selected.read-only"):
+                raise ValueError("Read-only selected-file access prevents recording output.")
+            if app_entitlements.get("com.apple.security.cs.disable-library-validation") is not True:
+                raise ValueError("The host must allow Blackmagic's separately signed DeckLink framework.")
         if bundle == extension:
             service = info.get("CMIOExtension", {}).get("CMIOExtensionMachServiceName", "")
             if not service or "$(" in service:
@@ -38,9 +52,17 @@ def validate(app):
                 template = Path(__file__).resolve().parents[1] / "Config/Camera.entitlements"
                 entitlements = plistlib.loads(template.read_bytes())
             groups = entitlements.get("com.apple.security.application-groups", [])
+            if entitlements.get("com.apple.security.cs.disable-library-validation"):
+                raise ValueError("The camera extension must retain library validation; only the host loads DeckLink.")
             if not any(service.startswith(group + ".") for group in groups):
                 raise ValueError("Camera Mach service must be prefixed with an entitled app group.")
-    print("Camera bundle metadata validated.")
+    # Runtime shader source is a SwiftPM Bundle.module resource in the host only.
+    monitor_bundles = list((app / "Contents/Resources").glob("*MonitorToolsMetal.bundle"))
+    if not monitor_bundles or not any(list(bundle.rglob("MonitorTools.metal.txt")) for bundle in monitor_bundles):
+        raise ValueError("Host MonitorToolsMetal shader resource bundle is missing.")
+    if any("MonitorTools" in path.name for path in extension.rglob("*")):
+        raise ValueError("Monitor Tools must not be packaged into the camera extension.")
+    print("Camera metadata and host-only Monitor Tools resources validated.")
 
 
 if __name__ == "__main__":

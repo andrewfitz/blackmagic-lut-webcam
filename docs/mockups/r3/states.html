@@ -1,0 +1,466 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · States & edge cases</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .desktop.board { height: auto; background: #101114; padding: 92px 24px 210px; }
+  .tag { top: 30px; left: 24px; }
+  .sub { position: absolute; top: 36px; left: 440px; font-size: 12px; color: var(--label2); }
+  .sech { display: flex; align-items: baseline; gap: 12px; margin: 34px 0 14px; padding-left: 34px; position: relative; }
+  .sech:first-child { margin-top: 0; }
+  .sech h2 { margin: 0; font-size: 16px; font-weight: 700; }
+  .sech span { font-size: 12px; color: var(--label2); }
+  .sech .callout { left: 0; top: -1px; }
+  .g4 { display: grid; grid-template-columns: repeat(4, 410px); gap: 24px; align-items: start; }
+  .g3 { display: grid; grid-template-columns: repeat(3, 554px); gap: 24px; align-items: start; }
+  .scard { display: flex; flex-direction: column; gap: 9px; }
+  .w2 { grid-column: span 2; } .w3 { grid-column: span 3; } .w4 { grid-column: span 4; }
+  .crop { background: var(--window); border-radius: 14px; padding: 12px; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.1), 0 10px 30px rgba(0,0,0,0.35); position: relative; overflow: hidden; }
+  .cap { font-size: 11.5px; color: var(--label2); line-height: 1.4; padding: 0 4px; }
+  .cap b { color: var(--label); font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .num { width: 18px; height: 18px; border-radius: 9px; background: rgba(255,255,255,0.14); color: var(--label); font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; flex: none;
+    background: conic-gradient(from 0deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.85) 300deg, rgba(255,255,255,0) 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
+  .spin.lg { width: 30px; height: 30px; -webkit-mask: radial-gradient(circle, transparent 11px, #000 11.5px); mask: radial-gradient(circle, transparent 11px, #000 11.5px); }
+  .prog { height: 5px; border-radius: 3px; background: var(--fill3); overflow: hidden; }
+  .prog i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+  .dis { opacity: 0.38; }
+  .linkish { color: #64b0ff; font-size: 11.5px; }
+  /* pictures */
+  .pic { height: 217px; border-radius: 12px; }
+  .ph { position: relative; height: 217px; border-radius: 12px; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 0 34px; overflow: hidden; }
+  .ph b { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.86); }
+  .ph small { font-size: 11.5px; color: rgba(255,255,255,0.46); line-height: 1.35; }
+  .ph .big { color: rgba(255,255,255,0.4); }
+  .skip::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 3; box-shadow: inset 0 0 0 3px rgba(255,159,10,0.85); pointer-events: none; }
+  .cutting::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 3; pointer-events: none;
+    box-shadow: inset 0 0 0 4px var(--red); outline: 2px dashed rgba(255,255,255,0.5); outline-offset: -9px; }
+  /* sidebar crops */
+  .sbcrop { width: 236px; flex: none; border-radius: 16px; padding: 4px 10px 10px; background: rgba(48,48,52,0.75);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 0.5px rgba(255,255,255,0.14); }
+  .sbcrop .mini-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+  .sbcrop .mini-row small { font-size: 10.5px; color: var(--label2); display: block; }
+  .sbcrop .side-h { padding-top: 10px; }
+  .sbcrop .take { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; font-size: 11.5px; }
+  .sbcrop .take small { font-size: 10px; color: var(--label2); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+  .sbcard { display: flex; gap: 14px; align-items: flex-start; }
+  .sbcard .cap { padding-top: 6px; }
+  .sbbg { background: linear-gradient(140deg, #2a2440, #1d1d22); border-radius: 18px; padding: 8px; }
+  /* status bars */
+  .sbwrap { position: relative; height: 30px; width: 1320px; background: var(--window); border-radius: 0 0 12px 12px; overflow: hidden; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.1); }
+  .sbline { display: flex; align-items: center; gap: 18px; }
+  .sbline .lab { width: 340px; font-size: 11.5px; color: var(--label2); line-height: 1.35; }
+  .sbline .lab b { color: var(--label); font-weight: 600; display: block; font-size: 12.5px; }
+  .seg2.warn { background: rgba(255,159,10,0.14); color: var(--orange); }
+  .seg2.err { background: rgba(255,69,58,0.16); color: #ff6961; }
+  /* menu bar icons */
+  .mbstrip { display: flex; border-radius: 12px; overflow: hidden; background: linear-gradient(100deg, #1b2347 0%, #3b2b55 45%, #7a3f45 80%, #b8643c 100%); }
+  .mbstrip > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px; position: relative; }
+  .mbstrip > div + div::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 0.5px; background: rgba(255,255,255,0.18); }
+  .mbicon { height: 24px; min-width: 34px; display: flex; align-items: center; justify-content: center; color: #fff; position: relative; border-radius: 7px; }
+  .mbicon .bdg { position: absolute; right: 3px; top: 2px; width: 7px; height: 7px; border-radius: 4px; box-shadow: 0 0 0 1.5px rgba(40,30,70,0.9); }
+  .mbstrip small { font-size: 11px; color: rgba(255,255,255,0.92); text-align: center; line-height: 1.3; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  .mbstrip small i { font-style: normal; color: rgba(255,255,255,0.6); display: block; font-size: 10px; }
+  /* wireframes */
+  .wf { background: #0c0c0e; border-radius: 10px; position: relative; height: 150px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.12); overflow: hidden; }
+  .wf .tb { position: absolute; left: 0; right: 0; top: 0; height: 16px; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+  .wf .tb span { width: 5px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.25); }
+  .wf .bx { position: absolute; background: #2a2a2e; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.14); }
+  .wf .bx.pic { background: linear-gradient(135deg, #5a4a3e, #2e2a36); }
+  .wf .bx.air { box-shadow: inset 0 0 0 1.5px var(--red); }
+  .wf .bx.nx { box-shadow: inset 0 0 0 1.5px var(--green); }
+  .wf .bx.sb { background: rgba(255,255,255,0.09); }
+  .wfcap { font-size: 11.5px; color: var(--label); font-weight: 600; margin-top: 7px; }
+  .wfcap small { display: block; color: var(--label2); font-weight: 400; font-size: 11px; line-height: 1.35; }
+  /* sheet + window crops */
+  .sheetwrap { height: 250px; border-radius: 10px; position: relative; overflow: hidden; background: #000; }
+  .sheetwrap .picture { position: absolute; inset: 0; opacity: 0.35; }
+  .sheet { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: 310px; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 9px; background: rgba(44,44,48,0.88); }
+  .appicon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(160deg, #3a3a40, #121214); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.3), 0 2px 6px rgba(0,0,0,0.5); color: #fff; }
+  .dd.inline { position: relative; width: 340px; left: auto; top: auto; }
+  .ddwrap { background: linear-gradient(150deg, #29304f, #3b2b55 60%, #6b3a46); border-radius: 16px; padding: 14px; display: flex; justify-content: center; }
+  .onb { position: relative; height: 470px; border-radius: 16px; overflow: hidden; background: var(--window); box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14), 0 10px 30px rgba(0,0,0,0.4); }
+  .step { display: flex; align-items: center; gap: 12px; padding: 11px 14px; position: relative; }
+  .step + .step::before { content: ""; position: absolute; top: 0; left: 52px; right: 0; height: 0.5px; background: var(--sep); }
+  .step .sn { width: 26px; height: 26px; border-radius: 13px; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: var(--fill2); }
+  .step .sn.done { background: var(--green); color: #05230e; }
+  .step .st { flex: 1; line-height: 1.3; }
+  .step .st small { display: block; font-size: 11px; color: var(--label2); }
+  .pop-inline { position: relative; width: 320px; border-radius: 18px; padding: 12px; background: rgba(38,38,42,0.92); }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; font-size: 12px; color: var(--label2); line-height: 1.4; }
+  .notes b { color: var(--label); font-weight: 600; }
+  .strip3 .r { white-space: nowrap; }
+</style></head>
+<body>
+<div class="desktop board">
+  <div class="tag">Round 3 · States &amp; edge cases</div>
+  <div class="sub">Every card is a true-scale crop of a round-3 component outside the happy path. <span class="newtag">NEW</span> marks proposals the current app doesn't have.</div>
+
+  <div class="sech"><span class="callout"><span class="n">1</span></span><h2>Channel strips · expanded</h2><span>One strip per feed under its picture. Record and output controls always reflect what the feed can actually do right now.</span></div>
+  <div class="g3" id="strips"></div>
+
+  <div class="sech"><span class="callout"><span class="n">2</span></span><h2>Channel strips · collapsed</h2><span>Chevron or ⌥⌘S. One line keeps state, elapsed, drops, effects, audio and the record button.</span></div>
+  <div class="g3"><div class="scard w3"><div class="crop" id="collapsed" style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px"></div>
+    <div class="cap">The summary line never hides a problem. Warnings turn the line's text orange, errors red, and the record button disables with the same rule as the expanded strip.</div></div></div>
+
+  <div class="sech"><span class="callout"><span class="n">3</span></span><h2>Pictures &amp; Program</h2><span>Tally lives on the feed pictures. No separate Program picture unless you choose Program view.</span></div>
+  <div class="g4" id="pics"></div>
+
+  <div class="sech"><span class="callout"><span class="n">4</span></span><h2>Session sidebar</h2><span>Problems show in the section they belong to, with one action each.</span></div>
+  <div class="g4" id="side"></div>
+
+  <div class="sech"><span class="callout"><span class="n">5</span></span><h2>Status bar</h2><span>Shown at the real 1320 pt window width. Each segment opens a popover with details.</span></div>
+  <div class="g4"><div class="scard w4"><div class="crop" id="sbars" style="display:flex;flex-direction:column;gap:12px;padding:16px"></div></div></div>
+
+  <div class="sech"><span class="callout"><span class="n">6</span></span><h2>Window, menu bar &amp; sheets</h2><span>First launch, dropdown states, icon states, layout scaling, quit and the ⋯ popover.</span></div>
+  <div class="g4" id="misc"></div>
+
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Expanded strips: 12 states. Record is only enabled when the feed is live, a folder is set and no take is finishing.</span></div>
+    <div><span class="n">2</span><span>Collapsed strips keep the state visible in color and words, so collapsing never hides a failure.</span></div>
+    <div><span class="n">3</span><span>Pictures: red ON AIR, green NEXT, dashed red while a cut waits for the next Program frame, orange when Auto skips an unhealthy source.</span></div>
+    <div><span class="n">4</span><span>Sidebar: first run, camera install, unsigned builds, interrupted takes, disk space and armed backups, each in its own section.</span></div>
+    <div><span class="n">5</span><span>Status bar: normal, recording, warning, error, nothing published. The worst state wins the color.</span></div>
+    <div><span class="n">6</span><span>Onboarding, dropdown and icon states, layout scaling, quit sheet and the LUT error in the ⋯ popover.</span></div>
+  </div>
+</div>
+
+<script>
+  // ---------- helpers ----------
+  const card = (cls, inner, n, title, text) =>
+    `<div class="scard ${cls}">${inner}<div class="cap"><b><span class="num">${n}</span>${title}</b>${text}</div></div>`;
+  const crop = (inner, style = '') => `<div class="crop" style="${style}">${inner}</div>`;
+  const hdr = (name, cam, badge) => `<div class="r"><span class="chev">${ic('chevd')}</span><b style="font-size:13.5px">${name}</b><span class="c2" style="font-size:11.5px">${cam}</span>${badge}<span style="flex:1"></span><span class="btn icon">${ic('ellipsis')}</span></div><div class="sep3"></div>`;
+  const live = (fmt) => `<span class="badge green">Live · ${fmt}</span>`;
+  const folder = (path = '8TB › Takes › Feed 1', left = '3 h 10 m', dim = false) =>
+    `<div class="r${dim ? ' dis' : ''}" style="font-size:11.5px">${ic('folder', 'sm c2')}<span>${path}</span><span class="c2 tnum">· ${left} left</span><span style="flex:1"></span><span class="c3" style="font-size:11px">ProRes 422 · clean source</span></div>`;
+  const out = (cell, chips = [1, 1, 1, 0], on = true, bypass = false, dim = false) =>
+    `<div class="sep3"></div><div class="r${dim ? ' dis' : ''}">${cell}<span style="flex:1"></span><div class="fx${bypass ? ' bypass' : ''}">${chips.map((c, i) => `<span class="${c ? 'on' : ''}">${FX_NAMES[i]}</span>`).join('')}</div><div class="switch sm${on ? ' on' : ''}"></div></div>`;
+  const cutCell = (n, name) => `<span class="btn">${ic('cut')}Cut to ${name}<span class="c3" style="margin-left:4px">⌃${n}</span></span>`;
+  const camCell = (name, use) => `${ic('camlink', 'sm', use ? 'color:var(--green)' : '')}<span>Ultracam · ${name}</span><span class="${use ? 'cg' : 'c2'}" style="font-size:11px">${use ? 'In use by ' + use : 'Not in use'}</span>`;
+  const audio = (l = 64, r = 60, db = '−9.8', dim = false) =>
+    `<div class="r${dim ? ' dis' : ''}" style="gap:8px"><span class="k2" style="width:40px">Audio</span>${dim ? '<span class="c3" style="flex:1;font-size:11.5px">No signal</span>' : meter({ audio: [l, r, db] })}</div>`;
+  const recRow = (btn, k2, k2color, elapsed, elColor, info, actions) =>
+    `<div class="r"><div class="${btn} sm"></div><div style="display:flex;flex-direction:column;gap:2px"><span class="k2" style="color:${k2color}">${k2}</span><span class="elapsed tnum" style="${elColor}">${elapsed}</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-left:4px" class="tnum">${info}</div><span style="flex:1"></span>${actions}</div>`;
+  const sbox = (inner) => `<div class="strip3" style="background:rgba(255,255,255,0.06)">${inner}</div>`;
+
+  // ---------- 1 · expanded strips ----------
+  const S = [];
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    recRow('recbtn', 'Ready', 'var(--label2)', '00:00:00', 'color:var(--label3)', '<span>Records clean 2160p 10-bit 4:2:2</span><span class="c2" style="font-size:11px">with embedded audio · PC time</span>', '<span class="c3" style="font-size:11px">⌥⌘R all</span>') +
+    folder() + out(camCell('Feed 1', 'Zoom')) + audio())), 1, 'Ready',
+    'Live with a folder: Record is enabled (⌥⌘R records all). The counter sits at zero, so nothing looks like it\'s rolling.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    recRow('recbtn dis', 'Can\'t record', 'var(--label3)', '00:00:00', 'color:var(--label3)', '<span class="c2">No recording folder</span>', '') +
+    `<div class="banner warn" style="padding:7px 10px"><span class="bi">${ic('folder')}</span><div><b>Choose a folder to record Feed 1</b><small>Or set a default folder in Settings › Recording.</small></div><div class="bact"><span class="btn">Choose…</span></div></div>` +
+    out(camCell('Feed 1', 'Zoom')) + audio())), 2, 'No folder',
+    'Record stays disabled until this feed or the default has a folder. Folder changes apply to the next take.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    recRow('recbtn on', 'Recording', '#ff6961', '00:12:31', '', '<span>18.4 GB · 184 Mb/s</span><span class="cg" style="font-size:11px">0 dropped</span>', `<span class="btn">${ic('pause')}Pause</span><span class="btn">${ic('stop')}Stop</span>`) +
+    folder('8TB › Takes › Feed 1', '1 h 35 m') + out(camCell('Feed 1', 'Zoom')) + audio())), 3, 'Recording',
+    'Elapsed, size, encoded bitrate and drops refresh twice a second. Time left counts every feed recording to the same drive.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 2', 'A7S III · UltraStudio 4K Mini', live('2160p 29.97')) +
+    recRow('recbtn', 'Paused', 'var(--orange)', '00:04:12', 'color:var(--label2)', '<span>6.2 GB</span><span class="c2" style="font-size:11px">resumes in the same take</span>', `<span class="btn">${ic('play')}Resume</span><span class="btn">${ic('stop')}Stop</span>`) +
+    folder('Archive › B-cam', '5 h 40 m') + out(camCell('Feed 2', null), [0, 1, 1, 0]) + audio(40, 38, '−21.4'))), 4, 'Paused',
+    'Orange, not red. Pausing one feed never touches another. Ignored paused callbacks don\'t count as dropped frames.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    `<div class="r"><span class="spin lg"></span><div style="display:flex;flex-direction:column;gap:2px"><span class="k2">Finishing</span><span class="elapsed tnum c2">00:38:12</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-left:4px" class="tnum"><span>56.1 GB · writing final fragment</span><span class="c2" style="font-size:11px">Finalizing the movie in the background</span></div><span style="flex:1"></span><span class="btn dis">${ic('record')}Record</span></div>` +
+    folder('8TB › Takes › Feed 1', '2 h 30 m', true) + out(camCell('Feed 1', 'Zoom')) + audio())), 5, 'Finishing',
+    'Stop drains the encoder and finalizes on a worker. Record actions stay disabled until it\'s done, so a take can\'t start twice.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    `<div class="banner err" style="padding:7px 10px"><span class="bi">${ic('info')}</span><div><b>Recording stopped after a source error.</b><small>Feed 1_2026-10-20_09-41-03_001.mov · 14:08 · 20.6 GB saved</small></div><div class="bact"><span class="linkish">Encoder details</span></div></div>` +
+    recRow('recbtn', 'Stopped', '#ff6961', '00:14:08', 'color:var(--label2)', '<span class="c2">Final statistics kept</span><span class="c3" style="font-size:11px">until the next take</span>', '<span class="c3" style="font-size:11px">● records a new take</span>') +
+    out(camCell('Feed 1', 'Zoom')) + audio())), 6, 'Failed',
+    'The take is finalized up to the error and its stats stay visible. The message is the app\'s own; Encoder details opens in place.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 2', 'A7S III · UltraStudio 4K Mini', live('2160p 29.97')) +
+    recRow('recbtn on', 'Recording', '#ff6961', '00:31:44', '', '<span>17.2 GB · 92 Mb/s</span><span class="co" style="font-size:11px">14 dropped frames</span>', `<span class="btn">${ic('pause')}Pause</span><span class="btn">${ic('stop')}Stop</span>`) +
+    `<div class="form" style="font-size:11.5px"><div class="row" style="min-height:24px;padding:4px 10px"><span class="lbl c2">Encoder</span><span class="val">Hardware accelerated</span></div>
+      <div class="row" style="min-height:24px;padding:4px 10px"><span class="lbl c2">Encode latency</span><span class="val mono">4.1 ms · peak 9.8 ms</span></div>
+      <div class="row" style="min-height:24px;padding:4px 10px"><span class="lbl c2">Writer queue · encoder pending</span><span class="val mono">2/64 · 1</span></div>
+      <div class="row" style="min-height:24px;padding:4px 10px"><span class="lbl c2">Audio drops · errors</span><span class="val mono">0 · 0 / 0</span></div></div>` +
+    audio(40, 38, '−21.4'))), 7, 'Dropped frames',
+    'The count turns orange above zero and Encoder details expands under the record row: HW/SW, latency, queues, audio drops, errors.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', '<span class="badge">Stopped</span>') +
+    recRow('recbtn dis', 'Not available', 'var(--label3)', '00:00:00', 'color:var(--label3)', '<span class="c2">Start this feed</span><span class="c3" style="font-size:11px">before recording it</span>', `<span class="btn blue">${ic('play')}Start Feed</span>`) +
+    folder('8TB › Takes › Feed 1', '3 h 10 m', true) + out(camCell('Feed 1', null), [1, 1, 1, 0], true, false, true) + audio(0, 0, '', true))), 8, 'Feed stopped',
+    'Start Feed (⌘↩) is the single action. Effects stay editable while stopped and apply on the next start.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 2', 'UltraStudio 4K Mini', '<span class="badge">Waiting for HDMI</span>') +
+    recRow('recbtn dis', 'Waiting', 'var(--label3)', '00:00:00', 'color:var(--label3)', '<span class="c2">Record becomes available</span><span class="c3" style="font-size:11px">when a supported signal arrives</span>', `<span class="btn">${ic('stop')}Stop Feed</span>`) +
+    folder('Archive › B-cam', '5 h 40 m', true) + out(cutCell(2, 'Feed 2'), [0, 1, 1, 0], true, false, true) + audio(0, 0, '', true))), 9, 'Waiting for HDMI',
+    'Capture is open and detection stays armed. Cutting to this feed is disabled, and Auto skips it.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 2', 'UltraStudio 4K Mini', '<span class="badge orange">Unsupported · 1080i 59.94</span>') +
+    `<div class="banner warn" style="padding:7px 10px"><span class="bi">${ic('info')}</span><div><b>1920×1080i 59.94 isn't supported</b><small>Set the camera's HDMI output to 2160p 29.97 or 59.94, 10-bit 4:2:2.</small></div></div>` +
+    recRow('recbtn dis', 'Waiting', 'var(--label3)', '00:00:00', 'color:var(--label3)', '<span class="c2">Detection keeps waiting</span>', '') +
+    audio(0, 0, '', true))), 10, 'Unsupported mode',
+    'The actual detected mode is reported, never a guess. Recording and output stay unavailable for this feed only.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', '<span class="badge">Automatic · idle</span>') +
+    `<div class="banner err" style="padding:7px 10px"><span class="bi">${ic('info')}</span><div><b>Couldn't start Feed 1</b><small>UltraStudio Mini Recorder 12G is in use by another app.</small></div><div class="bact"><span class="btn">Retry</span></div></div>` +
+    `<div class="r" style="font-size:11.5px"><span class="c2" style="flex:1">One attempt per camera session · no background retry loop</span></div>` +
+    out(camCell('Feed 1', 'Zoom')) + audio(0, 0, '', true))), 11, 'Automatic start failed',
+    'Zoom asked for the camera but capture couldn\'t open. Retry is explicit. Zoom shows black until the feed starts.'));
+
+  S.push(card('', crop(sbox(hdr('Feed 1', 'FX3 · Mini Recorder 12G', live('2160p 59.94')) +
+    recRow('recbtn on', 'Recording', '#ff6961', '00:12:31', '', '<span>18.4 GB · 184 Mb/s</span><span class="cg" style="font-size:11px">0 dropped</span>', `<span class="btn">${ic('pause')}Pause</span><span class="btn">${ic('stop')}Stop</span>`) +
+    out(camCell('Feed 1', 'Zoom'), [1, 1, 1, 0], false, true) +
+    `<div class="r" style="font-size:11.5px;gap:6px">${ic('bypass', 'sm co')}<span class="co">Complete bypass · original 2160p 59.94 10-bit 4:2:2</span><span style="flex:1"></span><span class="c3">⇧⌘B</span></div>`)), 12, 'Complete bypass',
+    'Processing off: chips are struck through but kept, and come back with Processing. Recording is unaffected; it was always the clean source.'));
+  mount('strips', S.join(''));
+
+  // ---------- 2 · collapsed ----------
+  const C = (name, mid, right, tint = '') => `<div class="strip3 collapsed" style="background:rgba(255,255,255,0.06)${tint}"><div class="r"><span class="chev">${ic('chevr')}</span><b>${name}</b>${mid}<span style="flex:1"></span>${right}</div></div>`;
+  const chipsS = (a, by = false) => `<div class="fx${by ? ' bypass' : ''}">${a.map((c, i) => `<span class="${c ? 'on' : ''}" style="height:17px;padding:0 5px;font-size:9.5px">${FX_NAMES[i]}</span>`).join('')}</div>`;
+  const mm = (l, r) => `<div class="minimeter"><div class="meter"><div class="bar"><i style="width:${l}%"></i></div></div><div class="meter"><div class="bar"><i style="width:${r}%"></i></div></div></div>`;
+  mount('collapsed', [
+    C('Feed 1', '<span class="c2">Ready · live 2160p 59.94</span>', chipsS([1, 1, 1, 0]) + mm(64, 60) + '<div class="recbtn sm"></div>'),
+    C('Feed 1', '<span class="co">No folder · Choose…</span>', chipsS([1, 1, 1, 0]) + mm(64, 60) + '<div class="recbtn sm dis"></div>'),
+    C('Feed 1', '<span class="dot red"></span><span class="tnum">12:31</span><span class="c2 tnum" style="font-size:11px">18.4 GB</span><span class="cg" style="font-size:11px">0 drops</span>', chipsS([1, 1, 1, 0]) + mm(64, 60) + '<div class="recbtn sm on"></div>'),
+    C('Feed 2', `<span class="co">${ic('pause')} Paused 04:12</span><span class="c2 tnum" style="font-size:11px">6.2 GB</span>`, chipsS([0, 1, 1, 0]) + mm(40, 38) + '<div class="recbtn sm"></div>'),
+    C('Feed 1', '<span class="spin"></span><span class="c2">Finishing… writing final fragment</span>', chipsS([1, 1, 1, 0]) + mm(64, 60) + '<div class="recbtn sm dis"></div>'),
+    C('Feed 1', '<span style="color:#ff6961">Recording stopped after a source error.</span>', chipsS([1, 1, 1, 0]) + mm(64, 60) + '<div class="recbtn sm"></div>', ';box-shadow:inset 0 0 0 0.5px rgba(255,69,58,0.5)'),
+    C('Feed 2', '<span class="dot red"></span><span class="tnum">31:44</span><span class="co" style="font-size:11px">14 dropped</span>', chipsS([0, 1, 1, 0]) + mm(40, 38) + '<div class="recbtn sm on"></div>', ';box-shadow:inset 0 0 0 0.5px rgba(255,159,10,0.5)'),
+    C('Feed 1', '<span class="c2">Stopped</span><span class="btn blue" style="height:20px;font-size:11px">Start Feed</span>', chipsS([1, 1, 1, 0]) + '<div class="recbtn sm dis"></div>'),
+    C('Feed 2', '<span class="c2">Waiting for HDMI</span>', chipsS([0, 1, 1, 0]) + '<div class="recbtn sm dis"></div>'),
+    C('Feed 2', '<span class="co">Unsupported · 1080i 59.94</span>', chipsS([0, 1, 1, 0]) + '<div class="recbtn sm dis"></div>', ';box-shadow:inset 0 0 0 0.5px rgba(255,159,10,0.5)'),
+    C('Feed 1', '<span style="color:#ff6961">Couldn\'t start · in use by another app</span><span class="btn" style="height:20px;font-size:11px">Retry</span>', chipsS([1, 1, 1, 0]) + '<div class="recbtn sm dis"></div>', ';box-shadow:inset 0 0 0 0.5px rgba(255,69,58,0.5)'),
+    C('Feed 1', '<span class="dot red"></span><span class="tnum">12:31</span><span class="co" style="font-size:11px">Bypass</span>', chipsS([1, 1, 1, 0], true) + mm(64, 60) + '<div class="recbtn sm on"></div>'),
+  ].join(''));
+
+  // ---------- 3 · pictures ----------
+  const P = [];
+  const ov = (pos, inner) => `<div class="overlay" style="${pos}">${inner}</div>`;
+  const nm = (n, name) => `<span class="kk">${n}</span><div class="pill glass">${name}${ic('chevud')}</div>`;
+  const tcp = ov('left:10px; bottom:10px;', '<span class="pill sm glass mono">14:22:31:12</span><span class="pill sm glass">Output' + ic('chevud') + '</span>');
+  const recp = (t = '12:31') => ov('right:10px; bottom:10px;', `<span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC ${t}</span></span>`);
+  P.push(card('', `<div class="picture pic onair" data-scene="mcu">${ov('left:10px; top:10px;', nm(1, 'Feed 1') + '<span class="role air">ON AIR · Program</span>')}${tcp}${recp()}</div>`,
+    1, 'On air', 'Red ring and badge on the feed going to Program. Zoom sees exactly this feed\'s output.'));
+  P.push(card('', `<div class="picture pic next" data-scene="wide">${ov('left:10px; top:10px;', nm(2, 'Feed 2') + '<span class="role nxt">NEXT</span>')}${ov('right:10px; top:10px;', '<span class="pill sm glass">Auto · after 10 s at a speech gap</span>')}${tcp}${recp()}</div>`,
+    2, 'Next · queued by Auto', 'Green ring for the director\'s queued cut. The pill says when it will happen, so the cut is never a surprise.'));
+  P.push(card('', `<div class="picture pic cutting" data-scene="wide">${ov('left:10px; top:10px;', nm(2, 'Feed 2') + '<span class="role air" style="opacity:0.85">CUTTING…</span>')}${tcp}${ov('right:10px; bottom:10px;', '<span class="pill sm glass">⌃2 · on the next Program frame</span>')}</div>`,
+    3, 'Cut pending', 'A manual cut is queued until the next Program frame boundary (switcherPendingFeedID), then it turns solid red.'));
+  P.push(card('', `<div class="picture pic onair" data-scene="mcu">${ov('left:10px; top:10px;', nm(1, 'Feed 1') + '<span class="role air">ON AIR · Program</span>')}
+    ${ov('left:10px; right:10px; bottom:10px; flex-direction:column; align-items:stretch; gap:6px', `<div class="pill glass" style="height:auto;padding:8px 10px;flex-direction:column;align-items:stretch;gap:6px;border-radius:12px">
+      <div style="display:flex;justify-content:space-between;font-size:11px" class="tnum"><span>${ic('auto')} Auto holding · 8.2 s</span><span class="c2">min 10 · soft 20 · max 30 s</span></div>
+      <div class="shot"><i style="width:27%"></i><span class="mk" style="left:33.3%"></span><span class="mk" style="left:66.6%"></span><span class="mk" style="left:100%;background:var(--red)"></span></div></div>`)}</div>`,
+    4, 'Auto holding', 'Hover the on-air picture to see the shot timer. Auto can\'t cut before the minimum shot and must cut by the maximum.'));
+  P.push(card('', `<div class="ph skip">${ov('left:10px; top:10px;', nm(2, 'Feed 2') + '<span class="role" style="background:rgba(255,159,10,0.9);color:#2a1700">Skipped by Auto</span>')}
+    <span class="big">${ic('video', 'lg')}</span><b>No signal</b><small>Auto won't cut to Feed 2 until its source is healthy. Manual cuts are disabled too.</small></div>`,
+    5, 'Source unhealthy · skipped', 'Orange ring. The director only considers healthy sources; Feed 2 rejoins as soon as frames arrive.'));
+  P.push(card('', `<div class="ph">${ov('left:10px; top:10px;', '<div class="pill glass">Feed 1' + ic('chevud') + '</div><span class="pill sm glass c2"><span class="dot"></span>No signal</span>')}
+    <span class="big">${ic('video', 'lg')}</span><b>No HDMI signal</b><small>Check the FX3 HDMI output: 4K 10-bit 4:2:2, RAW off, display LUT off.</small><span class="btn" style="margin-top:4px">Input Settings…</span></div>`,
+    6, 'No HDMI signal', 'Detection stays armed. The virtual camera sends black 0.5 s after the last frame; the picture never shows a stale frame as live.'));
+  P.push(card('', `<div class="ph">${ov('left:10px; top:10px;', '<div class="pill glass">Feed 2' + ic('chevud') + '</div><span class="pill sm glass co">Unsupported</span>')}
+    <span class="big">${ic('info', 'lg')}</span><b>1920×1080i 59.94 isn't supported</b><small>Waiting for 2160p 29.97 or 59.94. Change the camera's HDMI output resolution.</small></div>`,
+    7, 'Unsupported HDMI mode', 'The detected mode is named exactly. The matching strip shows the same warning (strips · 10).'));
+  P.push(card('', `<div class="ph">${ov('left:10px; top:10px;', '<div class="pill glass">Feed 1' + ic('chevud') + '</div><span class="pill sm glass">' + ic('auto') + 'Automatic · idle</span>')}
+    <span class="big">${ic('video', 'lg')}</span><b>Waiting for a camera app</b><small>Ultracam starts when Zoom opens the camera, and stops when the last app closes. No GPU work until then.</small></div>`,
+    8, 'Automatic mode waiting', 'No Start button in automatic mode. A visible preview also counts as demand, so showing it starts capture.'));
+  P.push(card('', `<div class="ph">${ov('left:10px; top:10px;', '<div class="pill glass">Feed 1' + ic('chevud') + '</div><span class="pill sm glass cg"><span class="dot green"></span>Output live</span>')}
+    <span class="big">${ic('eye', 'lg')}</span><b>Preview hidden</b><small>Camera output continues with your selected effects. Hidden views do no GPU work.</small><span class="btn" style="margin-top:4px">Show Preview <span class="c3" style="margin-left:4px">⇧⌘P</span></span></div>`,
+    9, 'Preview hidden', 'Rendering only. The strip, tally and recording keep running underneath.'));
+  P.push(card('', `<div class="picture pic" data-scene="mcu" data-fx="zebra">${ov('left:10px; top:10px;', '<div class="pill glass">Feed 1' + ic('chevud') + '</div>')}
+    ${ov('left:10px; right:10px; bottom:10px;', `<span class="pill sm glass co" style="white-space:normal;height:auto;padding:5px 9px;line-height:1.3">${ic('info')} Reduced monitoring · GPU deadline exceeded. Recovers after 5 s healthy.</span>`)}</div>`,
+    10, 'Monitoring reduced', 'Monitor analysis backs off first; clean picture, camera output and recording are untouched. The badge stays until full quality returns.'));
+  P.push(card('', `<div class="picture pic onair" data-scene="mcu">${ov('left:10px; top:10px;', '<div class="pill glass">' + ic('program') + 'Program' + ic('chevud') + '</div>')}
+    ${ov('right:10px; top:10px;', `<div class="tb-group glass" style="height:30px"><div class="tb-btn on" style="height:24px;min-width:28px">${ic('guides')}</div><div class="tb-btn" style="height:24px;min-width:28px">${ic('zebra')}</div><div class="tb-btn dim" style="height:24px;min-width:28px;opacity:0.35">${ic('falsecolor')}</div><div class="tb-btn dim" style="height:24px;min-width:28px;opacity:0.35">${ic('focus')}</div><div class="tb-btn" style="height:24px;min-width:28px">${ic('scope')}</div></div>`)}
+    ${ov('left:10px; right:10px; bottom:10px;', `<span class="pill sm glass c2" style="white-space:normal;height:auto;padding:5px 9px;line-height:1.3">${ic('info')} False color and focus need a source feed, so they're unavailable on Program.</span>`)}</div>`,
+    11, 'Program view · tool limits', 'Only in the optional Program view. Guides, zebra and scopes work on Program Output; source-only tools are dimmed with the reason.'));
+  P.push(card('', `<div class="ph">${ov('left:10px; top:10px;', '<span class="kk">1</span><div class="pill glass">Feed 1' + ic('chevud') + '</div><span class="pill sm glass c2">Stopped</span>')}
+    <span class="big">${ic('video', 'lg')}</span><b>Feed stopped</b><small>Start the feed to view the HDMI input.</small><span class="btn blue" style="margin-top:4px">${ic('play')}Start Feed <span style="opacity:0.7;margin-left:4px">⌘↩</span></span></div>`,
+    12, 'Feed stopped', 'In Program mode Start begins every assigned source. A stopped feed has no tally and can\'t be cut to.'));
+  mount('pics', P.join(''));
+
+  // ---------- 4 · sidebar ----------
+  const SB = [];
+  const sbc = (inner, n, title, text) =>
+    `<div class="scard"><div class="sbbg" style="display:flex;justify-content:center;padding:14px"><div class="sbcrop">${inner}</div></div><div class="cap"><b><span class="num">${n}</span>${title}</b>${text}</div></div>`;
+  SB.push(sbc(`<div class="side-h" style="display:flex;justify-content:space-between;align-items:center">Cameras${ic('plus', 'sm c2')}</div>
+    <div style="margin:2px 0 4px;padding:12px 10px;border-radius:11px;border:1px dashed rgba(255,255,255,0.14);text-align:center;font-size:11.5px" class="c2">
+      ${ic('video', 'lg c3')}<div style="color:var(--label);font-weight:600;margin:4px 0 2px">No UltraStudio detected</div>Connect an UltraStudio with Desktop Video installed.<div style="margin-top:8px"><span class="btn">${ic('refresh')}Refresh</span></div></div>
+    <div class="side-h">Output</div><div class="mini-row c3">${ic('camlink')}<span>Nothing published</span></div>`,
+    1, 'First run · no cameras', 'The Cameras section explains what\'s missing and offers Refresh. Everything else stays quiet until a device appears.'));
+  SB.push(sbc(`<div class="side-h">Output</div>
+    <div class="banner info" style="padding:8px 9px;font-size:11.5px"><span class="bi">${ic('camlink')}</span><div><b style="font-size:12px">Install the Ultracam camera</b><small>Needed to use Ultracam in Zoom. macOS asks you to approve it.</small></div></div>
+    <div style="padding:7px 0 2px"><span class="btn blue" style="width:100%;justify-content:center">Install Camera</span></div>
+    <div class="mini-row" style="padding:6px 2px 0"><span class="c2" style="font-size:11px">Preview and recording work without it.</span></div>`,
+    2, 'Camera not installed', 'Signed builds offer Install right in Output. After approval in System Settings the row becomes the published camera.'));
+  SB.push(sbc(`<div class="side-h">Output</div>
+    <div class="banner" style="padding:8px 9px;font-size:11.5px"><span class="bi c3">${ic('info')}</span><div><b class="c2" style="font-size:12px">Camera output needs a signed build</b><small>Preview and recording still work.</small></div></div>
+    <div style="padding:7px 0 2px"><span class="btn dis" style="width:100%;justify-content:center">Install Camera</span></div>`,
+    3, 'Unsigned build', 'Install stays disabled with the reason in plain words. Capture, preview and recording are fully available.'));
+  SB.push(sbc(`<div class="side-h">Recent Takes</div>
+    <div class="banner warn" style="padding:7px 9px;font-size:11.5px;margin-bottom:5px"><span class="bi">${ic('info')}</span><div><b style="font-size:12px">2 interrupted takes on 8TB</b><small>Copies complete fragments to a new movie; the original is kept.</small></div></div>
+    <div class="take" style="background:rgba(255,159,10,0.10)">${ic('video', 'sm co')}<div style="flex:1"><span>Oct 19 21:13 · ~41 min</span><small>Feed 1_2026-10-19_21-13-55_003.mov</small></div><span class="btn" style="height:20px;font-size:11px">Recover</span></div>
+    <div class="take">${ic('check', 'sm cg')}<div style="flex:1"><span>Recovered · 40:52</span><small>Feed 2_2026-10-19_21-13-55_003_Recovered.mov</small></div><span class="btn" style="height:20px;font-size:11px">${ic('search')}</span></div>`,
+    4, 'Interrupted takes found', 'Checked at launch for saved folders, and when a folder is chosen. One recovery runs at a time; a recovered take isn\'t offered again.'));
+  SB.push(sbc(`<div class="side-h">Recording</div>
+    <div class="mini-row"><span class="dot red"></span><div style="flex:1;line-height:1.25"><b style="font-weight:600">Backup · 2 feeds</b><small class="tnum">1:42:10 · 186 GB</small></div></div>
+    <div style="padding:3px 8px;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px">${ic('folder', 'sm co')}8TB${newtag}<span class="co tnum" style="margin-left:auto">12 min left</span></div>
+      <div class="gauge"><i style="width:97%;background:var(--orange)"></i></div></div>
+    <div style="padding:6px 8px 2px;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px">${ic('folder', 'sm')}<span style="color:#ff6961">8TB</span><span style="margin-left:auto;color:#ff6961" class="tnum">2 min left</span></div>
+      <div class="gauge"><i style="width:99.5%;background:var(--red)"></i></div>
+      <span style="font-size:10.5px;color:#ff6961">Recording will stop when the drive is full.</span></div>`,
+    5, 'Disk running low', 'Free space becomes time left at the current codec and number of takes on that drive. Orange at 15 min, red at 3 min; the status bar and menu bar dot follow.'));
+  SB.push(sbc(`<div class="side-h">Automation</div>
+    <div class="mini-row" style="padding:3px 8px"><span style="flex:1">Start with camera apps</span><div class="switch sm on"></div></div>
+    <div class="mini-row" style="padding:3px 8px"><span style="flex:1">Record with camera apps${newtag}</span><div class="switch sm on"></div></div>
+    <div class="banner" style="padding:7px 9px;font-size:11.5px;margin-top:4px"><span class="bi cr">${ic('recordring')}</span><div><b style="font-size:12px">Backup armed</b><small>Records the clean source of Feed 1 to 8TB › Takes when Zoom opens the camera.</small></div></div>`,
+    6, 'Backup armed with the meeting', 'Proposal: tie a backup take to the camera session, so every meeting is recorded without anyone remembering to press Record.'));
+  SB.push(sbc(`<div class="side-h">Cameras</div>
+    <div class="mini-row" style="background:rgba(255,255,255,0.08);border-radius:9px"><span class="dot red"></span><div style="flex:1;line-height:1.25"><b style="font-weight:600">Feed 1</b><small>2160p 59.94 · on air</small></div><span class="c3" style="font-size:11px">⌃1</span></div>
+    <div class="mini-row"><span class="dot orange"></span><div style="flex:1;line-height:1.25"><b style="font-weight:600">Feed 2</b><small class="co">No signal · skipped by Auto</small></div><span class="c3" style="font-size:11px">⌃2</span></div>
+    <div class="side-h">Output</div>
+    <div class="mini-row"><span style="flex:1">Mode<small>Change while stopped</small></span><span class="popup plain dis">Program<span class="chev">${ic('chevud')}</span></span></div>`,
+    7, 'Source unhealthy · mode locked', 'Camera rows mirror picture tally, including orange for skipped sources. Output mode and feed add/remove are locked while running.'));
+  SB.push(sbc(`<div class="side-h">Output</div>
+    <div class="mini-row">${ic('camlink', '', 'color:var(--green)')}<div style="flex:1;line-height:1.25"><b style="font-weight:600">Ultracam · Program</b><small class="cg">In use by Zoom</small></div></div>
+    <div class="mini-row"><span style="flex:1">Auto switching</span><div class="switch sm"></div></div>
+    <div class="mini-row" style="padding-top:0"><span class="popup plain dis" style="width:100%;justify-content:space-between">Natural talking head<span class="chev">${ic('chevud')}</span></span></div>
+    <div class="mini-row"><span class="c2" style="font-size:11px">Manual · cut with ⌃1–⌃4 or click a picture</span></div>`,
+    8, 'Auto off · manual Program', 'Strategy stays visible but disabled, so turning Auto back on restores the same director. The shot timer is hidden in manual mode.'));
+  mount('side', SB.join(''));
+
+  // ---------- 5 · status bars ----------
+  const bar = (title, text, segs) => `<div class="sbline"><div class="lab"><b>${title}</b>${text}</div><div class="sbwrap"><div class="sbar tnum">${segs}</div></div></div>`;
+  const res = '<div class="sp"></div><div class="seg2">CPU 31.4% · GPU (video) 18.2% · Memory 1.08 GB</div>';
+  const dv = '<div class="div"></div>';
+  mount('sbars', [
+    bar('Normal', 'Published, live, not recording.', `<div class="seg2 cg">${ic('camlink')}Ultracam · Feed 1 → Zoom</div>${dv}<div class="seg2">${ic('recordring')}Not recording · 8TB 3 h 10 m available</div>${dv}<div class="seg2">${ic('wave')}Audio OK</div>${res}`),
+    bar('Recording', 'Takes and the tightest drive\'s time left.', `<div class="seg2 cg">${ic('camlink')}Ultracam · Program → Zoom</div>${dv}<div class="seg2">${ic('program')}Feed 1 on air · Auto</div>${dv}<div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 feeds 12:31</span> · 8TB 1 h 35 m left${newtag}</div>${dv}<div class="seg2">${ic('wave')}Audio OK</div>${res}`),
+    bar('Warning', 'Orange segment; click for the cause.', `<div class="seg2 cg">${ic('camlink')}Ultracam · Program → Zoom</div>${dv}<div class="seg2 warn">${ic('info')}Feed 2: 14 dropped frames</div>${dv}<div class="seg2 warn"><span class="dot orange"></span>REC 2 feeds 1:42:10 · 8TB 12 min left</div>${dv}<div class="seg2">${ic('wave')}Audio OK</div>${res}`),
+    bar('Error', 'Red segment wins over others.', `<div class="seg2 err">${ic('info')}Couldn't start Feed 1 · Retry</div>${dv}<div class="seg2 c2">${ic('camlink')}Ultracam · Feed 1 → Zoom (black)</div>${dv}<div class="seg2 c2">${ic('recordring')}Not recording</div>${dv}<div class="seg2 c3">${ic('wave')}No embedded audio</div>${res}`),
+    bar('Nothing published', 'Standalone recording, or no app using the camera.', `<div class="seg2 c2">${ic('camlink')}Virtual cameras not in use</div>${dv}<div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">Feed 1 12:31</span><span class="co">· ⏸ Feed 2 4:12</span></div>${dv}<div class="seg2">8TB 1 h 35 m · Archive 5 h 40 m left${newtag}</div>${res}`),
+  ].join(''));
+
+  // ---------- 6 · window, menu bar, sheets ----------
+  const M = [];
+  M.push(`<div class="scard w2"><div class="onb">
+      <div style="position:absolute;top:8px;left:8px;bottom:8px;width:200px;border-radius:14px;background:rgba(48,48,52,0.6);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1);padding:46px 10px 10px">
+        <div class="traffic" style="position:absolute;top:18px;left:16px"><span></span><span></span><span></span></div>
+        <div class="side-h" style="padding:6px 6px 5px">Cameras</div>
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;font-size:12px"><span class="dot green"></span><div style="line-height:1.25"><b style="font-weight:600">Feed 1</b><div class="c2" style="font-size:10.5px">Mini Recorder 12G · ready</div></div></div>
+        <div class="side-h" style="padding:12px 6px 5px">Output</div><div class="c3" style="font-size:11.5px;padding:2px 8px">Camera not installed</div>
+        <div class="side-h" style="padding:12px 6px 5px">Recording</div><div class="c3" style="font-size:11.5px;padding:2px 8px">No folder yet</div>
+      </div>
+      <div style="position:absolute;left:224px;right:16px;top:16px;display:flex;align-items:center;gap:8px"><b style="font-size:14px">Welcome to Ultracam</b>${newtag}<span style="flex:1"></span><span class="btn borderless">Skip setup</span></div>
+      <div style="position:absolute;left:224px;right:16px;top:52px;bottom:16px;display:flex;gap:16px">
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+          <div class="c2" style="font-size:12px;line-height:1.4">Four steps to get your camera into meetings and backed up. Each one can be done later from the sidebar.</div>
+          <div class="form">
+            <div class="step"><span class="sn">1</span><div class="st">Install the Ultracam camera<small>Approve "Ultracam Camera" in System Settings › Login Items &amp; Extensions</small></div><span class="btn blue">Install</span></div>
+            <div class="step"><span class="sn done">${ic('check')}</span><div class="st">Choose the capture input<small>UltraStudio Mini Recorder 12G detected</small></div><span class="popup plain">Mini Recorder 12G<span class="chev">${ic('chevud')}</span></span></div>
+            <div class="step"><span class="sn">3</span><div class="st">Load a LUT <span class="c3" style="font-weight:400">· optional</span><small>S-Gamut3.Cine / S-Log3 in, Rec.709 out</small></div><span class="btn">Load LUT…</span></div>
+            <div class="step"><span class="sn">4</span><div class="st">Choose a recording folder<small>Backups and takes are saved here as ProRes 422</small></div><span class="btn">Choose…</span></div>
+          </div>
+          <div class="c3" style="font-size:11px">Configure the FX3 for clean 4K 10-bit 4:2:2 HDMI log output, RAW off, display LUT off.</div>
+        </div>
+        <div style="width:230px;display:flex;flex-direction:column;gap:8px">
+          <div class="picture" data-scene="mcu" data-tone="slog" style="height:130px;border-radius:12px"><div class="overlay" style="left:8px;top:8px"><span class="pill sm glass">Feed 1 · Source</span></div></div>
+          <div class="c2" style="font-size:11px;line-height:1.4">The picture shows the live input as soon as a signal arrives, so you can check framing while you set up.</div>
+        </div>
+      </div>
+    </div><div class="cap"><b><span class="num">1</span>First launch ${newtag}</b>An onboarding card fills the empty window on first launch: install camera → choose input → optional LUT → recording folder. The session sidebar fills in as each step completes.</div></div>`);
+
+  const ddStopped = `<div class="dd glass inline"><div class="ddtop">
+      <div style="height:150px;border-radius:11px;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px">${ic('video', 'lg c3')}<b style="font-size:12.5px">Feed stopped</b><small class="c3" style="font-size:11px">Start the feed to view the HDMI input.</small></div>
+      <div style="font-size:11px;padding:7px 4px 0" class="c2"><span class="c3">●</span> Stopped · camera not in use</div></div>
+    <div class="msep"></div>
+    <div class="mi hl"><span class="ck"></span><span class="ico">${ic('play')}</span>Start Feed<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('auto')}</span>Start with Camera Apps</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico">${ic('layers')}</span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="msep"></div>
+    <div class="mi dis"><span class="ck"></span><span class="ico">${ic('record')}</span>Record All<span class="key">⌥⌘R</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('sidebar')}</span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div></div>`;
+  M.push(card('', `<div class="ddwrap">${ddStopped}</div>`, 2, 'Dropdown · stopped',
+    'The preview keeps its size as a placeholder (no layout jump). Start Feed is the default item; Record All is disabled until a feed is live.'));
+
+  const ddAttn = `<div class="dd glass inline"><div class="ddtop">
+      <div style="height:150px;border-radius:11px;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;position:relative">
+        <div class="overlay" style="left:7px;top:7px"><span class="pill sm glass">Ultracam · Feed 1</span></div>${ic('info', 'lg co')}<b style="font-size:12.5px">No HDMI signal</b><small class="c3" style="font-size:11px">Zoom is receiving black.</small></div>
+      <div style="font-size:11px;padding:7px 4px 0" class="co">● Needs attention · Feed 1 lost its signal 0:42 ago</div></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('stop')}</span>Stop Feed<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('video')}</span>Capture Input<span class="sub" style="font-size:12px">Mini Recorder 12G${ic('chevr')}</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('stop', 'sm', 'color:var(--red)')}</span>Stop Recording<small class="tnum">12:31</small><span class="key">⌥⌘R</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico">${ic('sidebar')}</span>Open Ultracam</div>
+    <div class="stat">8TB 3 h 10 m left</div></div>`;
+  M.push(card('', `<div class="ddwrap">${ddAttn}</div>`, 3, 'Dropdown · needs attention',
+    'The status line under the preview turns orange and says what happened and when. The menu bar icon carries the same orange dot.'));
+
+  M.push(`<div class="scard w2"><div class="crop" style="padding:10px"><div class="mbstrip">
+      <div><span class="mbicon">${ic('video', 'lg')}</span><small>Stopped<i>video</i></small></div>
+      <div><span class="mbicon" style="opacity:0.5">${ic('video', 'lg')}</span><small>Automatic · waiting<i>video, dimmed</i></small></div>
+      <div><span class="mbicon">${ic('videofill', 'lg')}</span><small>Live · effects<i>video.fill</i></small></div>
+      <div><span class="mbicon">${ic('bypass', 'lg')}</span><small>Live · bypass<i>arrow.right.square</i></small></div>
+      <div><span class="mbicon">${ic('videofill', 'lg')}<span class="bdg" style="background:var(--red)"></span></span><small>Recording ${newtag}<i>video.fill + red dot</i></small></div>
+      <div><span class="mbicon">${ic('video', 'lg')}<span class="bdg" style="background:var(--orange)"></span></span><small>Needs attention ${newtag}<i>video + orange dot</i></small></div>
+    </div></div><div class="cap"><b><span class="num">4</span>Menu bar icon states</b>The first four exist today. A red dot for recording and an orange dot for problems (no signal, failed start, disk low, drops) let you check a backup from across the room.</div></div>`);
+
+  M.push(`<div class="scard w2"><div class="crop" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      <div><div class="wf"><div class="tb"><span></span><span></span><span></span></div>
+        <div class="bx sb" style="left:6px;top:20px;width:40px;bottom:12px"></div><div class="bx pic" style="left:52px;top:20px;right:6px;height:72px"></div><div class="bx" style="left:52px;top:98px;right:6px;height:28px"></div><div class="bx" style="left:6px;right:6px;bottom:3px;height:5px"></div></div>
+        <div class="wfcap">1 feed<small>Session sidebar + one large picture with its strip.</small></div></div>
+      <div><div class="wf"><div class="tb"><span></span><span></span><span></span></div>
+        <div class="bx sb" style="left:6px;top:20px;width:40px;bottom:12px"></div><div class="bx pic air" style="left:52px;top:20px;width:44px;height:30px"></div><div class="bx pic nx" style="left:100px;top:20px;width:44px;height:30px"></div>
+        <div class="bx" style="left:52px;top:54px;width:44px;height:36px"></div><div class="bx" style="left:100px;top:54px;width:44px;height:36px"></div><div class="bx" style="left:6px;right:6px;bottom:3px;height:5px"></div></div>
+        <div class="wfcap">2 feeds<small>Side by side, a strip under each. Tally on the pictures.</small></div></div>
+      <div><div class="wf"><div class="tb"><span></span><span></span><span></span></div>
+        <div class="bx sb" style="left:6px;top:20px;width:40px;bottom:12px"></div>
+        <div class="bx pic air" style="left:52px;top:20px;width:44px;height:28px"></div><div class="bx pic nx" style="left:100px;top:20px;width:44px;height:28px"></div><div class="bx" style="left:52px;top:50px;width:44px;height:7px"></div><div class="bx" style="left:100px;top:50px;width:44px;height:7px"></div>
+        <div class="bx pic" style="left:52px;top:62px;width:44px;height:28px"></div><div class="bx pic" style="left:100px;top:62px;width:44px;height:28px"></div><div class="bx" style="left:52px;top:92px;width:44px;height:7px"></div><div class="bx" style="left:100px;top:92px;width:44px;height:7px"></div>
+        <div class="bx" style="left:6px;right:6px;bottom:3px;height:5px"></div></div>
+        <div class="wfcap">3–4 feeds<small>Four Up with collapsed strips.</small></div></div>
+      <div><div class="wf"><div class="tb"><span></span><span></span><span></span></div>
+        <div class="bx sb" style="left:6px;top:20px;width:40px;bottom:12px"></div><div class="bx pic air" style="left:52px;top:20px;width:62px;height:42px"></div>
+        <div class="bx pic" style="left:118px;top:20px;width:26px;height:20px"></div><div class="bx pic nx" style="left:118px;top:42px;width:26px;height:20px"></div><div class="bx" style="left:52px;top:68px;right:6px;height:30px"></div><div class="bx" style="left:6px;right:6px;bottom:3px;height:5px"></div></div>
+        <div class="wfcap">Program view<small>Optional: Program large, sources beside.</small></div></div>
+    </div><div class="cap"><b><span class="num">5</span>Layout scales with the number of feeds</b>The default follows enabled feeds (1 → Single, 2 → Side by Side, 3–4 → Four Up). Program view is optional in Program mode. Your choice is saved.</div></div>`);
+
+  M.push(card('', `<div class="sheetwrap"><div class="picture" data-scene="mcu"></div>
+      <div class="sheet glass"><div style="display:flex;gap:10px;align-items:center"><div class="appicon">${ic('videofill')}</div><div><b style="font-size:13px">2 recordings are finishing</b><div class="c2" style="font-size:11.5px">Ultracam will quit when they're saved.</div></div></div>
+        <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Feed 1</span><span class="c2">Writing final fragment…</span></div><div class="prog"><i style="width:74%"></i></div>
+        <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Feed 2</span><span class="cg">Saved</span></div><div class="prog"><i style="width:100%;background:var(--green)"></i></div>
+        <div style="display:flex;justify-content:flex-end"><span class="btn">Cancel Quit</span></div></div></div>`,
+    6, 'Quit while recording', 'Quit stops capture and waits for active takes to finish. The sheet shows what\'s still being written, so the drive isn\'t unplugged early.'));
+
+  M.push(card('', `<div class="ddwrap" style="padding:12px"><div class="pop-inline glass">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 2px 6px"><b style="font-size:13.5px">Feed 2</b><span class="badge green">Live</span><span style="flex:1"></span><span class="c3" style="font-size:11px">⋯ settings</span></div>
+      <div class="form-h" style="padding-top:4px">LUT</div>
+      <div class="form">
+        <div class="row" style="align-items:flex-start"><span style="color:#ff6961;margin-top:2px">${ic('cube')}</span><span class="lbl" style="white-space:normal">FX3_SLog3_to_709.cube<small style="color:#ff6961">Saved LUT couldn't be restored: file moved or drive disconnected.</small></span><span class="btn">Locate…</span></div>
+        <div class="row"><span class="lbl">LUT input</span><span class="popup plain">S-Gamut3.Cine / S-Log3<span class="chev">${ic('chevud')}</span></span></div>
+      </div>
+      <div class="form-h">Effects</div>
+      <div class="form">
+        <div class="row"><div class="check off-dim"></div><span class="lbl c3">1 · LUT<small>Load a .cube to enable</small></span></div>
+        <div class="row"><div class="check on"></div><span class="lbl">2 · Downscale<small>1080p · Lanczos-3</small></span></div>
+      </div></div></div>`,
+    7, 'LUT error · ⋯ popover', 'The saved choice is kept so it can be recovered. Capture keeps working; only the LUT effect is disabled, and the strip\'s LUT chip shows it greyed.'));
+
+  M.push(`<div class="scard w2"><div class="crop" style="padding:16px"><div class="notes">
+      <div><b>Honest values.</b> "—", "No signal", "No embedded audio" and "unavailable on Program" instead of zeros or stale pictures.</div>
+      <div><b>Errors in place.</b> Each problem shows where it happens (picture, strip, sidebar section) plus one status bar segment.</div>
+      <div><b>One action per problem.</b> Retry, Locate…, Choose…, Recover, Install Camera, Start Feed.</div>
+      <div><b>Color.</b> Red on air / recording / errors · green next / healthy · orange paused / warnings / skipped · <span class="newtag" style="margin:0">NEW</span> not in the current app.</div>
+    </div></div><div class="cap"><b><span class="num">8</span>Conventions</b>Applied on every card above and on every round-3 page.</div></div>`);
+  mount('misc', M.join(''));
+</script>
+</body></html>

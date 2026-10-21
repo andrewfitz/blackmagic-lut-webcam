@@ -1,0 +1,96 @@
+/* Round 2 additions on top of ../kit.css */
+
+.win2 { left: 40px; top: 80px; width: 1320px; height: 860px; }
+
+/* "NEW" marks proposals that the current app does not have. */
+.newtag { display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 4px; font-size: 9px;
+  font-weight: 800; letter-spacing: 0.4px; color: #e5b8ff; background: rgba(191,90,242,0.22);
+  box-shadow: inset 0 0 0 0.5px rgba(191,90,242,0.6); vertical-align: middle; margin-left: 4px; flex: none; }
+
+/* ---------- Status bar (from C) ---------- */
+.sbar { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; display: flex; align-items: center; gap: 4px;
+  padding: 0 10px; font-size: 11.5px; color: var(--label2); border-top: 0.5px solid var(--sep);
+  background: rgba(255,255,255,0.025); z-index: 6; white-space: nowrap; }
+.sbar .seg2 { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; }
+.sbar .seg2.hover { background: var(--fill); }
+.sbar .div { width: 0.5px; height: 14px; background: var(--sep); }
+.sbar .sp { flex: 1; }
+
+/* ---------- Rail ---------- */
+.rail { position: absolute; top: 8px; bottom: 38px; left: 8px; width: 64px; border-radius: 16px; z-index: 4;
+  padding: 50px 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rail .rtile { width: 48px; height: 48px; border-radius: 12px; background: var(--fill); position: relative; display: flex;
+  align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.rail .rtile.sel { background: rgba(255,255,255,0.18); }
+.rail .rtile .rd { position: absolute; top: 4px; right: 4px; }
+.rail .rtile .lab { position: absolute; bottom: -1px; left: 0; right: 0; text-align: center; font-size: 8.5px; font-weight: 600; color: var(--label2); }
+.rail .rtile.air { box-shadow: inset 0 0 0 2px var(--red); }
+.rail .rtile.next { box-shadow: inset 0 0 0 2px var(--green); }
+.rail .rsep { width: 30px; height: 0.5px; background: var(--sep); margin: 2px 0; }
+
+/* ---------- Disk gauge ---------- */
+.gauge { height: 6px; border-radius: 3px; background: var(--fill3); overflow: hidden; position: relative; }
+.gauge i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--label2); border-radius: 3px; }
+.gauge b { position: absolute; top: 0; bottom: 0; background: var(--red); opacity: 0.8; }
+
+/* ---------- Banners ---------- */
+.banner { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; border-radius: 11px; font-size: 12px;
+  background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.1); }
+.banner .bi { flex: none; margin-top: 1px; }
+.banner b { font-weight: 600; display: block; }
+.banner small { color: var(--label2); font-size: 11.5px; display: block; margin-top: 1px; }
+.banner .bact { margin-left: auto; display: flex; gap: 6px; align-items: center; flex: none; }
+.banner.warn { background: rgba(255,159,10,0.12); box-shadow: inset 0 0 0 0.5px rgba(255,159,10,0.35); }
+.banner.warn .bi { color: var(--orange); }
+.banner.err { background: rgba(255,69,58,0.12); box-shadow: inset 0 0 0 0.5px rgba(255,69,58,0.35); }
+.banner.err .bi { color: #ff6961; }
+.banner.info .bi { color: #64b0ff; }
+
+/* ---------- Record button ---------- */
+.recbtn { width: 40px; height: 40px; border-radius: 20px; flex: none; position: relative;
+  box-shadow: inset 0 0 0 2.5px rgba(255,255,255,0.85); }
+.recbtn::after { content: ""; position: absolute; left: 7px; top: 7px; width: 26px; height: 26px; border-radius: 13px; background: var(--red); }
+.recbtn.on::after { left: 12px; top: 12px; width: 16px; height: 16px; border-radius: 4px; }
+.recbtn.dis { opacity: 0.35; }
+.recbtn.sm { width: 30px; height: 30px; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.85); }
+.recbtn.sm::after { left: 5px; top: 5px; width: 20px; height: 20px; border-radius: 10px; }
+.recbtn.sm.on::after { left: 9px; top: 9px; width: 12px; height: 12px; border-radius: 3px; }
+
+/* ---------- Effect chips ---------- */
+.fx { display: flex; gap: 4px; }
+.fx span { height: 20px; padding: 0 7px; border-radius: 6px; font-size: 10.5px; font-weight: 600; display: flex; align-items: center;
+  background: var(--fill2); color: var(--label3); white-space: nowrap; }
+.fx span.on { background: rgba(10,132,255,0.3); color: #a9d2ff; }
+.fx.bypass span.on { background: var(--fill2); color: var(--label3); text-decoration: line-through; }
+
+/* ---------- Hybrid dropdown: graphical top, menu rows below ---------- */
+.dd { position: absolute; z-index: 20; border-radius: 16px; padding: 6px; width: 340px; background: rgba(40,40,44,0.74); }
+.dd .ddtop { padding: 6px 6px 8px; }
+.dd .mi { height: 25px; }
+.dd .mh { padding-left: 33px; }
+.dd .msep { margin: 4px 8px; }
+.dd .stat { font-size: 11px; color: var(--label3); padding: 3px 10px 3px 33px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Channel strip ---------- */
+.chan { border-radius: 14px; background: var(--fill); padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
+.chan .crow { display: flex; align-items: center; gap: 10px; min-height: 22px; font-size: 12px; }
+.chan .csep { height: 0.5px; background: var(--sep); }
+.k2 { font-size: 10px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--label3); }
+
+/* ---------- Timeline ---------- */
+.tl { position: relative; }
+.tl .lane { display: flex; align-items: center; gap: 8px; height: 22px; font-size: 11px; }
+.tl .lane .ln { width: 46px; color: var(--label2); flex: none; }
+.tl .lane .lt { flex: 1; height: 14px; position: relative; border-radius: 4px; background: rgba(255,255,255,0.04); overflow: hidden; }
+.tl .lane .lt i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.tl .lane .lt i.air { background: rgba(255,69,58,0.75); }
+.tl .lane .lt svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tl .now { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #fff; }
+
+/* ---------- Shot timer ---------- */
+.shot { position: relative; height: 8px; border-radius: 4px; background: var(--fill2); }
+.shot i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, #30d158, #30d158 60%, #ffd60a); }
+.shot .mk { position: absolute; top: -4px; bottom: -4px; width: 1.5px; background: rgba(255,255,255,0.55); }
+.shot .mkl { position: absolute; top: 12px; font-size: 9.5px; color: var(--label3); transform: translateX(-50%); white-space: nowrap; }
+
+.legend.r2 div { max-width: 400px; }

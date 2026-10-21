@@ -1,0 +1,252 @@
+[
+ {
+  "id": "L12-01",
+  "severity": "P0",
+  "problem": "One click on a feed picture means cut (Program), focus the tile (monitor shortcuts) and implicitly select the feed. Adjusting zebra on Feed 2 mid-meeting cuts Zoom to Feed 2.",
+  "evidence": "main-expanded legend 2 ('Click a picture or press ⌃1/⌃2 to cut'); monitor-tools caption 'Click a tile to focus it (blue ring)'; MonitorWorkspaceShell.swift:77 TapGesture sets focusedTile; menubar (a) thumbnails 'click to cut'.",
+  "alternatives": [
+   {
+    "name": "A · Cut only from cut controls",
+    "description": "Picture click = focus/select only. Cuts happen from the toolbar cut group, the strip 'Cut to Feed N' button, ⌃1–⌃4 and the dropdown cut thumbnails (a dropdown click is deliberate). The tile shows a hover hint 'Cut ⌃2' instead of 'Click to cut'.",
+    "tradeoffs": "Safest and unambiguous. Cutting moves slightly away from the picture: one extra pointer move. Native: plain Buttons. Small build change."
+   },
+   {
+    "name": "B · Double-click to cut",
+    "description": "Single click focuses; double-click cuts, with a 150 ms red flash on the ring as confirmation. Matches 'take' gestures in switcher software.",
+    "tradeoffs": "Fast, but a double-click by accident while focusing is still possible, and it's not discoverable or accessible without another path. It conflicts with any future double-click (e.g. expand tile)."
+   },
+   {
+    "name": "C · Click-to-cut only in Program view",
+    "description": "In Program view the source tiles are dedicated cut targets (no tools, no focus). In Side by Side the pictures never cut.",
+    "tradeoffs": "The mental model is clear per layout. Two behaviours for the same-looking tile is a mild inconsistency, and the default Side by Side then needs A's cut controls anyway."
+   }
+  ],
+  "recommendation": "A everywhere, plus C in Program view (source tiles there act as cut buttons, with no tools on them). Never let a picture click in Side by Side change the meeting.",
+  "affects": [
+   "r3.js tile()",
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "menubar",
+   "spec §5/§6",
+   "monitor-tools focus caption"
+  ]
+ },
+ {
+  "id": "L12-02",
+  "severity": "P0",
+  "problem": "The 'selected feed' still drives ⇧⌘B, the Feed menu, ⌘1–⌘4 and Load LUT ⌘O, but channel strips make all feeds peers and nothing shows which is selected. Bypass or Load LUT can hit the wrong camera live. Separate-mode Start/Stop also acts on the selected feed only, while Program mode starts all.",
+  "evidence": "app-menus Feed menu 'acts on Feed 1'; menubar (a) 'Processing · Feed 1'; AppModel.start()/stop() use selectedFeedID; no selection affordance in main-expanded / standalone.",
+  "alternatives": [
+   {
+    "name": "A · Focus = selection",
+    "description": "Merge the two concepts into one 'focused feed': accent focus ring on picture + strip header tint + sidebar row selection + window subtitle 'Feed 2'. Every feed command (⇧⌘B, ⌘O, Record ⌘R, Feed menu) acts on the focused feed, and menu items name it ('Bypass Feed 2'). ⌘1–⌘4 move focus.",
+    "tradeoffs": "One concept, always visible, matches today's 'shortcuts act on focused tile'. Needs the model's selectedFeedID wired to monitor focus. Low clutter."
+   },
+   {
+    "name": "B · Feed-scoped commands only",
+    "description": "Drop the selected-feed idea from the UI. Per-feed actions live only in each strip and the ⋯ popover. Global commands become explicit ('Bypass All', 'Stop All Feeds'), and the Feed menu becomes submenus per feed (Feed 1 ›, Feed 2 ›) like the dropdown.",
+    "tradeoffs": "No hidden state. Loses fast keyboard toggles for one feed and makes the menu bar deeper. AppModel's selected-feed paths (preview renderer, LUT loader) still exist underneath."
+   },
+   {
+    "name": "C · Keep selection, show it loudly",
+    "description": "Leave the model as is, but add a selected-state pill to the strip header ('Selected · ⇧⌘B acts here') and highlight the sidebar row.",
+    "tradeoffs": "Cheapest, but two near-identical ideas (focus vs selection) remain and users must learn the difference."
+   }
+  ],
+  "recommendation": "A. Also make Start/Stop explicit by scope: the toolbar says 'Stop All Feeds' in Program mode and 'Stop Feed 2' in Separate mode, and per-strip Stop Feed is always that feed.",
+  "affects": [
+   "r3.js tile()/strip()/sidebar()/toolbar()",
+   "app-menus Feed menu",
+   "menubar rows",
+   "spec §4/§5",
+   "AppModel selectedFeedID ↔ MonitorWorkspace focus"
+  ]
+ },
+ {
+  "id": "L12-03",
+  "severity": "P0",
+  "problem": "Toggling Downscale, Color, Frame rate or Processing (bypass) while Zoom is connected renegotiates the output format (producer drains, renegotiates, resumes), which can blank or glitch the meeting. The UI presents these as harmless switches. The LUT toggle changes pixels only and is live-safe; the UI doesn't distinguish the two.",
+  "evidence": "README §Processing: 'The producer stops and drains its camera transport before negotiating a changed output format'; strip fx chips + processing switch in main-expanded/single; ⇧⌘B in dropdown.",
+  "alternatives": [
+   {
+    "name": "A · Inline live warning + confirm",
+    "description": "When a consumer is connected, format-changing toggles open a small popover: 'Changes the format Zoom receives (1080p → 2160p). Video pauses briefly.' [Change Now] [Cancel]. The LUT toggle stays instant. Chips get a tiny ⚠ glyph on hover while live.",
+    "tradeoffs": "Clear and native (confirmationDialog/popover). Adds one click only for the risky case. Copy must be precise."
+   },
+   {
+    "name": "B · Meeting lock",
+    "description": "While any consumer is connected, a 'Live' lock state: format-changing controls are dimmed with 'Locked while Zoom is using this camera' and a lock button in the strip to unlock. LUT, cuts, recording and monitor tools stay available.",
+    "tradeoffs": "Strongest protection and less clutter during calls. Can frustrate the occasional intentional change. Needs a clear unlock path."
+   },
+   {
+    "name": "C · Stage and apply",
+    "description": "Edits made while live are staged (chips outlined, 'Apply at next pause' / 'Apply now' bar).",
+    "tradeoffs": "Broadcast-like and safe, but it's an unfamiliar pattern for a desktop app and adds state to explain."
+   }
+  ],
+  "recommendation": "A by default, with B as a Settings option ('Lock format changes during meetings'). Label LUT as live-safe in the ⋯ popover.",
+  "affects": [
+   "r3.js strip() fx chips/switch",
+   "main-collapsed ⋯ popover",
+   "menubar Effects submenu / Processing row",
+   "states.html (new live-warning state)",
+   "spec §5"
+  ]
+ },
+ {
+  "id": "L12-04",
+  "severity": "P1",
+  "problem": "Red means on air (Program or a consumer), REC, the record/stop button, errors, destructive actions and the Record All button. With two cameras, both pictures can show red rings or pills for different reasons, so the live operator can't read the state at a glance.",
+  "evidence": "main-expanded: red ring + red REC pill + red toolbar record button + red record buttons in strips; single: 'ON AIR · Zoom' red ring; states: error banners red; spec §2 'Red covers both on-air and REC'.",
+  "alternatives": [
+   {
+    "name": "A · Reserve red for ON AIR; REC becomes a glyph",
+    "description": "ON AIR keeps the red ring + filled badge. REC becomes a neutral glass pill with a small red dot and white text (no red fill anywhere else). Record buttons keep the standard red circle, a shape users already know. Errors move to orange/yellow with an exclamation triangle. The toolbar record control turns neutral-glass while rolling and shows '⏺ 12:31 · 2'.",
+    "tradeoffs": "Keeps convention: red tally means program. Red still appears in two meanings but with different shapes and sizes. Cheap CSS/builder change."
+   },
+   {
+    "name": "B · Single status chip per picture",
+    "description": "One chip at top-left combines states: 'ON AIR · Zoom  •  ⏺ 12:31'. The ring alone shows the tally, and no separate REC pill sits bottom-right.",
+    "tradeoffs": "Least clutter, and one place to read. The chip grows long with two states; it needs truncation rules."
+   },
+   {
+    "name": "C · Amber for recording",
+    "description": "Use a distinct hue (system orange) for REC, as some cameras do.",
+    "tradeoffs": "Clear separation, but it breaks the universal red REC convention and collides with paused/warning orange."
+   }
+  ],
+  "recommendation": "A + B: red ring = on air only, a single status chip per picture, REC dot glyph, errors orange with a triangle.",
+  "affects": [
+   "r3.css .onair/.role",
+   "r3.js tile()/statusbar()/toolbar()",
+   "spec §2",
+   "states",
+   "menubar icon states"
+  ]
+ },
+ {
+  "id": "L12-05",
+  "severity": "P0",
+  "problem": "'Stop' is ambiguous and unguarded. Toolbar Stop (feed), strip Stop (recording), Stop Feed (capture, which also ends recording), the record button turning into stop, and the toolbar '12:31 · 2' button (Stop All). Ending a take is one click next to Pause and can't be undone.",
+  "evidence": "main-expanded strip 'Pause' + 'Stop' adjacent; toolbar red '12:31 · 2'; AppModel.stop() calls recordingModel.stop(feedID:) so Stop Feed silently ends the take; four-up / standalone 'Stop All · 12:31'.",
+  "alternatives": [
+   {
+    "name": "A · Rename by object",
+    "description": "Capture: 'Start Feed / Stop Feed'. Recording: the record button toggles 'Record / End Take', and the strip has only Pause/Resume. Toolbar: 'End All Takes' as a menu-backed button (End All / Pause All). Stop Feed while recording reads 'Stop Feed and End Take'.",
+    "tradeoffs": "Clear verbs per object. Slightly longer labels. No new interaction."
+   },
+   {
+    "name": "B · Guard the irreversible",
+    "description": "Ending a take longer than 1 minute, Stop Feed while recording or on air, and End All Takes ask once via a native confirmationDialog ('End Feed 1's take (12:31)?'), with 'Don't ask during meetings' off by default. Alternatively press-and-hold 0.6 s on the record button with a ring fill.",
+    "tradeoffs": "Prevents the costly mistake. Adds a click; press-and-hold is less discoverable and needs an accessibility alternative."
+   },
+   {
+    "name": "C · Spatial separation",
+    "description": "Keep Pause inline. Move End Take to the record button only (far right) and Stop Feed into the strip header ⋯ menu.",
+    "tradeoffs": "Reduces misclicks without dialogs. Stop Feed becomes less reachable."
+   }
+  ],
+  "recommendation": "A + B (confirm only when the action ends a recording or interrupts an on-air feed) + C (Stop Feed into ⋯ when recording).",
+  "affects": [
+   "r3.js strip()/toolbar()",
+   "states (strip states)",
+   "app-menus Record/Feed",
+   "menubar recording rows",
+   "spec §5 strip matrix"
+  ]
+ },
+ {
+  "id": "L12-06",
+  "severity": "P1",
+  "problem": "Each live state is repeated across 5–6 surfaces (sidebar camera rows, strip, picture pill, toolbar, status bar, menu bar icon), and the picture keeps 5 tool buttons visible at all times. With 1–2 cameras the sidebar camera list duplicates the strips: the clutter the user asked to remove.",
+  "evidence": "main-expanded: 'REC 12:31' appears in sidebar rows, sidebar Recording, picture pill, strip, toolbar, status bar; sidebar Cameras rows mirror strips; always-on tool groups on 524 px pictures.",
+  "alternatives": [
+   {
+    "name": "A · One job per surface",
+    "description": "Picture = live state (status chip + tally). Strip = per-feed controls and numbers. Sidebar = session totals only (no per-feed rows when ≤2 cameras; output, destination, takes, automation). Status bar = global summary + problems. Menu bar icon = global state. Document it in the spec.",
+    "tradeoffs": "Big clutter reduction with no loss. The sidebar becomes lighter (could be narrower, ~200 pt). With 3–4 cameras, a compact camera list can return."
+   },
+   {
+    "name": "B · Hover-only overlays with pinned tools",
+    "description": "Tool buttons and the hover group appear on pointer hover or focus. Tools that are on show as small passive chips ('Zebra 95', 'Guides') that stay visible.",
+    "tradeoffs": "Clean pictures. Discoverability is slightly lower (mitigated by the View › Monitor Tools menu and a first-run hint). It needs keyboard focus to reveal them for accessibility."
+   },
+   {
+    "name": "C · Density setting",
+    "description": "Comfortable vs Compact in Settings › General, affecting overlays, strips and the sidebar.",
+    "tradeoffs": "Lets users choose, but it's a setting instead of a decision, and it doubles design states."
+   }
+  ],
+  "recommendation": "A + B; skip C.",
+  "affects": [
+   "r3.js sidebar()/tile()",
+   "main-expanded",
+   "main-collapsed",
+   "single",
+   "standalone",
+   "spec §1/§4"
+  ]
+ },
+ {
+  "id": "L12-07",
+  "severity": "P1",
+  "problem": "The hybrid dropdown runs 20–26 rows plus a 180 pt preview (and cut thumbnails), exceeding a 13\" laptop's usable height. Submenus nest three deep (Feed › Effects ›), and it's partly a duplicate menu bar.",
+  "evidence": "menubar (a): preview + thumbnails + ~22 rows + stat line; single dropdown ~24 rows; app-menus duplicates most rows.",
+  "alternatives": [
+   {
+    "name": "A · Control-surface top + short menu",
+    "description": "Preview (shrinks first on small screens), then a row of 4 glass buttons (Feed Start/Stop, Record/End All, Effects/Bypass, Auto). Then per-feed rows with submenus. Then Open Ultracam / Settings / Quit. Target ≤ 12 rows; the rest stays in app menus.",
+    "tradeoffs": "Fast and graphical. The custom button row needs the NSMenu custom-view spike (same as the preview). Less 'native menu' feel at the top."
+   },
+   {
+    "name": "B · State-contextual rows",
+    "description": "Show only rows that apply now: Program rows only in Program mode, recording rows only when a folder exists or a take is rolling, automation rows hidden when unchanged. A 'More' submenu holds the rest.",
+    "tradeoffs": "Shorter menus, but rows move between states, which hurts muscle memory."
+   },
+   {
+    "name": "C · Compact preview mode",
+    "description": "Preview collapses to a 64 pt strip with chips (ON AIR, REC, TC) when the screen is shorter than 900 pt, or via a toggle.",
+    "tradeoffs": "Solves height only, not length."
+   }
+  ],
+  "recommendation": "A with C's adaptive preview height. Keep row order stable (avoid B).",
+  "affects": [
+   "menubar.html all variants",
+   "single/standalone dropdowns",
+   "spec §4 menu bar row",
+   "Settings › General menu bar options"
+  ]
+ },
+ {
+  "id": "L12-08",
+  "severity": "P1",
+  "problem": "First run depends on activating the camera system extension (signed build, System Settings approval, possibly pending) before Zoom sees anything. The design covers this only as scattered banners and one onboarding card, with no persistent progress or live approval status.",
+  "evidence": "states §6 'First launch' card; sidebar banner 'Install the Ultracam camera'; ExtensionInstaller status/pending; README install section (approve in System Settings › Login Items & Extensions).",
+  "alternatives": [
+   {
+    "name": "A · Setup checklist that docks into the sidebar",
+    "description": "First launch shows a checklist card in the main area: Install camera (live status: requested → waiting for approval → enabled, with an 'Open System Settings' button), Choose input (live signal check), Optional LUT, Recording folder, Test in Zoom. After first completion it collapses to a 'Setup 3/5' sidebar row and disappears when done.",
+    "tradeoffs": "Guides without blocking: preview and recording work during setup. Small new component."
+   },
+   {
+    "name": "B · Modal onboarding sheet",
+    "description": "A multi-step sheet before the window is usable.",
+    "tradeoffs": "Linear and clear, but it blocks monitoring and recording, and most of the steps are optional."
+   },
+   {
+    "name": "C · Empty states only",
+    "description": "Each surface explains itself when empty.",
+    "tradeoffs": "Zero new UI, but there's no overview of what's left, and approval in System Settings is easy to miss."
+   }
+  ],
+  "recommendation": "A.",
+  "affects": [
+   "states §4/§6",
+   "r3.js sidebar()",
+   "single (first-run variant)",
+   "settings Camera pane",
+   "spec §5"
+  ]
+ }
+]

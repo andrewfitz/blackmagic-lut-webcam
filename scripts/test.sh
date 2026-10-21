@@ -6,7 +6,7 @@ if [[ $# -ne 0 ]]; then
 fi
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 external_root=/Volumes/8TB/cinesomatic-director-work
-if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
+if ! mount | /usr/bin/grep -F ' on /Volumes/8TB ' > /dev/null; then
   echo 'External drive /Volumes/8TB is not mounted.' >&2
   exit 1
 fi
@@ -18,6 +18,13 @@ run_id="$(date -u +%Y%m%dT%H%M%S)-$$"
 test_root="$external_root/agent-work/build/ultracam/tests/$run_id"
 logs_root="$artifact_root/logs"
 mkdir -p "$TMPDIR" "$test_root/modules" "$artifact_root" "$logs_root"
+source "$task_root/scripts/monitor-tools-package.sh"
+package_log="$logs_root/monitor-package-$run_id.log"
+monitor_package_build > "$package_log" 2>&1 || { cat "$package_log"; exit 1; }
+xcrun swift test --package-path "$monitor_package" --scratch-path "$monitor_scratch" --cache-path "$test_root/package-cache" \
+  --configuration release --arch arm64 > "$logs_root/monitor-package-tests-$run_id.log" 2>&1 || {
+  cat "$logs_root/monitor-package-tests-$run_id.log"; exit 1;
+}
 bash "$task_root/scripts/fetch-decklink-sdk.sh"
 rust_manifest="$task_root/Tools/auto-switcher/Cargo.toml"
 rustc_path="$(rustup which --toolchain stable rustc)"
@@ -42,13 +49,15 @@ xcrun clang++ -std=c++17 -I "$sdk_dir" -c "$sdk_dir/DeckLinkAPIDispatch.cpp" \
   -o "$test_root/DeckLinkAPIDispatch.o" >> "$compile_log" 2>&1 || {
   cat "$compile_log"; exit 1
 }
-xcrun swiftc -O -swift-version 5 -module-cache-path "$test_root/modules" \
+xcrun swiftc -O -swift-version 5 -target arm64-apple-macos15.0 -module-cache-path "$test_root/modules" \
+  "${monitor_link_args[@]}" \
   -D CAPTURE_LIFECYCLE_TESTS -Xcc -DULTRACAM_BACKEND_TESTING \
   -import-objc-header "$task_root/Sources/DeckLinkBackend/BridgingHeader.h" \
   -F "$frameworks" -Xlinker -rpath -Xlinker "$frameworks" \
   -I "$libraries" -L "$libraries" -lXCTestSwiftSupport -Xlinker -rpath -Xlinker "$libraries" \
-  "$task_root"/Sources/Shared/*.swift "$task_root/Sources/App/LUTProcessor.swift" \
+  "$task_root"/Sources/Shared/*.swift "$task_root/Sources/App/LUTProcessor.swift" "$task_root/Sources/App/AppResourceUsage.swift" \
   "$task_root"/Sources/Recording/*.swift \
+  "$task_root/Sources/App/MonitorCoordinator.swift" "$task_root/Sources/App/MonitorCaptureSink.swift" \
   "$task_root/Sources/App/CameraSink.swift" "$task_root/Sources/App/CaptureController.swift" \
   "$task_root/Sources/App/AutoSwitcherBridge.swift" \
   "$task_root/Sources/App/AutoSwitcherTimelineRecorder.swift" \

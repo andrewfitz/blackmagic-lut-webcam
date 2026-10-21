@@ -1,0 +1,82 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Four Up · four cameras</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .g4 { display: grid; grid-template-columns: 574px 574px; justify-content: center; align-content: start; gap: 12px 16px; height: 100%; }
+  .g4 .col3 { gap: 8px; }
+  .g4 .strip3.collapsed .r { gap: 8px; }
+  .cursor { position: absolute; z-index: 9; width: 14px; height: 20px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Four Up: four cameras in Separate mode, Camera 1 in use, three takes, sidebar hidden</div>
+
+  <div class="window win2">
+    <div id="tb"></div>
+    <div class="content3 nosb">
+      <div class="g4">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+        <div class="col3" id="c3"></div>
+        <div class="col3" id="c4"></div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+  <svg class="cursor" style="left: 1040px; top: 300px;" viewBox="0 0 14 20"><path d="M1 1 L1 16 L5 12 L8 19 L10.5 18 L7.5 11 L13 11 Z" fill="#fff" stroke="#000" stroke-width="1"/></svg>
+
+  <div class="callout" style="left: 172px; top: 70px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 682px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1316px; top: 300px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 82px; top: 650px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 82px; top: 484px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 868px; top: 914px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>With 3–4 cameras the session sidebar is hidden (⌃⌘S brings it back), giving four 16:9 pictures the full width. Layout follows the camera count: 1 → Single, 2 → Side by Side, 3–4 → Four Up.</span></div>
+    <div><span class="n">2</span><span>Separate mode: each camera publishes its own "Ultracam · Camera N". Camera 1 has a client, so it gets the red ring and ON AIR. No app name is shown; the app only knows that something is using it.</span></div>
+    <div><span class="n">3</span><span>Hovering a picture reveals its tool bar (tools, timecode, signal, freeze, clean, zoom, detach). Clicking it selects the camera (blue ring) for ⇧⌘B, ⌘R and the Camera menu.</span></div>
+    <div><span class="n">4</span><span>Honest empty state: Camera 3 says No HDMI signal and what the input needs. Its strip reads Waiting for HDMI, and its record control is disabled until a signal arrives.</span></div>
+    <div><span class="n">5</span><span>Strips auto-collapse in Four Up: state, elapsed, effect chips with checkmarks, audio, the record control and the ⋯ camera menu. Paused shows orange bars, never the red tally.</span></div>
+    <div><span class="n">6</span><span>Status bar: outputs in use, takes (2 recording, 1 paused), time left on each destination drive, and an orange warning segment for Camera 3.</span></div>
+  </div>
+</div>
+<script>
+  // Local cameras 3 and 4 (page-only additions to the shared data).
+  CAMS.c1 = { ...CAMS.c1, left: '1 h 05 m' };
+  CAMS.c3 = { ...CAMS.c1, n: 3, name: 'Camera 3', input: 'Mini 4K · DeckLink Mini Recorder 4K', fmt: '—', scene: 'mcu',
+    rec: { state: 'idle', t: '00:00:00', size: '—', rate: '—', drops: 0 }, folder: '8TB › Takes › Camera 3', fx: [0, 1, 1, 0], lut: null, audio: [0, 0, '—'], tools: [0, 0, 0, 0, 0] };
+  CAMS.c4 = { ...CAMS.c2, n: 4, name: 'Camera 4', input: 'FX30 · UltraStudio Recorder 3G', fmt: '2160p 29.97', scene: 'wide', tone: 'slog',
+    rec: { state: 'paused', t: '00:04:12', size: '11.0 GB', rate: '354 Mb/s', drops: 0 }, drive: '8TB', folder: '8TB › Takes › Camera 4', own: false, left: '1 h 05 m',
+    fx: [0, 1, 1, 0], audio: [30, 28, '−24.0'], tools: [0, 0, 0, 1, 0], signal: 'Source · S-Log3' };
+
+  mount('tb', toolbar({ title: 'Recording Session', subtitle: '4 cameras · Camera 1 in use · 3 takes', layout: 'grid', mode: 'separate',
+    collapsedAll: true, left: 8, rec: 'stopall', recCount: 3 }));
+  mount('c1', tile(CAMS.c1, { mode: 'separate', inUse: true }) + strip(CAMS.c1, { expanded: false, mode: 'separate', inUse: true }));
+  mount('c2', tile(CAMS.c2, { mode: 'separate', hover: true, selected: true }) + strip(CAMS.c2, { expanded: false, mode: 'separate', selected: true }));
+  mount('c3', tile(CAMS.c3, { mode: 'separate', state: 'nosignal' }) + strip(CAMS.c3, { expanded: false, mode: 'separate', state: 'waiting' }));
+  mount('c4', tile(CAMS.c4, { mode: 'separate' }) + strip(CAMS.c4, { expanded: false, mode: 'separate', state: 'paused' }));
+
+  // Page-local status bar: the builder counts every camera as recording, which isn't true here.
+  mount('st', `<div class="sbar tnum">
+    <div class="seg2 hover cg">${ic('camlink')}Ultracam · Camera 1 · in use</div>
+    <div class="div"></div>
+    <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 · 12:31</span><span class="co">· ❚❚ 1</span> · 8TB 1 h 05 m · Archive 5 h 40 m left</div>
+    <div class="div"></div>
+    <div class="seg2">${ic('wave')}Audio: 3 of 4</div>
+    <div class="div"></div>
+    <div class="seg2 co">${ic('info')}Camera 3: no signal</div>
+    <div class="sp"></div>
+    <div class="seg2">CPU 61.2% · GPU (video) 38.4% · Memory 2.24 GB</div>
+  </div>`);
+</script>
+</body></html>

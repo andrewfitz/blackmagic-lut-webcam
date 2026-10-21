@@ -1,0 +1,337 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Diagnostics window + status bar popovers</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .desktop { height: 1330px; }
+  .dwin { left: 40px; top: 80px; width: 1100px; height: 668px; }
+  .pwin { left: 40px; top: 774px; width: 1100px; height: 392px; }
+  .awin { left: 1170px; top: 774px; width: 560px; height: 392px; }
+  .dbody { position: absolute; left: 0; right: 0; top: 56px; bottom: 0; padding: 4px 18px 16px; }
+  .head4 { display: flex; align-items: center; gap: 10px; padding: 6px 4px 2px; font-size: 12px; white-space: nowrap; }
+  .dcols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+  .dcols .form-h { padding-top: 10px; }
+  .dcols .row { min-height: 27px; padding: 4px 11px; font-size: 12px; }
+  .dcols .row .val { color: var(--label); font-family: var(--mono); font-size: 11.5px; white-space: nowrap; margin-left: auto; }
+  .dcols .row .val.c2 { color: var(--label2); }
+  .dcols .row .lbl { color: var(--label2); white-space: nowrap; }
+  .spark { width: 64px; height: 16px; flex: none; }
+  .spark rect.base { fill: var(--fill3); }
+  .spark rect.hit { fill: var(--orange); }
+  .msg { font-family: var(--mono); font-size: 11px; color: var(--label); white-space: normal; text-align: left; }
+  .dnote { font-size: 10.5px; color: var(--label2); padding: 5px 6px 0; line-height: 1.35; }
+  .tabs4 { width: 440px; }
+
+  /* App tab (narrow) */
+  .charts { position: absolute; left: 16px; right: 16px; top: 62px; bottom: 40px; display: flex; flex-direction: column; gap: 8px; }
+  .chart { border-radius: 11px; background: var(--fill); padding: 8px 12px; display: grid; grid-template-columns: 112px minmax(0,1fr); gap: 2px 12px; align-items: center; flex: 1; }
+  .chart .big { font-size: 20px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .chart svg { width: 100%; height: 44px; grid-row: span 2; }
+  .chart small { font-size: 10.5px; color: var(--label2); line-height: 1.3; grid-column: 1 / -1; }
+  .chart .grid { stroke: var(--sep); }
+
+  /* Popovers */
+  .pvs { position: absolute; left: 1166px; top: 80px; width: 560px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px 20px; }
+  .pv { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .pop { width: 270px; border-radius: 16px; padding: 12px; background: rgba(38,38,42,0.88); position: relative; }
+  .pop::after { content: ""; position: absolute; bottom: -8px; left: 50%; margin-left: -8px; width: 16px; height: 16px; transform: rotate(45deg);
+    background: rgba(44,44,48,0.97); border-right: 0.5px solid var(--glass-edge); border-bottom: 0.5px solid var(--glass-edge); }
+  .pop h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .pop .row { min-height: 30px; padding: 5px 10px; font-size: 12px; }
+  .pop .row small { font-size: 10.5px; }
+  .pop .cap { font-size: 10.5px; color: var(--label2); line-height: 1.35; padding: 6px 4px 0; }
+  .pop .acts { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+  .segchip { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 7px; font-size: 11.5px;
+    color: var(--label2); background: rgba(28,28,30,0.92); box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14), 0 6px 18px rgba(0,0,0,0.35); white-space: nowrap; }
+  .segchip.active { background: rgba(60,60,64,0.95); color: var(--label); }
+  .pmeter { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--label2); }
+  .cuts .row { min-height: 30px; }
+  .cuts .t { font-family: var(--mono); font-size: 11px; color: var(--label2); width: 64px; flex: none; }
+
+  html.light .pop { background: rgba(246,246,248,0.94) !important; }
+  html.light .pop::after { background: rgba(246,246,248,0.98); }
+  html.light .segchip { background: rgba(255,255,255,0.92); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.14), 0 6px 18px rgba(0,0,0,0.12); }
+  html.light .segchip.active { background: #fff; }
+  html.light .menubar .wsel { background: rgba(0,0,0,0.12) !important; }
+  html.light .newtag { color: #7a2fa8; background: rgba(175,82,222,0.14); box-shadow: inset 0 0 0 0.5px rgba(175,82,222,0.5); }
+  html.light .badge.blue { color: #0062cc; }
+  html.light .meter .bar b { background: rgba(0,0,0,0.7); }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span class="wsel" style="background:rgba(255,255,255,0.22);border-radius:6px;padding:1px 7px">Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Diagnostics window (Window ▸ Diagnostics, no shortcut) and status bar popovers</div>
+
+  <!-- ================= Camera 1 tab ================= -->
+  <div class="window dwin">
+    <div class="toolbar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="title" style="margin-left:14px"><b>Diagnostics</b><small>Meeting · Ultracam · Program in use</small></div>
+      <div class="flex"></div>
+      <div class="tabs glass tabs4" style="background: var(--fill)">
+        <div class="on"><span class="dot red" style="box-shadow:none;width:6px;height:6px"></span>Camera 1</div>
+        <div><span class="dot red" style="box-shadow:none;width:6px;height:6px"></span>Camera 2</div>
+        <div><i data-i="program" class="sm"></i>Program</div>
+        <div><i data-i="cpu" class="sm"></i>App</div>
+      </div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="layers"></i>Copy Diagnostics</div></div>
+    </div>
+
+    <div class="dbody">
+      <div class="head4">
+        <b style="font-size:13.5px">Camera 1</b><span class="c2">Input: FX3 · UltraStudio Mini Recorder 12G</span>
+        <span class="badge green">● 2160p 59.94</span><span class="badge red">On air</span><span class="badge"><span class="dot red" style="width:5px;height:5px;box-shadow:none"></span>REC 12:31</span>
+        <span style="margin-left:auto;font-size:11px" class="c2 tnum">Samples twice a second while visible</span>
+      </div>
+      <div class="dcols">
+        <div>
+          <div class="form-h">Capture</div>
+          <div class="form">
+            <div class="row"><span class="lbl">Input</span><span class="val">3840×2160 · 59.94p · 10-bit 4:2:2</span></div>
+            <div class="row"><span class="lbl">Output</span><span class="val">1920×1080 · 29.97p · 4:2:0 8-bit</span></div>
+            <div class="row"><span class="lbl">Delivered</span><span class="val">29.97 fps</span></div>
+            <div class="row"><span class="lbl">Processing</span><span class="val">4.12 ms</span></div>
+            <div class="row"><span class="lbl">Video bitrate (input)</span><span class="val">10.6 Gb/s</span></div>
+            <div class="row"><span class="lbl">Timecode (RP188)</span><span class="val">14:22:31:12</span></div>
+          </div>
+
+          <div class="form-h">Drops by stage <span style="display:flex;align-items:center;gap:6px;font-weight:500" class="c2">last 60 s<span class="newtag" style="margin:0">NEW</span></span></div>
+          <div class="form">
+            <div class="row"><span class="lbl" style="flex:1">Source gaps</span><svg class="spark" data-spark="0"></svg><span class="val" style="width:40px;text-align:right">0</span></div>
+            <div class="row"><span class="lbl" style="flex:1">Capture admission</span><svg class="spark" data-spark="0"></svg><span class="val" style="width:40px;text-align:right">0</span></div>
+            <div class="row"><span class="lbl" style="flex:1">Output buffers</span><svg class="spark" data-spark="0"></svg><span class="val" style="width:40px;text-align:right">0</span></div>
+            <div class="row"><span class="lbl" style="flex:1">Camera transport</span><svg class="spark" data-spark="2"></svg><span class="val co" style="width:40px;text-align:right">2</span></div>
+            <div class="row"><span class="lbl" style="flex:1">Preview</span><svg class="spark" data-spark="11"></svg><span class="val co" style="width:40px;text-align:right">11</span></div>
+          </div>
+          <div class="dnote">Native renderer totals include prior runs. Intentional frame-rate reduction is excluded.</div>
+
+          <div class="form-h">Embedded audio</div>
+          <div class="form">
+            <div class="row"><span class="lbl">Format</span><span class="val">2 ch · 48.0 kHz · 16-bit</span></div>
+            <div class="row"><span class="lbl">Audio bitrate · packets</span><span class="val">1.54 Mb/s · 45,091</span></div>
+            <div class="row"><span class="lbl">Audio drops · gaps</span><span class="val">0 · 0</span></div>
+            <div class="row"><span class="lbl" style="width:22px">L</span><div class="meter" style="flex:1"><div class="bar"><i style="width:64%"></i><b style="left:78%"></b></div></div><span class="val" style="width:150px;text-align:right;margin-left:8px">peak −9.8 · RMS −18.6</span></div>
+            <div class="row"><span class="lbl" style="width:22px">R</span><div class="meter" style="flex:1"><div class="bar"><i style="width:60%"></i><b style="left:74%"></b></div></div><span class="val" style="width:150px;text-align:right;margin-left:8px">peak −11.2 · RMS −20.1</span></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="form-h">Recording · encoder</div>
+          <div class="form">
+            <div class="row"><span class="lbl">Encoder</span><span class="val">Hardware · ProRes 422 10-bit</span></div>
+            <div class="row"><span class="lbl">Encoded rate</span><span class="val">707 Mb/s · 29.97 → 59.94 fps</span></div>
+            <div class="row"><span class="lbl">Encode latency</span><span class="val">4.1 ms · peak 9.8 ms</span></div>
+            <div class="row"><span class="lbl">Writer queue · encoder pending</span><span class="val">2/64 samples · 1 frame</span></div>
+            <div class="row"><span class="lbl">Encoder · writer errors</span><span class="val">0 · 0</span></div>
+            <div class="row"><span class="lbl">File</span><span class="val" style="font-size:11px">Camera 1_2026-10-21_09-29-12_003.mov</span></div>
+            <div class="row"><span class="lbl">Last error</span><span class="val c2">—</span></div>
+          </div>
+
+          <div class="form-h">Monitoring <span style="font-weight:500" class="c2">shared target live rates</span></div>
+          <div class="form">
+            <div class="row"><span class="lbl">Picture</span><span class="val">cap 30 Hz · offers 59.9 · delivered 29.9 fps</span></div>
+            <div class="row"><span class="lbl">Scopes</span><span class="val">requested 15 Hz · delivered 15.0</span></div>
+            <div class="row"><span class="lbl">Quality</span><span class="val">Normal · picture ≤1080p · stride 2</span></div>
+            <div class="row"><span class="lbl">Frames</span><span class="val">offers 45,040 · admitted 22,520 · rejected 0</span></div>
+            <div class="row"><span class="lbl">Shared budget</span><span class="val">96.0 MiB retained · 0.0 retiring</span></div>
+            <div class="row"><span class="lbl">GPU deadline</span><span class="val cg">within limit</span></div>
+          </div>
+
+          <div class="form-h">Messages <span class="btn borderless" style="font-size:11.5px">Copy</span></div>
+          <div class="form">
+            <div class="row"><span class="lbl" style="width:62px">Capture</span><span class="msg">Processing enabled — LUT applied</span></div>
+            <div class="row"><span class="lbl" style="width:62px">Camera</span><span class="msg">Virtual camera connected — choose Ultracam in Zoom</span></div>
+            <div class="row"><span class="lbl" style="width:62px">Preview</span><span class="msg c2">No preview error</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Program tab ================= -->
+  <div class="window pwin">
+    <div class="toolbar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="title" style="margin-left:14px"><b>Diagnostics</b><small>Program · Ultracam · Program in use</small></div>
+      <div class="flex"></div>
+      <div class="tabs glass tabs4" style="background: var(--fill)">
+        <div><span class="dot red" style="box-shadow:none;width:6px;height:6px"></span>Camera 1</div>
+        <div><span class="dot red" style="box-shadow:none;width:6px;height:6px"></span>Camera 2</div>
+        <div class="on"><i data-i="program" class="sm"></i>Program</div>
+        <div><i data-i="cpu" class="sm"></i>App</div>
+      </div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="layers"></i>Copy Diagnostics</div></div>
+    </div>
+    <div class="dbody">
+      <div class="dcols">
+        <div>
+          <div class="form-h" style="padding-top:4px">Program output</div>
+          <div class="form">
+            <div class="row"><span class="lbl">Ultracam · Program</span><span class="badge red" style="margin-left:auto">ON AIR</span><span class="val cg" style="margin-left:6px">In use</span></div>
+            <div class="row"><span class="lbl">Output format</span><span class="val">1920×1080 · 29.97p · 4:2:0 8-bit</span></div>
+            <div class="row"><span class="lbl">Source formats</span><span class="val cg">Camera 1 ✓ · Camera 2 ✓ match</span></div>
+          </div>
+          <div class="dnote">If a camera's output format differs, each cut to it renegotiates the camera format and shows "Updating output…".</div>
+          <div class="form-h">Switcher</div>
+          <div class="form">
+            <div class="row"><span class="lbl">On air · pending cut</span><span class="val">Camera 1 · shot 8.2 s · none pending</span></div>
+            <div class="row"><span class="lbl">Evaluation</span><span class="val">Idle · 2 of 2 sources healthy</span></div>
+            <div class="row"><span class="lbl">Director</span><span class="val">Natural talking head · Transcript assisted</span></div>
+          </div>
+          <div class="dnote">Evaluation states: Idle, Cut queued, No healthy source (Program keeps the last good frame), Dynamic analysis unavailable. Transcript cues only arrive from an external adapter; without one the director cuts on audio cues alone.</div>
+        </div>
+        <div>
+          <div class="form-h" style="padding-top:4px">Recent cuts <span class="newtag" style="margin:0">NEW</span></div>
+          <div class="form cuts">
+            <div class="row"><span class="t">14:22:23</span><span class="lbl" style="flex:1;color:var(--label)">Cut to Camera 1</span><span class="badge orange">max shot</span></div>
+            <div class="row"><span class="t">14:21:58</span><span class="lbl" style="flex:1;color:var(--label)">Cut to Camera 2</span><span class="badge">speech gap</span></div>
+            <div class="row"><span class="t">14:21:31</span><span class="lbl" style="flex:1;color:var(--label)">Cut to Camera 1</span><span class="badge blue">emphasis ended</span></div>
+            <div class="row"><span class="t">14:20:47</span><span class="lbl" style="flex:1;color:var(--label)">Cut to Camera 2</span><span class="badge">manual · ⌃2</span></div>
+          </div>
+          <div class="form" style="margin-top:8px">
+            <div class="row"><span class="lbl">Director audio</span><span class="val">Camera 1 embedded audio · one stream</span></div>
+          </div>
+          <div class="dnote">Each cut is applied at a Program frame boundary and listed once acknowledged. The full timeline is also written as a sidecar next to the recordings.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= App tab ================= -->
+  <div class="window awin">
+    <div class="toolbar" style="padding-right:10px">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="title" style="margin-left:12px"><b>Diagnostics</b><small>App · Ultracam total</small></div>
+      <div class="flex"></div>
+      <div class="seg"><div>Camera 1</div><div>Camera 2</div><div>Program</div><div class="on">App</div></div>
+    </div>
+    <div class="charts">
+      <div class="chart"><div><b style="font-size:12px">CPU</b> <span class="newtag">NEW 60 s</span><div class="big">48.6%</div></div><svg data-chart="cpu" viewBox="0 0 300 44" preserveAspectRatio="none"></svg><small>All Ultracam threads. 100% is one core, so this can exceed 100%.</small></div>
+      <div class="chart"><div><b style="font-size:12px">GPU (video)</b> <span class="newtag">NEW</span><div class="big">29.8%</div></div><svg data-chart="gpu" viewBox="0 0 300 44" preserveAspectRatio="none"></svg><small>Metal processing and copy queues; excludes the hardware media encoder and display compositor.</small></div>
+      <div class="chart"><div><b style="font-size:12px">Memory</b> <span class="newtag">NEW</span><div class="big">1.71 GB</div></div><svg data-chart="mem" viewBox="0 0 300 44" preserveAspectRatio="none"></svg><small>Process footprint, including bounded frame pools and the monitor budget.</small></div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- ================= Status bar popovers ================= -->
+  <div class="pvs">
+    <div class="pv">
+      <div class="pop glass">
+        <h4><i data-i="camlink" style="color:var(--green)"></i>Output</h4>
+        <div class="form">
+          <div class="row"><span class="lbl">Ultracam · Program<small class="cg">In use</small></span><span class="badge red">ON AIR</span></div>
+          <div class="row"><span class="lbl">Sending</span><span class="val mono" style="font-size:11px">1080p 29.97 · 4:2:0</span></div>
+          <div class="row"><span class="lbl">Mode</span><span class="val">Program</span></div>
+          <div class="row"><span class="lbl">Camera extension<small class="cg">Installed · enabled</small></span></div>
+        </div>
+        <div class="cap">Video only. Choose your microphone or the Blackmagic audio input separately in your meeting app.</div>
+        <div class="acts"><span class="btn">Camera Settings…</span></div>
+      </div>
+      <span class="segchip active" style="color:var(--green)"><i data-i="camlink" class="sm"></i>Ultracam · Program · in use</span>
+    </div>
+
+    <div class="pv">
+      <div class="pop glass">
+        <h4><span class="dot red"></span>Recording<span class="c2 tnum" style="font-weight:500;font-size:12px">2 takes · 12:31</span></h4>
+        <div class="form">
+          <div class="row"><span class="dot red"></span><span class="lbl">Camera 1<small class="tnum">12:31 · 64.2 GB · 0 dropped</small></span><span class="btn icon" title="Stop Recording"><i data-i="stop" class="sm"></i></span></div>
+          <div class="row"><span class="dot red"></span><span class="lbl">Camera 2<small class="tnum">12:31 · 32.6 GB · 0 dropped</small></span><span class="btn icon" title="Stop Recording"><i data-i="stop" class="sm"></i></span></div>
+        </div>
+        <div style="padding:9px 4px 0; display:flex; flex-direction:column; gap:5px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px"><i data-i="folder" class="sm c2"></i>8TB<span class="c2" style="font-size:10.5px">Camera 1</span><span class="newtag">NEW</span><span class="c2 tnum" style="margin-left:auto">1 h 52 m left</span></div>
+          <div class="gauge"><i style="width:74%"></i></div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;margin-top:3px"><i data-i="folder" class="sm c2"></i>Archive<span class="c2" style="font-size:10.5px">Camera 2</span><span class="c2 tnum" style="margin-left:auto">5 h 40 m left</span></div>
+          <div class="gauge"><i style="width:38%"></i></div>
+        </div>
+        <div class="acts"><span class="btn">Show in Finder</span><span class="btn red">Stop All (2)</span></div>
+      </div>
+      <span class="segchip active"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 · 12:31</span> · 8TB 1 h 52 m · Archive 5 h 40 m</span>
+    </div>
+
+    <div class="pv">
+      <div class="pop glass">
+        <h4><i data-i="wave"></i>Audio<span class="c2" style="font-weight:500;font-size:12px">embedded · 48 kHz</span></h4>
+        <div class="form">
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:5px;padding:8px 10px">
+            <div style="display:flex;justify-content:space-between;font-size:12px"><b style="font-weight:600">Camera 1</b><span class="c2 tnum" style="font-size:11px">peak −9.8 · RMS −18.6 dB</span></div>
+            <div class="meter">L<div class="bar"><i style="width:64%"></i><b style="left:78%"></b></div></div>
+            <div class="meter">R<div class="bar"><i style="width:60%"></i><b style="left:74%"></b></div></div>
+          </div>
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:5px;padding:8px 10px">
+            <div style="display:flex;justify-content:space-between;font-size:12px"><b style="font-weight:600">Camera 2</b><span class="c2 tnum" style="font-size:11px">peak −21.4 · RMS −30.2 dB</span></div>
+            <div class="meter">L<div class="bar"><i style="width:40%"></i><b style="left:52%"></b></div></div>
+            <div class="meter">R<div class="bar"><i style="width:38%"></i><b style="left:50%"></b></div></div>
+          </div>
+        </div>
+        <div class="cap">Bar = RMS, marker = peak. Recorded with each take; not sent through the virtual camera.</div>
+      </div>
+      <span class="segchip active"><i data-i="wave" class="sm"></i>Audio: 2 of 2</span>
+    </div>
+
+    <div class="pv">
+      <div class="pop glass">
+        <h4><i data-i="cpu"></i>Ultracam total</h4>
+        <div class="form">
+          <div class="row"><span class="lbl">CPU<small>All Ultracam threads · 100% = one core</small></span><span class="val tnum" style="color:var(--label)">48.6%</span></div>
+          <div class="row"><span class="lbl">GPU (video)<small>Metal processing + copy, last second</small></span><span class="val tnum" style="color:var(--label)">29.8%</span></div>
+          <div class="row"><span class="lbl">Memory<small>Process footprint</small></span><span class="val tnum" style="color:var(--label)">1.71 GB</span></div>
+        </div>
+        <div class="cap">GPU excludes the hardware media encoder and the system display compositor. Not a whole-machine reading.</div>
+        <div class="acts"><span class="btn">Open Diagnostics</span></div>
+      </div>
+      <span class="segchip active">CPU 48.6% · GPU 29.8% · 1.71 GB</span>
+    </div>
+  </div>
+
+  <div class="callout" style="left: 552px; top: 70px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 280px; top: 344px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 18px; top: 840px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 1147px; top: 90px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1148px; top: 840px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1080px; top: 170px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Engineering detail lives in its own window (Window ▸ Diagnostics, no shortcut): one tab per camera, plus Program and App. Nothing here is needed for normal use; Copy Diagnostics puts it all on the clipboard.</span></div>
+    <div><span class="n">2</span><span>Drops are split by stage so a problem points somewhere. Counts turn orange only above zero; <span class="newtag" style="margin:0">NEW</span> sparklines show when. Large rates read in Gb/s; audio gaps are back.</span></div>
+    <div><span class="n">3</span><span>The Program tab: published format and whether every source matches it, what's on air and pending, the switcher's evaluation state (including No healthy source), an honest director-mode note, and <span class="newtag" style="margin:0">NEW</span> recent cuts with reasons.</span></div>
+    <div><span class="n">4</span><span>Each status bar segment opens a popover. Output says "In use", never an app name (the extension only counts clients). Recording shows each take and time left on each camera's drive.</span></div>
+    <div><span class="n">5</span><span>App tab: Ultracam CPU, GPU (video) and memory with <span class="newtag" style="margin:0">NEW</span> 60 s history, keeping today's help-text caveats.</span></div>
+    <div><span class="n">6</span><span>Hidden diagnostics stop sampling: no timers or counters run while the window, tab or popover isn't visible.</span></div>
+  </div>
+</div>
+<script>
+  mount('st', statusbar({ mode: 'program' }));
+  document.querySelectorAll('svg[data-spark]').forEach((svg) => {
+    const total = Number(svg.dataset.spark);
+    svg.setAttribute('viewBox', '0 0 64 16');
+    let bars = '';
+    for (let i = 0; i < 32; i++) {
+      const hit = total > 0 && (total > 5 ? [6, 7, 19, 20, 21, 27].includes(i) : [22].includes(i));
+      const h = hit ? (total > 5 ? 8 + (i % 3) * 3 : 12) : 1;
+      bars += `<rect class="${hit ? 'hit' : 'base'}" x="${i * 2}" y="${16 - h}" width="1.4" height="${h}" rx="0.5"/>`;
+    }
+    svg.innerHTML = bars;
+  });
+  const series = {
+    cpu: [44, 46, 45, 47, 49, 48, 50, 52, 49, 47, 48, 51, 53, 50, 48, 47, 49, 48, 46, 47, 49, 50, 48, 49],
+    gpu: [27, 28, 29, 28, 31, 30, 29, 30, 32, 30, 29, 28, 30, 31, 33, 30, 29, 30, 29, 28, 30, 31, 30, 30],
+    mem: [1.62, 1.63, 1.63, 1.64, 1.65, 1.66, 1.66, 1.67, 1.67, 1.68, 1.68, 1.69, 1.69, 1.7, 1.7, 1.7, 1.71, 1.71, 1.71, 1.71, 1.71, 1.71, 1.71, 1.71],
+  };
+  const colors = { cpu: '#0a84ff', gpu: '#bf5af2', mem: '#30d158' };
+  document.querySelectorAll('svg[data-chart]').forEach((svg) => {
+    const k = svg.dataset.chart, v = series[k];
+    const max = k === 'mem' ? 2 : 70;
+    const pts = v.map((y, i) => `${(i / (v.length - 1)) * 300},${44 - (y / max) * 44}`);
+    svg.innerHTML = `<path class="grid" d="M0 22H300"/><path d="M0 44L${pts.join('L')}L300 44Z" fill="${colors[k]}" fill-opacity="0.18"/><polyline points="${pts.join(' ')}" fill="none" stroke="${colors[k]}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+  });
+</script>
+</body></html>

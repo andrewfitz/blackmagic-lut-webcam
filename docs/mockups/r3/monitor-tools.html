@@ -1,0 +1,407 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Monitor tools</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .desktop { height: 2840px; background:
+    radial-gradient(1200px 500px at 80% 0%, rgba(61,90,156,0.35), rgba(61,90,156,0) 70%),
+    linear-gradient(180deg, #15161b 0%, #111216 100%); }
+  .sec { position: absolute; left: 40px; font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: baseline; gap: 10px; }
+  .sec small { font-size: 12px; font-weight: 500; color: var(--label2); }
+  .abs { position: absolute; }
+  .zone { position: absolute; border: 1.5px dashed rgba(255,214,10,0.85); border-radius: 10px; z-index: 4; pointer-events: none; }
+  .zlab { position: absolute; z-index: 5; font-size: 10.5px; font-weight: 700; color: #ffd60a; background: rgba(0,0,0,0.65);
+    padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+  .pop { position: absolute; width: 318px; border-radius: 18px; padding: 12px; background: rgba(38,38,42,0.9); z-index: 6; }
+  .pop::before { content: ""; position: absolute; top: -8px; left: var(--ax, 40px); width: 16px; height: 16px; transform: rotate(45deg);
+    background: rgba(50,50,54,0.98); border-left: 0.5px solid var(--glass-edge); border-top: 0.5px solid var(--glass-edge); border-radius: 3px 0 0 0; }
+  .pop .ph { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; }
+  .pop .ph b { font-size: 14px; }
+  .pop .ph small { font-size: 11px; color: var(--label2); }
+  .pop .row { min-height: 32px; }
+  .vlab { width: 38px; text-align: right; color: var(--label2); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .cap { font-size: 11px; color: var(--label2); padding: 6px 4px 0; line-height: 1.35; }
+  .toolhead { position: absolute; z-index: 6; }
+  .sw { width: 18px; height: 18px; border-radius: 9px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+  .sw.sel { box-shadow: 0 0 0 2px #1c1c1e, 0 0 0 4px var(--blue); }
+  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; padding: 8px 10px; font-size: 10.5px; }
+  .zones div { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .zones i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .ex { position: absolute; border-radius: 12px; }
+  .excap { position: absolute; font-size: 11.5px; color: var(--label2); line-height: 1.35; }
+  .excap b { color: var(--label); display: block; font-size: 12.5px; }
+  .zoom2 > svg.scene { transform: scale(2); }
+  .fcbar { display: flex; height: 7px; border-radius: 3px; overflow: hidden; width: 100%; }
+  .fcbar i { flex: 1; }
+  .scopecard { position: absolute; border-radius: 12px; background: var(--fill); padding: 9px 11px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .scopecard canvas { width: 100%; border-radius: 6px; display: block; }
+  .scopecard .fn { font-size: 10.5px; color: var(--label2); line-height: 1.4; }
+  .diag { font-size: 11px; color: var(--label2); line-height: 1.6; font-variant-numeric: tabular-nums; }
+  .keyrow { display: flex; align-items: center; gap: 10px; font-size: 12px; min-height: 28px; padding: 0 11px; position: relative; }
+  .keyrow + .keyrow::before { content: ""; position: absolute; top: 0; left: 11px; right: 0; height: 0.5px; background: var(--sep); }
+  .keyrow kbd { font: 600 11.5px var(--mono); color: var(--label); background: var(--fill2); padding: 2px 7px; border-radius: 5px; min-width: 64px; text-align: center; }
+  .focusring { box-shadow: 0 0 0 2px var(--blue), 0 0 0 5px rgba(10,132,255,0.25); }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Monitor tools: every monitor element, per feed</div>
+
+  <!-- ===================== 1 · Anatomy ===================== -->
+  <div class="sec" style="top:88px">Picture overlay anatomy<small>Shown at 1:1 on a 960 × 540 picture. The same layout is used in every tile, the detached window and the dropdown preview (minus tools).</small></div>
+
+  <div class="picture onair ex" id="anat" data-scene="mcu" data-fx="guides" style="left:40px; top:122px; width:960px; height:540px; border-radius:14px">
+    <div class="overlay" style="left:14px; top:14px;"><span class="kk">1</span><div class="pill glass">Feed 1<i data-i="chevud" class="sm"></i></div><span class="role air">ON AIR · Program</span></div>
+    <div class="overlay" style="right:14px; top:14px;">
+      <div class="tb-group glass" style="height:32px">
+        <div class="tb-btn on" style="height:26px"><i data-i="guides" class="sm"></i></div>
+        <div class="tb-btn" style="height:26px"><i data-i="zebra" class="sm"></i></div>
+        <div class="tb-btn" style="height:26px"><i data-i="falsecolor" class="sm"></i></div>
+        <div class="tb-btn" style="height:26px"><i data-i="focus" class="sm"></i></div>
+        <div class="tb-btn" style="height:26px"><i data-i="scope" class="sm"></i></div>
+      </div>
+    </div>
+    <div class="overlay" style="left:14px; bottom:14px;"><span class="pill sm glass mono">14:22:31:12</span><span class="pill sm glass">Output<i data-i="chevud" class="sm"></i></span></div>
+    <div class="overlay" style="right:14px; bottom:14px;"><span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 12:31</span></span></div>
+    <div class="overlay" style="left:50%; transform:translateX(-50%); bottom:14px;">
+      <div class="tb-group glass" style="height:34px">
+        <div class="tb-btn" style="height:28px"><i data-i="freeze" class="sm"></i>Freeze</div>
+        <div class="tb-btn" style="height:28px"><i data-i="clean" class="sm"></i>Clean</div>
+        <div class="tb-sep"></div>
+        <div class="tb-btn" style="height:28px; font-size:12px">Fit<i data-i="chevd" class="sm"></i></div>
+        <div class="tb-btn" style="height:28px"><i data-i="detach" class="sm"></i></div>
+      </div>
+    </div>
+  </div>
+  <!-- zones -->
+  <div class="zone" style="left:46px; top:128px; width:262px; height:40px"></div>
+  <div class="zlab" style="left:52px; top:174px">Identity · key, target picker, role</div>
+  <div class="zone" style="left:808px; top:128px; width:186px; height:44px"></div>
+  <div class="zlab" style="left:822px; top:178px">Tools · per feed</div>
+  <div class="zone" style="left:46px; top:618px; width:196px; height:38px"></div>
+  <div class="zlab" style="left:52px; top:594px">Signal · timecode, Output/Source</div>
+  <div class="zone" style="left:886px; top:618px; width:108px; height:38px"></div>
+  <div class="zlab" style="left:906px; top:594px">Recording</div>
+  <div class="zone" style="left:368px; top:614px; width:304px; height:44px"></div>
+  <div class="zlab" style="left:420px; top:590px">Hover · freeze, clean, zoom, detach</div>
+
+  <!-- target picker menu -->
+  <div class="abs c2" style="left:1030px; top:122px; font-size:11px; font-weight:600">TARGET PICKER</div>
+  <div class="menu glass" style="left:1030px; top:140px; width:286px; min-width:0; background:rgba(40,40,44,0.85)">
+    <div class="mh">Show in this tile</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Feed 1<small>Live · on air</small></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot green" style="box-shadow:none"></span></span>Feed 2<small>Live · next</small></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="program" class="sm"></i></span>Program<small>Ultracam · Program</small></div>
+    <div class="msep"></div>
+    <div class="mi dis"><span class="ck"></span><span class="ico"><i data-i="info" class="sm"></i></span>Missing feed<small>Feed 3 was removed</small></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Choose Feed Later</div>
+  </div>
+
+  <div class="abs c2" style="left:1030px; top:350px; font-size:11px; font-weight:600">PICTURE SIGNAL</div>
+  <div class="menu glass" style="left:1030px; top:368px; width:286px; min-width:0; background:rgba(40,40,44,0.85)">
+    <div class="mi hl"><span class="ck">✓</span>Output<small>as published · effects applied</small></div>
+    <div class="mi"><span class="ck"></span>Source<small>camera signal · S-Log3</small></div>
+    <div class="msep"></div>
+    <div class="mi dis" style="height:auto; padding:3px 10px 3px 29px; white-space:normal; font-size:11.5px">On Program the picture is Program Output; Source is unavailable.</div>
+  </div>
+
+  <div class="abs c2" style="left:1030px; top:516px; font-size:11px; font-weight:600">ZOOM · CENTER CROP</div>
+  <div class="menu glass" style="left:1030px; top:534px; width:286px; min-width:0; background:rgba(40,40,44,0.85)">
+    <div class="mi"><span class="ck">✓</span>Fit</div>
+    <div class="mi"><span class="ck"></span>150%</div>
+    <div class="mi"><span class="ck"></span>200%</div>
+    <div class="mi"><span class="ck"></span>400%<small>check focus</small></div>
+  </div>
+
+  <!-- context menu -->
+  <div class="abs c2" style="left:1340px; top:122px; font-size:11px; font-weight:600">TILE CONTEXT MENU · right-click</div>
+  <div class="menu glass" style="left:1340px; top:140px; width:240px; min-width:0; background:rgba(40,40,44,0.85)">
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="freeze" class="sm"></i></span>Freeze<span class="key">⌃⌥F</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="clean" class="sm"></i></span>Clean View<span class="key">⌃⌥C</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="refresh" class="sm"></i></span>Reset Monitor Tools</div>
+    <div class="mi hl"><span class="ck"></span><span class="ico"><i data-i="layers" class="sm"></i></span>Copy Settings To<span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="detach" class="sm"></i></span>Detach to Window</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="eye" class="sm"></i></span>Hide Preview</div>
+  </div>
+  <div class="menu glass" style="left:1572px; top:228px; width:148px; min-width:0; background:rgba(40,40,44,0.9)">
+    <div class="mi">Feed 2</div>
+    <div class="mi">Program</div>
+  </div>
+
+  <!-- keyboard -->
+  <div class="abs c2" style="left:1340px; top:400px; font-size:11px; font-weight:600">KEYBOARD · focused tile</div>
+  <div class="abs form" style="left:1340px; top:418px; width:380px">
+    <div class="keyrow"><kbd>⌃⌥F</kbd>Freeze / unfreeze the next frame</div>
+    <div class="keyrow"><kbd>⌃⌥C</kbd>Clean view (hold the Clean button for a moment)</div>
+    <div class="keyrow"><kbd>⌃1 – ⌃4</kbd>Cut to feed (Program mode)</div>
+    <div class="keyrow"><kbd>⌥⌘K</kbd>Show or hide scopes for this feed</div>
+    <div class="keyrow"><kbd>⌘ =  ⌘ −</kbd>Zoom in / out, ⌘0 to fit</div>
+  </div>
+  <div class="abs cap" style="left:1340px; top:584px; width:380px; padding:0">Click a tile to focus it (blue ring). Shortcuts act on the focused tile only, as today.</div>
+
+  <!-- ===================== 2 · Tool popovers ===================== -->
+  <div class="sec" style="top:700px">Tool popovers<small>Click a tool to turn it on; click again or open its popover (long-press / ⌥-click) for settings. Tools are off by default and remembered per feed.</small></div>
+
+  <div id="heads"></div>
+
+  <!-- Guides -->
+  <div class="pop glass" style="left:40px; top:790px; --ax:var(--a0)">
+    <div class="ph"><i data-i="guides"></i><div style="display:flex;flex-direction:column;line-height:1.2"><b>Guides</b><small>Feed 1 · Output</small></div><div class="switch on" style="margin-left:auto"></div></div>
+    <div class="form">
+      <div class="row"><div class="check on"></div><span class="lbl">Thirds</span></div>
+      <div class="row"><div class="check"></div><span class="lbl">Center cross</span></div>
+      <div class="row"><div class="check on"></div><span class="lbl">Safe area<small>90% action safe</small></span></div>
+    </div>
+    <div class="form" style="margin-top:8px">
+      <div class="row"><span class="lbl" style="flex:none;width:72px">Opacity</span><div class="slider"><i style="width:65%"></i><b style="left:65%"></b></div><span class="vlab">65%</span></div>
+      <div class="row"><span class="lbl" style="flex:none;width:72px">Contrast</span><div class="slider"><i style="width:100%"></i><b style="left:100%"></b></div><span class="vlab">100%</span></div>
+    </div>
+    <div class="cap">Contrast adds a dark edge so lines stay visible on bright areas. Guides are drawn on the monitor only; output and recordings are unchanged.</div>
+  </div>
+
+  <!-- Zebra -->
+  <div class="pop glass" style="left:380px; top:790px; --ax:var(--a1)">
+    <div class="ph"><i data-i="zebra"></i><div style="display:flex;flex-direction:column;line-height:1.2"><b>Zebra</b><small>Feed 1 · Output</small></div><div class="switch on" style="margin-left:auto"></div></div>
+    <div class="form">
+      <div class="row"><span class="lbl">Mode</span><div class="seg"><div class="on">Above threshold</div><div>Band</div></div></div>
+      <div class="row"><span class="lbl" style="flex:none;width:72px">Threshold</span><div class="slider"><i style="width:87%"></i><b style="left:87%"></b></div><span class="vlab">95 IRE</span></div>
+      <div class="row" style="opacity:0.45"><span class="lbl" style="flex:none;width:72px">Width<small>Band mode</small></span><div class="slider"><i style="width:17%"></i><b style="left:17%"></b></div><span class="vlab">5 IRE</span></div>
+      <div class="row"><span class="lbl" style="flex:none;width:72px">Opacity</span><div class="slider"><i style="width:65%"></i><b style="left:65%"></b></div><span class="vlab">65%</span></div>
+    </div>
+    <div class="cap">Threshold 0–109 IRE. Width 0–30 IRE sets the band around the threshold in Band mode.</div>
+    <div class="banner info" style="margin-top:8px; padding:7px 9px"><span class="bi"><i data-i="info" class="sm"></i></span><span style="font-size:11.5px">Zebra is bypassed while false color is selected.</span></div>
+  </div>
+
+  <!-- False color -->
+  <div class="pop glass" style="left:720px; top:790px; --ax:var(--a2)">
+    <div class="ph"><i data-i="falsecolor"></i><div style="display:flex;flex-direction:column;line-height:1.2"><b>False Color</b><small>Feed 1 · analysis on Source</small></div></div>
+    <div class="form">
+      <div class="row"><span class="lbl">Mode</span><div class="seg"><div>Off</div><div class="on">Sony S-Log3</div><div>EL Zone</div></div></div>
+      <div class="row"><span class="lbl">Camera / Log</span><span class="popup plain" style="font-size:11.5px">S-Gamut3.Cine / S-Log3<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      <div class="row"><span class="lbl">Input code range</span><span class="popup plain" style="font-size:11.5px">Format native<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      <div class="row"><span class="lbl">Log transport</span><span class="popup plain" style="font-size:11.5px">Native 10-bit codes<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+    </div>
+    <div class="cap">Analysis: Source IRE · Sony S-Log3. Match the actual camera output; these declarations do not change the camera output.</div>
+    <div class="form" style="margin-top:8px">
+      <div style="padding:8px 10px 0; font-size:11px; font-weight:600" class="c2">Sony Monitor &amp; Control thresholds · Ultracam display colors</div>
+      <div class="zones">
+        <div><i style="background:#ff0000"></i>Red 93.4–96.1</div>
+        <div><i style="background:#4da6ff"></i>Light blue 24.6–34.4</div>
+        <div><i style="background:#ffff00"></i>Yellow 91.3–93.4</div>
+        <div><i style="background:#00ff00"></i>Green 38.9–42.2</div>
+        <div><i style="background:#ff8000"></i>Orange 87.7–90.6</div>
+        <div><i style="background:#00ffff"></i>Cyan 43.8–46.5</div>
+        <div><i style="background:#ff66b3"></i>Pink 54.3–58.0</div>
+        <div><i style="background:#0000ff"></i>Blue 3.5–5.6</div>
+        <div><i style="background:#ffb3cc"></i>Light pink 47.8–50.8</div>
+        <div><i style="background:#9900ff"></i>Purple −7.0–3.5</div>
+      </div>
+      <div style="padding:0 10px 8px; font-size:10.5px" class="c3">IRE · lower edge included, upper excluded · unassigned IRE stays gray</div>
+    </div>
+    <div class="row" style="opacity:0.45; padding:6px 4px 0; min-height:0; font-size:11.5px">Exposure offset<span class="c3" style="margin-left:auto">EL Zone only · 0.25-stop steps</span></div>
+    <div class="cap">Sony source IRE thresholds are independent of EI and do not guarantee sensor clipping.</div>
+  </div>
+
+  <!-- Focus -->
+  <div class="pop glass" style="left:1060px; top:790px; --ax:var(--a3)">
+    <div class="ph"><i data-i="focus"></i><div style="display:flex;flex-direction:column;line-height:1.2"><b>Focus Peaking</b><small>Feed 2 · analysis on Source</small></div><div class="switch on" style="margin-left:auto"></div></div>
+    <div class="form">
+      <div class="row"><span class="lbl">Highlight</span>
+        <div style="display:flex;gap:9px"><span class="sw sel" style="background:#ff3b30"></span><span class="sw" style="background:#34c759"></span><span class="sw" style="background:#0a84ff"></span><span class="sw" style="background:#ffd60a"></span><span class="sw" style="background:#fff"></span></div></div>
+      <div class="row"><span class="lbl" style="flex:none;width:106px">Sensitivity</span><div class="slider"><i style="width:50%"></i><b style="left:50%"></b></div><span class="vlab">50%</span></div>
+      <div class="row"><span class="lbl" style="flex:none;width:106px">Noise rejection</span><div class="slider"><i style="width:2%"></i><b style="left:2%"></b></div><span class="vlab">0.02</span></div>
+      <div class="row"><span class="lbl" style="flex:none;width:106px">Opacity</span><div class="slider"><i style="width:85%"></i><b style="left:85%"></b></div><span class="vlab">85%</span></div>
+    </div>
+    <div class="cap">Focus: Source. Edges are found at full source resolution, even when the monitor shows a smaller picture or is under load.</div>
+    <div class="cap" style="padding-top:4px">Unavailable on Program: matching source resolution and provenance are required.</div>
+  </div>
+
+  <!-- Scopes -->
+  <div class="pop glass" style="left:1400px; top:790px; --ax:var(--a4)">
+    <div class="ph"><i data-i="scope"></i><div style="display:flex;flex-direction:column;line-height:1.2"><b>Scopes</b><small>Feed 1 · below the picture</small></div><div class="switch on" style="margin-left:auto"></div></div>
+    <div class="form">
+      <div class="row"><span class="lbl">Scope</span><div class="seg"><div class="on">RGB parade</div><div>Luma</div></div></div>
+      <div class="row"><span class="lbl">Signal</span><div class="seg"><div>Source</div><div class="on">Output</div></div></div>
+      <div class="row"><span class="lbl">Refresh</span><div class="seg"><div>10</div><div class="on">15</div><div>30 Hz</div></div></div>
+      <div class="row"><span class="lbl" style="flex:none;width:72px">Trace gain</span><div class="slider"><i style="width:20%"></i><b style="left:20%"></b></div><span class="vlab">1.0×</span></div>
+      <div class="row"><div class="check on"></div><span class="lbl">Graticule</span></div>
+    </div>
+    <div style="margin-top:8px; border-radius:8px; overflow:hidden; height:96px"><canvas data-scope="parade" data-src="mcu" style="width:100%; height:96px; display:block"></canvas></div>
+    <div class="cap">Gain 0.25–4×. Under load, sampling and refresh drop first and recover after 5 healthy seconds. ⌥⌘K toggles.</div>
+  </div>
+
+  <!-- ===================== 3 · Examples & states ===================== -->
+  <div class="sec" style="top:1350px">Pictures in use<small>Real tool output on the synthetic picture. Overlays are monitor-only.</small></div>
+
+  <div class="picture ex" data-scene="mcu" data-fx="false" style="left:40px; top:1384px; width:405px; height:228px">
+    <div class="overlay" style="left:10px; top:10px;"><div class="pill sm glass">Feed 1<i data-i="chevud" class="sm"></i></div><span class="pill sm glass">False Color · Sony S-Log3</span></div>
+    <div class="overlay" style="left:10px; right:10px; bottom:10px; flex-direction:column; align-items:stretch; gap:4px">
+      <div class="fcbar"><i style="background:#9900ff"></i><i style="background:#0000ff"></i><i style="background:#4da6ff"></i><i style="background:#00ff00"></i><i style="background:#00ffff"></i><i style="background:#ffb3cc"></i><i style="background:#ff66b3"></i><i style="background:#ff8000"></i><i style="background:#ffff00"></i><i style="background:#ff0000"></i></div>
+      <span style="font-size:10px; text-shadow:0 1px 3px #000">Source IRE · Sony S-Gamut3.Cine / S-Log3</span>
+    </div>
+  </div>
+  <div class="excap" style="left:40px; top:1622px; width:405px"><b>False color on the source</b>Legend stays on the tile so a screenshot is self-explanatory. Colors here are illustrative.</div>
+
+  <div class="picture ex" data-scene="mcu" data-fx="zebra,guides" style="left:465px; top:1384px; width:405px; height:228px">
+    <div class="overlay" style="left:10px; top:10px;"><div class="pill sm glass">Feed 1<i data-i="chevud" class="sm"></i></div></div>
+    <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass">Output</span><span class="pill sm glass c2">Zebra ≥ 95 IRE · thirds · safe</span></div>
+  </div>
+  <div class="excap" style="left:465px; top:1622px; width:405px"><b>Zebra + guides on the output</b>A short summary pill names the active tools and thresholds.</div>
+
+  <div class="picture ex" data-scene="mcu" data-tone="slog" data-fx="peak" style="left:890px; top:1384px; width:405px; height:228px">
+    <div class="overlay" style="left:10px; top:10px;"><div class="pill sm glass">Feed 2<i data-i="chevud" class="sm"></i></div></div>
+    <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass">Source · S-Log3</span><span class="pill sm glass c2">Focus · red</span></div>
+  </div>
+  <div class="excap" style="left:890px; top:1622px; width:405px"><b>Focus peaking on S-Log3 source</b>Flat log picture, peaking analysed at full source resolution.</div>
+
+  <div class="picture ex" data-scene="mcu" style="left:1315px; top:1384px; width:405px; height:228px">
+    <div class="overlay" style="left:10px; top:10px;"><div class="pill sm glass"><i data-i="program" class="sm"></i>Program<i data-i="chevud" class="sm"></i></div></div>
+    <div class="overlay" style="right:10px; top:10px;">
+      <div class="tb-group glass" style="height:28px">
+        <div class="tb-btn" style="height:22px;min-width:26px"><i data-i="guides" class="sm"></i></div>
+        <div class="tb-btn" style="height:22px;min-width:26px"><i data-i="zebra" class="sm"></i></div>
+        <div class="tb-btn dim" style="height:22px;min-width:26px;opacity:0.35"><i data-i="falsecolor" class="sm"></i></div>
+        <div class="tb-btn dim" style="height:22px;min-width:26px;opacity:0.35"><i data-i="focus" class="sm"></i></div>
+        <div class="tb-btn" style="height:22px;min-width:26px"><i data-i="scope" class="sm"></i></div>
+      </div>
+    </div>
+    <div class="overlay" style="right:10px; top:46px; max-width:230px">
+      <div class="pill sm glass" style="height:auto; padding:6px 9px; white-space:normal; font-weight:500; line-height:1.3">False color and focus need a source feed, so they're unavailable on Program.</div>
+    </div>
+    <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass">Program Output</span></div>
+  </div>
+  <div class="excap" style="left:1315px; top:1622px; width:405px"><b>Program target</b>Source-only tools are dimmed with the reason; guides, zebra and scopes still work on Program Output.</div>
+
+  <!-- states row -->
+  <div class="picture ex" data-scene="mcu" style="left:40px; top:1688px; width:322px; height:181px">
+    <div class="overlay" style="left:9px; top:9px;"><span class="pill sm glass cb"><i data-i="freeze" class="sm"></i>Frozen · Output</span></div>
+    <div class="overlay" style="right:9px; bottom:9px;"><span class="pill sm glass">Unfreeze ⌃⌥F</span></div>
+  </div>
+  <div class="excap" style="left:40px; top:1878px; width:322px"><b>Frozen</b>Holds the next frame and keeps the tools that were on. Output and recording keep running.</div>
+
+  <div class="picture ex" data-scene="mcu" style="left:380px; top:1688px; width:322px; height:181px"></div>
+  <div class="excap" style="left:380px; top:1878px; width:322px"><b>Clean view</b>All overlays hidden, including tally. ⌃⌥C toggles; holding the Clean button shows it momentarily.</div>
+
+  <div class="picture ex zoom2" data-scene="mcu" style="left:720px; top:1688px; width:322px; height:181px">
+    <div class="overlay" style="left:9px; top:9px;"><span class="pill sm glass"><i data-i="zoom" class="sm"></i>200% · center crop</span></div>
+    <div class="overlay" style="right:9px; bottom:9px;"><span class="pill sm glass">Fit ⌘0</span></div>
+  </div>
+  <div class="excap" style="left:720px; top:1878px; width:322px"><b>Zoom 200%</b>A center crop of this view only. Other tiles and the output are unaffected.</div>
+
+  <div class="picture ex" data-scene="mcu" data-fx="zebra" style="left:1060px; top:1688px; width:322px; height:181px">
+    <div class="overlay" style="left:9px; right:9px; bottom:9px;"><span class="pill sm glass co" style="height:auto; padding:5px 9px; white-space:normal; line-height:1.3"><i data-i="info" class="sm"></i>Reduced monitoring · GPU deadline exceeded. Recovers after 5 healthy seconds.</span></div>
+  </div>
+  <div class="excap" style="left:1060px; top:1878px; width:322px"><b>Reduced monitoring</b>Analysis pauses first; the clean picture, recording and camera output are untouched.</div>
+
+  <div class="ex" style="left:1400px; top:1688px; width:322px; height:181px; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.12)">
+    <i data-i="eye" class="lg c3"></i>
+    <b style="font-size:13px">Preview hidden</b>
+    <span class="c2" style="font-size:11px">Camera output continues · no GPU work for this view</span>
+    <span class="btn" style="margin-top:4px">Show Preview ⇧⌘P</span>
+  </div>
+  <div class="excap" style="left:1400px; top:1878px; width:322px"><b>Preview hidden</b>Hidden or covered views stop rendering. In automatic mode a visible preview counts as demand.</div>
+
+  <!-- ===================== 4 · Window, scopes, diagnostics ===================== -->
+  <div class="sec" style="top:1960px">Detached monitor, scopes &amp; diagnostics</div>
+
+  <div class="window" style="left:40px; top:1996px; width:700px; height:614px; border-radius:16px">
+    <div style="height:44px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:0.5px solid var(--sep)">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <b style="margin-left:8px">Monitor · Feed 1</b>
+      <span style="flex:1"></span>
+      <span class="popup">Feed 1<span class="chev"><i data-i="chevud" class="sm"></i></span></span>
+      <div class="tb-group glass" style="height:30px"><div class="tb-btn on" style="height:24px"><i data-i="scope" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="freeze" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="clean" class="sm"></i></div></div>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:10px">
+      <div id="detpic"></div>
+      <div style="border-radius:10px; background:var(--fill); padding:7px 9px 9px; display:flex; flex-direction:column; gap:5px">
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px"><b>RGB Parade</b><span class="c2">Output · 15 Hz</span><span style="margin-left:auto" class="btn" style="height:20px">Expand</span></div>
+        <canvas data-scope="parade" data-src="mcu" style="width:100%; height:104px; border-radius:6px; display:block"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="excap" style="left:40px; top:2626px; width:700px"><b>Detached window</b>Any feed or Program in its own resizable window with its own target, tools and docked scope. Closing it frees its monitor work.</div>
+
+  <div class="scopecard" style="left:770px; top:1996px; width:470px">
+    <div style="display:flex; align-items:center; gap:8px; font-size:12px"><b>RGB Parade</b><span class="c2">Processed Output · 15 Hz</span><span style="margin-left:auto" class="btn">Dock</span></div>
+    <canvas data-scope="parade" data-src="mcu" style="height:240px"></canvas>
+    <div class="fn">Expanded · 240 pt</div>
+    <div class="fn">Scope 15 Hz requested · rendering at the shared cap<br>Rec.709 video range · Processed Output<br>Sampled signal · −10…110 IRE · endpoints clamp outside scale</div>
+  </div>
+
+  <div class="scopecard" style="left:1250px; top:1996px; width:470px">
+    <div style="display:flex; align-items:center; gap:8px; font-size:12px"><b>Luma Waveform</b><span class="c2">Source · 15 Hz</span><span style="margin-left:auto" class="btn">Expand</span></div>
+    <canvas data-scope="luma" data-src="mcu" data-tone="slog" style="height:120px"></canvas>
+    <div class="fn">Docked · 120 pt · Source S-Log3 shown as code values</div>
+  </div>
+
+  <div class="abs form" style="left:1250px; top:2206px; width:470px; padding:10px 12px">
+    <div style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600"><i data-i="chevd" class="sm c2"></i>Monitoring diagnostics<span class="c3" style="font-weight:500; margin-left:auto; font-size:11px">Feed 1 · example values</span></div>
+    <div class="diag" style="margin-top:6px">
+      Picture cap 30.0 Hz · source offers 59.9 fps · delivered 30.0 fps<br>
+      Scopes requested 15 Hz · effective cap 15 Hz · delivered 15.0 fps<br>
+      Normal · picture ≤1080p · scope sample stride 2<br>
+      Live · offers 45 112 · admitted 22 556 · skipped 22 556 · rejected 0<br>
+      Shared monitor budget: 96.0 MiB retained, 0.0 MiB retiring<br>
+      GPU deadline: within limit
+    </div>
+  </div>
+
+  <div class="abs" style="left:770px; top:2380px; width:470px">
+    <div class="c2" style="font-size:11px; font-weight:600; margin-bottom:8px">FOCUSED TILE</div>
+    <div style="display:flex; gap:12px">
+      <div class="picture focusring" data-scene="mcu" style="width:229px; height:129px; border-radius:10px">
+        <div class="overlay" style="left:7px; top:7px;"><span class="pill sm glass" style="height:20px;font-size:10.5px">Feed 1 · focused</span></div>
+      </div>
+      <div class="picture" data-scene="wide" style="width:229px; height:129px; border-radius:10px">
+        <div class="overlay" style="left:7px; top:7px;"><span class="pill sm glass" style="height:20px;font-size:10.5px">Feed 2</span></div>
+      </div>
+    </div>
+    <div class="cap" style="padding:8px 0 0">The blue focus ring is separate from tally, so it never reads as on air or next.</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 18px; top: 800px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1026px; top: 800px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 1316px; top: 220px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1700px; top: 1372px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1700px; top: 1676px;"><span class="n">6</span></div>
+  <div class="callout" style="left: 18px; top: 2006px;"><span class="n">7</span></div>
+  <div class="callout" style="left: 748px; top: 2006px;"><span class="n">8</span></div>
+
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Five fixed overlay zones on every picture. Identity and tally top-left, tools top-right, signal bottom-left, REC bottom-right. Transient controls appear bottom-center on hover only.</span></div>
+    <div><span class="n">2</span><span>One tap turns a tool on (replacing the old master "Monitor tools" switch); settings sit in its popover. Everything is remembered per feed, as in the current MonitorConfiguration.</span></div>
+    <div><span class="n">3</span><span>False color matches the current code: Off / Sony S-Log3 / EL Zone, Sony profiles only, honest captions and the exact IRE thresholds in the legend.</span></div>
+    <div><span class="n">4</span><span>The context menu keeps Reset Monitor Tools and Copy Settings To, so one feed's setup can be copied to another or to Program.</span></div>
+    <div><span class="n">5</span><span>Program shows what's possible: source-only tools are dimmed in place with the reason, never hidden or faked.</span></div>
+    <div><span class="n">6</span><span>View-only states (frozen, clean, zoom, reduced, hidden) are labelled on the picture and never affect output or recording.</span></div>
+    <div><span class="n">7</span><span>Detached windows carry the same chrome with their own target, tools and docked scope.</span></div>
+    <div><span class="n">8</span><span>Scopes dock at 120 pt or expand to 240 pt, with signal and interpretation footnotes. Monitoring diagnostics stay one disclosure away.</span></div>
+  </div>
+</div>
+<script>
+  // Tool group headers above each popover, active icon aimed at by the popover arrow.
+  const icons = ['guides', 'zebra', 'falsecolor', 'focus', 'scope'];
+  const lefts = [40, 380, 720, 1060, 1400];
+  let heads = '';
+  lefts.forEach((x, k) => {
+    heads += `<div class="toolhead tb-group glass" style="left:${x + 20}px; top:740px; height:34px">${icons.map((n, i) =>
+      `<div class="tb-btn${i === k ? ' on' : ' dim'}" style="height:28px;min-width:30px">${ic(n)}</div>`).join('')}</div>`;
+    // arrow x relative to popover: 20 group offset + 4 padding + k*32 + 15 center − 8 half arrow
+    document.documentElement.style.setProperty('--a' + k, (20 + 4 + k * 32 + 15 - 8) + 'px');
+  });
+  mount('heads', heads);
+  const f1 = { ...FEEDS.f1, tools: [0, 0, 0, 0, 1], fxview: '' };
+  mount('detpic', tile(f1, { mode: 'separate', height: 382 }));
+</script>
+</body></html>

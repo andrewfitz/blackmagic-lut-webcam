@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Main window · inspector open</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .confirm { position: absolute; z-index: 14; width: 290px; border-radius: 16px; padding: 14px; background: rgba(38,38,42,0.9); }
+  .confirm::before { content: ""; position: absolute; top: -8px; right: 100px; width: 16px; height: 16px; transform: rotate(45deg);
+    background: rgba(44,44,48,0.96); border-left: 0.5px solid var(--glass-edge); border-top: 0.5px solid var(--glass-edge); }
+  html.light .confirm { background: rgba(246,246,248,0.95); }
+  html.light .confirm::before { background: rgba(246,246,248,0.98); }
+  .confirm b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .confirm p { margin: 0 0 12px; font-size: 12px; color: var(--label2); line-height: 1.4; }
+  .confirm .acts { display: flex; justify-content: flex-end; gap: 8px; }
+  .btn.destr { background: var(--red); color: #fff; }
+  .pressed { background: var(--fill3) !important; }
+  .insp3 { padding-top: 86px !important; }
+  .insp3 > div:first-child { top: 58px !important; }
+  .content3.insp .strip3 .r > span.c3:last-child { display: none; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Main window: inspector open for Camera 1 (⌥⌘I), sidebar hidden, Stop Camera confirmation</div>
+
+  <div class="window win2">
+    <div id="tb"></div>
+    <div class="content3 nosb insp">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+    </div>
+    <div id="insp"></div>
+    <div id="st"></div>
+  </div>
+
+  <!-- Stop Camera 1? confirmation popover -->
+  <div class="confirm glass" style="left: 254px; top: 488px;">
+    <b>Stop Camera 1?</b>
+    <p>Camera 1 is recording. Stopping the camera ends the take and its output. The take is saved up to now.</p>
+    <div class="acts"><span class="btn">Cancel</span><span class="btn destr">Stop Camera</span></div>
+  </div>
+
+  <div class="callout" style="left: 1334px; top: 146px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 22px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 556px; top: 468px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 22px; top: 540px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1334px; top: 392px;"><span class="n">5</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The inspector (⌥⌘I, or Show Inspector in a camera's ⋯ menu) holds the deep settings for the <b>selected</b> camera: source, processing and the 4 ordered effects, LUT, recording folder, automation. Closed by default.</span></div>
+    <div><span class="n">2</span><span>The inspector follows the selection: clicking Camera 2's picture or strip, or pressing ⌘2, switches it. The selected camera keeps its blue ring.</span></div>
+    <div><span class="n">3</span><span>Stop Camera asks first only when it would end a recording or an output that's in use. The destructive button is red, and Cancel is the default.</span></div>
+    <div><span class="n">4</span><span>With the inspector open the sidebar is hidden (⌃⌘S) so the two pictures keep a usable width. Both can be open at once; the strips then collapse to one line.</span></div>
+    <div><span class="n">5</span><span>Effects that change the format Zoom receives say so in place. Changing them is allowed while in use; the strip shows "Updating output…" briefly.</span></div>
+  </div>
+</div>
+<script>
+  mount('tb', toolbar({ title: 'Meeting', subtitle: 'Ultracam · Program in use · 2 recording', layout: 'split', left: 8, inspector: true }));
+  mount('c1', tile(CAMS.c1, { role: 'air', selected: true }) +
+    strip(CAMS.c1, { role: 'air', selected: true }).replace('<span class="btn" title="Stops capture and output, and ends the recording (asks first)">', '<span class="btn pressed" title="Stops capture and output, and ends the recording (asks first)">'));
+  mount('c2', tile(CAMS.c2, {}) + strip(CAMS.c2, {}));
+  mount('insp', inspector(CAMS.c1));
+  mount('st', statusbar({ mode: 'program' }));
+</script>
+</body></html>

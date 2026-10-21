@@ -4,7 +4,7 @@ set -euo pipefail
 # OBS upstream. Download only the SDK files, never OBS's GPL implementation.
 # The pinned commit and SHA-256 checks make the external cache reproducible.
 external_root=/Volumes/8TB/cinesomatic-director-work
-if ! mount | /usr/bin/grep -q ' on /Volumes/8TB '; then
+if ! mount | /usr/bin/grep -F ' on /Volumes/8TB ' > /dev/null; then
   echo 'External drive /Volumes/8TB is not mounted.' >&2
   exit 1
 fi

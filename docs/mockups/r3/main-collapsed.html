@@ -1,0 +1,191 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Main window · strips collapsed</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .stack { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+  .stack .cols2 { height: auto; flex: none; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .col3 { min-width: 0; }
+  .strip3.collapsed { overflow: hidden; }
+  .strip3.collapsed .r { gap: 7px; }
+  .col3 .scope3 { flex: none; height: 138px; }
+  .tlcard { flex: 1; border-radius: 12px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; gap: 5px; min-height: 0; }
+  .marks { position: relative; height: 15px; margin-left: 54px; font-size: 9.5px; color: var(--label2); }
+  .marks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .tl .lane { height: 22px; }
+  .tl .lane .lt { height: 14px; }
+  .vline { position: absolute; top: 18px; bottom: 0; width: 1px; background: rgba(255,255,255,0.25); }
+  .strip3.hov { background: rgba(255,255,255,0.12); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.14); }
+  .btn.sm2 { height: 22px; padding: 0 9px; font-size: 11.5px; }
+  .btn.pressed { background: rgba(255,255,255,0.28); }
+  /* popover to the right of the window, arrow on its leading edge pointing at Feed 2's ⋯ */
+  .pop { position: absolute; z-index: 12; width: 340px; border-radius: 18px; padding: 12px 12px 10px; background: rgba(38,38,42,0.88); }
+  .pop::before { content: ""; position: absolute; left: -8px; top: 392px; width: 16px; height: 16px; transform: rotate(45deg);
+    background: rgba(44,44,48,0.96); border-left: 0.5px solid var(--glass-edge); border-bottom: 0.5px solid var(--glass-edge); }
+  .pop .form-h { padding: 9px 6px 5px; }
+  .pop .row { min-height: 29px; padding: 4px 10px; font-size: 12.5px; }
+  .pop .row .lbl small { font-size: 10.5px; }
+  .pop .val { font-size: 11.5px; }
+  .pop .foot { display: flex; gap: 6px; padding: 10px 2px 0; }
+  .pop .foot .btn { font-size: 12px; padding: 0 9px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Main window: same meeting, strips collapsed · Feed 2 ⋯ settings open</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="stack">
+        <div class="cols2">
+          <div class="col3" id="c1"></div>
+          <div class="col3" id="c2"></div>
+        </div>
+        <div class="tlcard">
+          <div style="display:flex; align-items:center; gap:8px; font-size:12px"><b>Director Timeline</b><span class="c2">last 2 min · on air and speech per camera</span><span class="newtag">NEW</span>
+            <span style="margin-left:auto; font-size:11px" class="c3">5 cuts · average shot 21 s · 0 forced · saved as a sidecar with the recordings</span></div>
+          <div class="tl" style="position:relative">
+            <div class="marks"><span style="left:22%">speech gap</span><span style="left:41%">emphasis · Feed 2</span><span style="left:63%">speech gap</span><span style="left:82%">max shot</span><span style="left:99%; color:#fff">now</span></div>
+            <div class="lane"><span class="ln">Feed 1</span><div class="lt"><i class="air" style="left:0;width:22%"></i><i class="air" style="left:41%;width:22%"></i><i class="air" style="left:82%;width:18%"></i></div></div>
+            <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp1" viewBox="0 0 400 14" preserveAspectRatio="none"></svg></div></div>
+            <div class="lane"><span class="ln">Feed 2</span><div class="lt"><i class="air" style="left:22%;width:19%"></i><i class="air" style="left:63%;width:19%"></i></div></div>
+            <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp2" viewBox="0 0 400 14" preserveAspectRatio="none"></svg></div></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.22)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.41)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.63)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.82)"></div>
+            <div class="vline" style="left:calc(100% - 1px); background:#fff"></div>
+          </div>
+          <div class="form" style="margin-top:3px">
+            <div class="row" style="min-height:26px;font-size:11.5px"><span class="mono c2" style="font-size:11px;width:70px">14:22:23</span><span class="lbl">Cut to <b>Feed 1</b><span class="c2"> · Feed 2 reached max shot 30 s, nearest speech gap</span></span><span class="badge orange">max shot</span></div>
+            <div class="row" style="min-height:26px;font-size:11.5px"><span class="mono c2" style="font-size:11px;width:70px">14:21:58</span><span class="lbl">Cut to <b>Feed 2</b><span class="c2"> · speech gap after 12.4 s on Feed 1</span></span><span class="badge">speech gap</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- ================= Feed 2 ⋯ popover ================= -->
+  <div class="pop glass" style="left: 1396px; top: 72px;">
+    <div style="display:flex; align-items:center; gap:8px; padding:0 2px 4px">
+      <b style="font-size:14px">Feed 2</b><span class="c2" style="font-size:11.5px">A7S III</span><span class="badge green">Live · 2160p 29.97</span>
+      <span class="badge" style="margin-left:auto; background:rgba(48,209,88,0.18); color:var(--green)">NEXT</span>
+    </div>
+
+    <div class="form-h">Source</div>
+    <div class="form">
+      <div class="row"><span class="lbl">Capture input</span><span class="popup plain">UltraStudio 4K Mini<span class="chev"><i data-i="chevud" class="sm"></i></span></span><span class="btn icon" style="opacity:0.45"><i data-i="refresh" class="sm"></i></span></div>
+      <div class="row"><span class="lbl">Signal</span><span class="val mono">3840×2160 · 29.97p · 10-bit 4:2:2</span></div>
+      <div class="row"><span class="lbl">Timecode</span><span class="val mono">14:22:31:12</span></div>
+      <div class="row"><span class="lbl">Embedded audio</span><span class="val">2 ch · 48.0 kHz</span></div>
+    </div>
+    <div class="note" style="padding-top:4px">Stop the feed to choose another input.</div>
+
+    <div class="form-h">Processing <div class="switch sm on"></div></div>
+    <div class="form">
+      <div class="row"><span class="lbl c2" style="font-size:11px">Off = complete bypass: original resolution, color, pixels and frame rate. Effect choices stay saved. ⇧⌘B</span></div>
+      <div class="row"><div class="check" style="opacity:0.4"></div><span class="lbl c2">1 · LUT<small>Load a .cube to enable</small></span></div>
+      <div class="row"><div class="check on"></div><span class="lbl">2 · Downscale<small>1080p · Lanczos-3</small></span></div>
+      <div class="row"><div class="check on"></div><span class="lbl">3 · Color<small>4:2:0 8-bit (off: 4:2:2 10-bit)</small></span></div>
+      <div class="row"><div class="check"></div><span class="lbl">4 · Frame rate<small>Limit 59.94 to 29.97 · this source is already 29.97</small></span></div>
+    </div>
+    <div class="note cg" style="display:flex;gap:5px;align-items:center;padding-top:4px"><i data-i="check" class="sm"></i>Effects active · 1920×1080 29.97p 4:2:0 into Program</div>
+
+    <div class="form-h">LUT</div>
+    <div class="form">
+      <div class="row"><i data-i="cube" class="c3"></i><span class="lbl c2">No LUT loaded<small>Optional · other effects work without one</small></span><span class="btn">Load LUT…</span></div>
+      <div class="row"><span class="lbl">LUT input</span><span class="popup plain">S-Gamut3.Cine / S-Log3<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+    </div>
+
+    <div class="form-h">Recording</div>
+    <div class="form">
+      <div class="row"><i data-i="folder" class="sm c2"></i><span class="lbl">/Volumes/Archive/B-cam<small>Own folder · applies to the next take</small></span><span class="btn borderless" style="font-size:12px">Use Default</span></div>
+    </div>
+
+    <div class="form-h">Output</div>
+    <div class="form">
+      <div class="row"><i data-i="program" class="sm c2"></i><span class="lbl">Feeds Program<small>Publish as its own camera in Separate mode</small></span><span class="newtag">NEW</span></div>
+    </div>
+
+    <div class="form-h">Monitor</div>
+    <div class="form">
+      <div class="row"><span class="lbl">Picture signal</span><div class="seg"><div>Source</div><div class="on">Output</div></div></div>
+      <div class="row"><span class="lbl">Copy monitor settings to</span><span class="sub c2" style="display:flex;gap:4px;align-items:center;font-size:12px">Feed 1<i data-i="chevr" class="sm"></i></span></div>
+      <div class="row"><span class="lbl">Reset monitor tools</span></div>
+    </div>
+
+    <div class="foot">
+      <span class="btn">Rename…</span><span class="btn">Diagnostics…</span>
+      <span class="btn" style="margin-left:auto; color:#ff6961; opacity:0.45">Remove Camera</span>
+    </div>
+    <div class="note" style="text-align:right;padding-top:5px">Stop Feed 2 to remove it</div>
+  </div>
+
+  <div class="callout" style="left: 280px; top: 438px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 280px; top: 400px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1400px; top: 44px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 1170px; top: 70px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 280px; top: 708px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1690px; top: 962px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>A collapsed strip is one line: chevron · name · role (On air) · REC elapsed · size · drops · effect chips · audio · record button · ⋯. Drops appear only when above zero.</span></div>
+    <div><span class="n">2</span><span>Hovering a collapsed strip reveals its inline controls (Pause, Stop, Cut) without expanding it. The chevron expands just that feed.</span></div>
+    <div><span class="n">3</span><span>⋯ opens the deep per-feed settings that used to need an inspector: Source, Processing and the 4 ordered effects, LUT, recording folder, output, and monitor.</span></div>
+    <div><span class="n">4</span><span>Collapse All (⌥⌘S) is a toolbar toggle. Strips remember their state per feed, so you can expand only the one you're adjusting.</span></div>
+    <div><span class="n">5</span><span>The freed space goes to monitoring: larger scopes per feed and a director timeline spanning both cameras, with recent cuts and their reasons.</span></div>
+    <div><span class="n">6</span><span>Footer: Rename, Diagnostics, and Remove Camera (destructive, disabled while the feed runs). Errors like a missing LUT show inline here too.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Meeting', subtitle: 'Program → Zoom · backup recording 2 feeds', layout: 'split', collapsedAll: true }));
+
+  const f1 = FEEDS.f1, f2 = FEEDS.f2;
+  const mini = (f) => `<div class="minimeter"><div class="meter"><div class="bar"><i style="width:${f.audio[0]}%"></i></div></div><div class="meter"><div class="bar"><i style="width:${f.audio[1]}%"></i></div></div></div>`;
+  const chips = (f) => `<div class="fx">${f.fx.map((on, i) => `<span class="${on ? 'on' : ''}" style="height:17px;padding:0 5px;font-size:9.5px">${FX_NAMES[i]}</span>`).join('')}</div>`;
+
+  // Feed 1: collapsed strip in hover state, inline controls revealed.
+  const f1strip = `<div class="strip3 collapsed hov"><div class="r">
+      <span class="chev"><i data-i="chevr" class="sm"></i></span><b>Feed 1</b><span class="badge red" style="height:16px;font-size:9.5px">On air</span>
+      <span class="dot red"></span><span class="tnum">12:31</span>
+      <span class="btn sm2"><i data-i="pause" class="sm"></i>Pause</span><span class="btn sm2"><i data-i="stop" class="sm"></i>Stop</span>
+      <span style="flex:1"></span>${mini(f1)}<div class="recbtn on sm"></div>
+      <span class="btn icon"><i data-i="ellipsis" class="sm"></i></span></div></div>`;
+  // Feed 2: resting collapsed strip with ⋯ pressed (popover open).
+  const f2strip = `<div class="strip3 collapsed"><div class="r">
+      <span class="chev"><i data-i="chevr" class="sm"></i></span><b>Feed 2</b><span class="badge green" style="height:16px;font-size:9.5px">Next</span>
+      <span class="dot red"></span><span class="tnum">12:31</span><span class="c2 tnum" style="font-size:11px">9.1 GB</span>
+      <span style="flex:1"></span>${chips(f2)}${mini(f2)}<div class="recbtn on sm"></div>
+      <span class="btn icon pressed"><i data-i="ellipsis" class="sm"></i></span></div></div>`;
+
+  const scope = (title, kind, src) => `<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>${title}</b><span class="c2">Output · 15 Hz</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="${kind}" data-src="${src}"></canvas></div>`;
+  mount('c1', tile(f1, { role: 'air' }) + f1strip + scope('Luma Waveform', 'luma', 'mcu'));
+  mount('c2', tile(f2, { role: 'next' }) + f2strip + scope('RGB Parade', 'parade', 'wide'));
+  mount('st', statusbar({ mode: 'program' }));
+
+  function bars(sel, seed, active) {
+    const svg = document.querySelector(sel);
+    let s = seed, out = '';
+    for (let x = 0; x < 400; x += 3) {
+      s = (s * 9301 + 49297) % 233280;
+      const on = active.some(([a, b]) => x / 400 >= a && x / 400 <= b);
+      const h = on ? 3 + (s / 233280) * 11 : (s / 233280) * 2;
+      out += `<rect x="${x}" y="${14 - h}" width="2" height="${h}" fill="rgba(100,176,255,${on ? 0.75 : 0.25})"/>`;
+    }
+    svg.innerHTML = out;
+  }
+  bars('.sp1', 7, [[0, 0.2], [0.43, 0.6], [0.84, 1]]);
+  bars('.sp2', 3, [[0.23, 0.39], [0.38, 0.41], [0.64, 0.8]]);
+</script>
+</body></html>

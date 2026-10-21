@@ -1,0 +1,311 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Design system &amp; build spec</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .desktop.board { height: auto; background: #101114; padding: 96px 40px 40px; }
+  .board .tag { top: 24px; }
+  .sub { position: absolute; left: 40px; top: 62px; font-size: 12px; color: var(--label2); }
+  .grid { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .card { background: #18191c; border-radius: 16px; padding: 18px 20px 20px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.08); }
+  .card.wide { grid-column: span 2; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .no { width: 22px; height: 22px; border-radius: 11px; background: var(--fill2); font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; }
+  .card .lead { font-size: 12px; color: var(--label2); margin: 0 0 14px; }
+  table.t { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.t th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: 0.3px; padding: 6px 10px 6px 0; border-bottom: 0.5px solid var(--sep); }
+  table.t td { vertical-align: top; padding: 7px 10px 7px 0; border-bottom: 0.5px solid var(--sep); }
+  table.t td code, .card code { font-family: var(--mono); font-size: 11px; color: #c7d7ff; }
+  table.t td.c2 { color: var(--label2); }
+  .sw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sw > div { display: flex; gap: 10px; align-items: center; background: var(--fill); border-radius: 11px; padding: 9px; }
+  .sw i.c { width: 36px; height: 36px; border-radius: 9px; flex: none; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.18); }
+  .sw b { font-size: 12px; display: block; }
+  .sw small { font-size: 10.5px; color: var(--label2); display: block; line-height: 1.35; }
+  .sw code { font-size: 10.5px; }
+  .card.fill { align-self: stretch; }
+  table.kb td:first-child code { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: var(--label); letter-spacing: 1px; }
+  .type > div { display: flex; align-items: baseline; gap: 16px; padding: 7px 0; border-bottom: 0.5px solid var(--sep); }
+  .type .m { width: 210px; flex: none; font-size: 11px; color: var(--label2); }
+  ul.l { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--label); }
+  ul.l li { margin: 5px 0; } ul.l li small { color: var(--label2); font-size: 11.5px; }
+
+  /* Anatomy wireframe (0.6 scale of the 1320×860 window) */
+  .anat { position: relative; height: 576px; }
+  .aw { position: absolute; left: 70px; top: 22px; width: 792px; height: 516px; border-radius: 12px; background: #1c1c1e; box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
+  .ab { position: absolute; border-radius: 6px; font-size: 10.5px; color: var(--label2); display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.3; }
+  .ab.sb { left: 4.8px; top: 4.8px; width: 141.6px; height: 488px; background: rgba(100,176,255,0.10); box-shadow: inset 0 0 0 1px rgba(100,176,255,0.55); border-radius: 9.6px; }
+  .ab.tb { left: 151px; right: 4.8px; top: 0; height: 33.6px; background: rgba(255,214,10,0.08); box-shadow: inset 0 0 0 1px rgba(255,214,10,0.5); border-radius: 0; }
+  .ab.pic { background: rgba(255,69,58,0.10); box-shadow: inset 0 0 0 1px rgba(255,69,58,0.6); border-radius: 8.4px; }
+  .ab.str { background: rgba(48,209,88,0.10); box-shadow: inset 0 0 0 1px rgba(48,209,88,0.55); border-radius: 8.4px; }
+  .ab.sc { background: rgba(191,90,242,0.10); box-shadow: inset 0 0 0 1px rgba(191,90,242,0.55); border-radius: 7px; }
+  .ab.st { left: 0; right: 0; bottom: 0; height: 18px; background: rgba(255,159,10,0.10); box-shadow: inset 0 0 0 1px rgba(255,159,10,0.55); border-radius: 0 0 12px 12px; }
+  .dim { position: absolute; font-size: 10px; color: #ffd60a; font-family: var(--mono); white-space: nowrap; }
+  .dmh { position: absolute; height: 1px; background: #ffd60a; }
+  .dmv { position: absolute; width: 1px; background: #ffd60a; }
+  .anote { position: absolute; left: 890px; top: 22px; width: 740px; }
+
+  /* Light appearance */
+  .light { --label: rgba(0,0,0,0.86); --label2: rgba(60,60,67,0.62); --label3: rgba(60,60,67,0.34);
+    --sep: rgba(0,0,0,0.10); --fill: rgba(0,0,0,0.045); --fill2: rgba(0,0,0,0.07); --fill3: rgba(0,0,0,0.14);
+    color: var(--label); background: linear-gradient(160deg, #e9eef6, #f6efe9); border-radius: 14px; padding: 18px; }
+  .light .lwin { background: #f5f5f7; border-radius: 16px; padding: 12px; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 16px 40px rgba(0,0,0,0.14); }
+  .light .strip3 { background: rgba(0,0,0,0.04); }
+  .light .badge.green { color: #1a8f3c; background: rgba(52,199,89,0.16); }
+  .light .badge.red { color: #d70015; background: rgba(255,59,48,0.13); }
+  .light .k2 { color: var(--label3); }
+  .light .fx span.on { background: rgba(0,122,255,0.14); color: #0060df; }
+  .light .cg { color: #1a8f3c; }
+  .light .dd { background: rgba(250,250,252,0.86); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.14), 0 16px 40px rgba(0,0,0,0.18); position: static; }
+  .light .mi .key, .light .mi .sub { color: var(--label3); }
+  .light .mi .ico { color: var(--label2); }
+  .light .picture { --label: rgba(255,255,255,0.9); --label2: rgba(235,235,245,0.6); --fill2: rgba(255,255,255,0.11); --fill3: rgba(255,255,255,0.16); color: var(--label); }
+  .light code { color: #0b4bb3; }
+  .light .mi.hl .key, .light .mi.hl .ico { color: rgba(255,255,255,0.85); }
+</style></head>
+<body>
+<div class="desktop board">
+  <div class="tag">Round 3 · Design system &amp; build spec</div>
+  <div class="sub">What an engineer builds from: measurements, color and type semantics, native API mapping, states, shortcuts, accessibility, light appearance and performance rules. Points (pt) = window units at 1×.</div>
+
+  <div class="grid">
+    <!-- 1 Anatomy -->
+    <div class="card wide">
+      <h2><span class="no">1</span>Window anatomy</h2>
+      <p class="lead">Main window at its default 1320 × 860 pt, drawn at 60%. Minimum size: 980 × 680 pt (two 16:9 columns at about 340 pt wide with collapsed strips, sidebar hidden).</p>
+      <div class="anat">
+        <div class="aw">
+          <div class="ab sb">Session sidebar<br>236 pt · floating glass<br>radius 16 · inset 8</div>
+          <div class="ab tb">Toolbar 56 pt · glass groups (title · cuts + Auto · layout · strips · Record All)</div>
+          <div class="ab pic" style="left:151px; top:38.4px; width:314.4px; height:177px">Picture 16:9<br>radius 14 · overlays inset 10</div>
+          <div class="ab pic" style="left:472.6px; top:38.4px; width:314.4px; height:177px">Picture 16:9</div>
+          <div class="ab str" style="left:151px; top:221.4px; width:314.4px; height:111px">Channel strip<br>radius 14 · padding 9/12 · rows 22</div>
+          <div class="ab str" style="left:472.6px; top:221.4px; width:314.4px; height:111px">Channel strip<br>collapses to one 38 pt row</div>
+          <div class="ab sc" style="left:151px; top:338.4px; width:314.4px; height:153px">Optional scope (fills remaining height)</div>
+          <div class="ab sc" style="left:472.6px; top:338.4px; width:314.4px; height:153px">Optional scope</div>
+          <div class="ab st">Status bar 30 pt · full width</div>
+        </div>
+        <!-- dimensions -->
+        <div class="dmh" style="left:70px; width:792px; top:12px"></div><div class="dim" style="left:440px; top:-2px">1320</div>
+        <div class="dmv" style="left:58px; top:22px; height:516px"></div><div class="dim" style="left:24px; top:272px">860</div>
+        <div class="dmh" style="left:221px; width:314px; top:550px"></div><div class="dmv" style="left:221px; top:544px; height:12px"></div><div class="dmv" style="left:535px; top:544px; height:12px"></div><div class="dim" style="left:350px; top:552px">524 column</div>
+        <div class="dmh" style="left:535px; width:7px; top:550px"></div><div class="dmv" style="left:542px; top:544px; height:12px"></div><div class="dim" style="left:545px; top:552px">12 gap</div>
+        <div class="dmh" style="left:70px; width:151px; top:550px"></div><div class="dim" style="left:110px; top:552px">252 → content</div>
+        <div class="anote">
+          <table class="t">
+            <tr><th>Region</th><th>Size / spacing</th><th>Radius</th><th>Notes</th></tr>
+            <tr><td>Window</td><td>default 1320 × 860, min 980 × 680</td><td>20 (system)</td><td>Single <code>Window</code> scene keeps the main native preview attached to one view.</td></tr>
+            <tr><td>Sidebar</td><td>236 wide, inset 8 top/left, ends 8 above status bar</td><td>16 (system)</td><td>Hidden with ⌃⌘S; content then starts at 8.</td></tr>
+            <tr><td>Toolbar</td><td>56 tall; groups 36 tall, items 28</td><td>capsule</td><td>Unified toolbar over content; title + subtitle on the left.</td></tr>
+            <tr><td>Content</td><td>top 64, sides 8, bottom 46; column gap 12</td><td>—</td><td>Columns = enabled feeds (1, 2, or 2 × 2 for 3–4).</td></tr>
+            <tr><td>Picture</td><td>column width × 9/16</td><td>14</td><td>Overlay zones: TL identity + role, TR tools, BL timecode + signal, BR REC.</td></tr>
+            <tr><td>Strip (expanded)</td><td>≈ 190 tall: header, record, folder, output, audio</td><td>14</td><td>Gap 10 below picture; separators 0.5 pt <code>separatorColor</code>.</td></tr>
+            <tr><td>Strip (collapsed)</td><td>38 tall, one row</td><td>14</td><td>Name · REC/elapsed · size · drops · effect chips · meter · record.</td></tr>
+            <tr><td>Scope</td><td>fills remaining column height, min 120</td><td>12</td><td>Only mounted when the feed's Scopes tool is on.</td></tr>
+            <tr><td>Status bar</td><td>30 tall, segments 22 tall, padding 8</td><td>6 (hover)</td><td>Each segment is a button that opens a popover.</td></tr>
+            <tr><td>Spacing scale</td><td colspan="3">4 · 8 (insets) · 10 (vertical stack) · 12 (columns, strip padding) · 16 (sheet padding)</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 Color -->
+    <div class="card wide">
+      <h2><span class="no">2</span>Color semantics</h2>
+      <p class="lead">The real app uses system colors and materials only, so Light/Dark, Increase Contrast and accent changes work for free. The hex values are just what the mockups draw.</p>
+      <div class="sw">
+        <div><i class="c" style="background:#ff453a"></i><div><b>On air · REC · error</b><small>Red tally ring + "ON AIR" badge; REC dot; destructive/error text.</small><code>Color.red</code></div></div>
+        <div><i class="c" style="background:#30d158"></i><div><b>Next · live · healthy</b><small>Green "NEXT" ring; Live badge; "0 dropped"; in-use consumer.</small><code>Color.green</code></div></div>
+        <div><i class="c" style="background:#ff9f0a"></i><div><b>Paused · warning</b><small>Paused take, dropped frames &gt; 0, disk low, interrupted takes.</small><code>Color.orange</code></div></div>
+        <div><i class="c" style="background:#0a84ff"></i><div><b>Accent · selection · enabled effect</b><small>Checkboxes, prominent buttons, menu highlight, effect chips on.</small><code>Color.accentColor</code></div></div>
+        <div><i class="c" style="background:linear-gradient(135deg,rgba(255,255,255,0.88),rgba(255,255,255,0.88))"></i><div><b>Label tiers</b><small>Primary values · secondary captions · tertiary hints/units.</small><code>.primary · .secondary · .tertiary</code></div></div>
+        <div><i class="c" style="background:rgba(255,255,255,0.11)"></i><div><b>Fills &amp; grouping</b><small>Strip and form backgrounds, inactive chips, meter tracks.</small><code>.quaternary / Form .grouped</code></div></div>
+        <div><i class="c" style="background:rgba(44,44,48,0.6); backdrop-filter:blur(4px)"></i><div><b>Glass</b><small>Toolbar groups, sidebar, picture overlays, dropdown.</small><code>.glassEffect() · .buttonStyle(.glass)</code></div></div>
+        <div><i class="c" style="background:#000"></i><div><b>Picture letterbox</b><small>Pure black behind video and placeholders; overlays always dark glass.</small><code>Color.black</code></div></div>
+        <div><i class="c" style="background:rgba(191,90,242,0.5)"></i><div><b>NEW (mockups only)</b><small>Marks proposals not in the current app. Never shipped.</small><code>—</code></div></div>
+      </div>
+      <p class="lead" style="margin:12px 0 0">Rules: red always means "someone is receiving this picture" or "recording". The two are distinguished by shape (ring/badge vs dot pill) and text, never by color alone. Meter gradients use green → yellow → red at −18 / −6 / 0 dBFS.</p>
+    </div>
+
+    <!-- 3 Type -->
+    <div class="card fill">
+      <h2><span class="no">3</span>Typography</h2>
+      <p class="lead">SF Pro via system text styles; numbers that change use monospaced digits so layouts never jitter.</p>
+      <div class="type">
+        <div><span class="m">Window title · 13 semibold (.headline)</span><b style="font-size:14px">Meeting</b></div>
+        <div><span class="m">Body · 13 regular (.body)</span><span style="font-size:13px">Start with camera apps</span></div>
+        <div><span class="m">Callout · 12 (.callout)</span><span style="font-size:12px">ProRes 422 · clean source</span></div>
+        <div><span class="m">Caption · 11 (.caption)</span><span style="font-size:11px" class="c2">2160p 59.94 · REC 12:31</span></div>
+        <div><span class="m">Section key · 10 semibold caps (.caption2)</span><span class="k2">Recording</span></div>
+        <div><span class="m">Elapsed · 20 semibold .monospaced</span><span style="font:600 20px var(--mono)">00:12:31</span></div>
+        <div><span class="m">Timecode · 11.5 .monospaced</span><span class="mono">14:22:31:12</span></div>
+        <div><span class="m">Values · 12 .monospacedDigit()</span><span class="tnum">18.4 GB · 184 Mb/s · −9.8 dB</span></div>
+        <div><span class="m">Badge · 10.5 bold (.caption2.bold)</span><span class="badge green">Live · 2160p 59.94</span><span class="role air" style="height:20px;font-size:10.5px">ON AIR · Program</span></div>
+        <div><span class="m">Status bar · 11.5 (.caption)</span><span class="c2 tnum" style="font-size:11.5px">REC 2 feeds 12:31 · 8TB 1 h 35 m left</span></div>
+        <div><span class="m">Menu row · 13 (system menu font)</span><span style="font-size:13px">Automatic Switching</span><span class="c3" style="font-size:12.5px">⌃⌥A</span></div>
+        <div><span class="m">Truncation</span><span class="c2" style="font-size:12px">Paths truncate in the middle: 8TB › Takes › … › Feed 1</span></div>
+      </div>
+    </div>
+
+    <!-- 6 Shortcuts (placed beside type) -->
+    <div class="card">
+      <h2><span class="no">6</span>Keyboard shortcuts</h2>
+      <p class="lead">Existing commands keep their keys; the new keys are proposals.</p>
+      <table class="t kb">
+        <tr><th>Keys</th><th>Command</th><th>Menu</th><th></th></tr>
+        <tr><td><code>⌘↩</code></td><td>Start / Stop feed</td><td>Feed</td><td class="c2">existing</td></tr>
+        <tr><td><code>⇧⌘B</code></td><td>Processing (off = complete bypass)</td><td>Feed</td><td class="c2">existing</td></tr>
+        <tr><td><code>⇧⌘P</code></td><td>Video preview</td><td>View</td><td class="c2">existing</td></tr>
+        <tr><td><code>⌃⌥F</code> / <code>⌃⌥C</code></td><td>Freeze / Clean view (focused picture)</td><td>View</td><td class="c2">existing</td></tr>
+        <tr><td><code>⌘Q</code></td><td>Quit (waits for takes to finish)</td><td>Ultracam</td><td class="c2">existing</td></tr>
+        <tr><td><code>⌘,</code></td><td>Settings…</td><td>Ultracam</td><td class="c2">standard</td></tr>
+        <tr><td><code>⌃1–⌃4</code></td><td>Cut Program to feed · clashes with Mission Control desktops if enabled; fallback 1–4 in the focused window</td><td>Program</td><td>${NEW}</td></tr>
+        <tr><td><code>⌃⌥A</code></td><td>Automatic switching</td><td>Program</td><td>${NEW}</td></tr>
+        <tr><td><code>⌥⌘R</code></td><td>Record All / Stop All</td><td>Record</td><td>${NEW}</td></tr>
+        <tr><td><code>⌘R</code></td><td>Record / Stop selected feed</td><td>Record</td><td>${NEW}</td></tr>
+        <tr><td><code>⌘O</code></td><td>Load LUT for selected feed</td><td>File</td><td>${NEW}</td></tr>
+        <tr><td><code>⌘1–⌘4</code></td><td>Focus feed (keyboard target)</td><td>View</td><td>${NEW}</td></tr>
+        <tr><td><code>⌥⌘1–⌥⌘4</code></td><td>Layout: Single · Side by Side · Program View · Four Up</td><td>View</td><td>${NEW}</td></tr>
+        <tr><td><code>⌃⌘S</code></td><td>Show / hide sidebar</td><td>View</td><td>${NEW}</td></tr>
+        <tr><td><code>⌥⌘S</code></td><td>Collapse / expand all strips</td><td>View</td><td>${NEW}</td></tr>
+        <tr><td><code>⌥⌘K</code></td><td>Scopes for focused feed</td><td>View</td><td>${NEW}</td></tr>
+        <tr><td><code>⌥⌘I</code></td><td>Diagnostics window</td><td>Window</td><td>${NEW}</td></tr>
+        <tr><td><code>⌘0</code></td><td>Main window</td><td>Window</td><td>${NEW}</td></tr>
+      </table>
+    </div>
+
+    <!-- 4 Components -->
+    <div class="card wide">
+      <h2><span class="no">4</span>Component inventory → native API</h2>
+      <p class="lead">APIs checked in <code>MacOSX27.0.sdk</code> (docs/UI_REDESIGN.md §8). "Replaces" names the current Swift views the component takes over.</p>
+      <table class="t">
+        <tr><th style="width:170px">Component</th><th style="width:420px">Native control / API</th><th style="width:90px">Availability</th><th>Replaces (current code)</th></tr>
+        <tr><td>Window shell</td><td><code>Window</code> scene + <code>NavigationSplitView</code> (sidebar + detail), <code>.navigationSubtitle</code></td><td class="c2">macOS 13+</td><td><code>ContentView</code>, <code>ControlPanel</code> cards, outer <code>ScrollView</code></td></tr>
+        <tr><td>Session sidebar</td><td><code>List(.sidebar)</code> sections; rows with <code>LabeledContent</code>, <code>Toggle(.switch)</code>, <code>Gauge</code> (disk), <code>Picker</code> (strategy)</td><td class="c2">macOS 13+</td><td><code>MultiCameraControls</code> (feed list, switcher), <code>CameraOutputControls</code>, parts of <code>RecordingControls</code> (folder, recovery), <code>AutomaticFeedControl</code></td></tr>
+        <tr><td>Toolbar</td><td><code>.toolbar</code> + <code>ToolbarSpacer</code>, <code>.buttonStyle(.glass)</code> / <code>.glassProminent</code> (Record All), <code>ControlGroup</code> for cuts, <code>Picker(.segmented)</code> layout</td><td class="c2">macOS 26 (glass, spacer)</td><td><code>StartStopButton</code>, <code>MonitorWorkspaceShell</code> layout picker, Record/Pause/Stop all buttons</td></tr>
+        <tr><td>Picture + overlays</td><td>existing <code>VideoPreview</code> (native) / <code>MonitorNativePicture</code>; overlays in a <code>GlassEffectContainer</code> with <code>.glassEffect()</code> capsules, <code>Menu</code> for feed/signal pickers</td><td class="c2">macOS 26 (glass)</td><td><code>FeedPreview</code>, <code>MonitorTileChrome</code> header/legend rows, <code>MonitorBoundTile</code> button rows</td></tr>
+        <tr><td>Monitor tools</td><td>Overlay toggle buttons + <code>.popover</code> with <code>Form(.grouped)</code>: <code>Toggle</code>, <code>Slider</code>, <code>Picker</code>, <code>Stepper</code></td><td class="c2">macOS 13+</td><td><code>MonitorToolsToolbar</code> (settings content kept), <code>MonitorFalseColorLegend</code> moves onto picture</td></tr>
+        <tr><td>Tally ring + role badge</td><td>Custom: <code>.overlay(RoundedRectangle.strokeBorder)</code> + text badge; driven by <code>switcherSelectedFeedID</code> / <code>switcherPendingFeedID</code> / camera demand</td><td class="c2">custom</td><td>tinted cut buttons in <code>MultiCameraControls</code></td></tr>
+        <tr><td>Channel strip</td><td>Custom container; <code>DisclosureGroup</code>-style collapse (chevron); <code>Button</code>s, <code>Toggle(.switch)</code> (processing), effect chips = <code>Toggle(.button)</code>, <code>.contextMenu</code></td><td class="c2">macOS 13+</td><td><code>RecordingFeedRow</code>, <code>PipelineControls</code>, <code>PipelineEnableControl</code>, <code>FeedStateLabel</code>, <code>FeedMetadata</code></td></tr>
+        <tr><td>Strip ⋯ popover</td><td><code>.popover</code> + <code>Form(.grouped)</code>: input <code>Picker</code>, LUT row + <code>fileImporter</code>, gamut <code>Picker</code>, effects <code>Toggle(.checkbox)</code>, folder, rename, Diagnostics…</td><td class="c2">macOS 13+</td><td><code>InputDeviceControl</code>, <code>LUTControls</code>, feed name <code>TextField</code></td></tr>
+        <tr><td>Audio meter</td><td>Custom peak/RMS bar (no native equivalent); <code>.accessibilityValue</code></td><td class="c2">custom</td><td><code>AudioLevelMeter</code> (logic kept)</td></tr>
+        <tr><td>Shot timer</td><td>Custom bar with min / soft max / max marks; <code>ProgressView(value:)</code> as an option</td><td class="c2">custom</td><td>— (new view of <code>NaturalTalkingHeadSettings</code>)</td></tr>
+        <tr><td>Scopes</td><td>existing <code>MonitorNativeScope</code> + <code>MonitorScopeGraticule</code></td><td class="c2">existing</td><td>scopes pane in <code>MonitorBoundTile</code></td></tr>
+        <tr><td>Status bar</td><td><code>.safeAreaInset(edge: .bottom)</code> HStack of borderless <code>Button</code>s → <code>.popover</code></td><td class="c2">macOS 12+</td><td><code>AppResourceSummary</code>, <code>FeedNotice</code>, <code>PreviewErrorNotice</code> (as segments/banners)</td></tr>
+        <tr><td>Menu bar dropdown</td><td>Recommended: <code>NSStatusItem</code> + <code>NSMenu</code> whose first item has a custom view (<code>NSHostingView</code> preview); rows are real <code>NSMenuItem</code>s with submenus. Fallback: <code>MenuBarExtra(.window)</code> with menu-styled rows.</td><td class="c2">AppKit · spike</td><td><code>MenuBarInterface</code>, <code>MenuBarStatusIcon</code>, <code>MonitorCompactPreview</code></td></tr>
+        <tr><td>Settings</td><td><code>Settings</code> scene, <code>TabView</code> panes, <code>Form(.grouped)</code></td><td class="c2">macOS 11+</td><td>Hide from Dock toggle, codec/timecode/default folder, install/remove camera</td></tr>
+        <tr><td>Diagnostics</td><td><code>Window</code> scene (⌥⌘I), <code>Picker(.tabs)</code> per feed, <code>Grid</code> + <code>LabeledContent</code></td><td class="c2">macOS 27 (.tabs)</td><td><code>FeedDiagnostics</code>, <code>MonitorDiagnosticsView</code>, encoder-details disclosure</td></tr>
+        <tr><td>Detached monitor</td><td><code>WindowGroup(for: MonitorTargetID.self)</code> instead of hand-made <code>NSWindow</code></td><td class="c2">macOS 13+</td><td><code>MonitorDetachedWindows</code>, <code>MonitorWindowOwner</code></td></tr>
+      </table>
+    </div>
+
+    <!-- 5 States -->
+    <div class="card">
+      <h2><span class="no">5</span>Channel strip states</h2>
+      <p class="lead">Driven by <code>RecordingStatus</code> + statistics. Each state has exactly one primary action.</p>
+      <table class="t">
+        <tr><th>State</th><th>Record control</th><th>Label</th><th>Enabled actions</th><th>Color</th></tr>
+        <tr><td>Ready</td><td><span class="recbtn sm" style="display:inline-block;vertical-align:middle"></span></td><td>Ready · 2160p 59.94</td><td>Record</td><td class="c2">neutral</td></tr>
+        <tr><td>No folder</td><td><span class="recbtn sm dis" style="display:inline-block;vertical-align:middle"></span></td><td>Choose a folder</td><td>Choose…</td><td class="co">orange</td></tr>
+        <tr><td>Feed stopped</td><td><span class="recbtn sm dis" style="display:inline-block;vertical-align:middle"></span></td><td>Start this feed to record</td><td>Start Feed</td><td class="c2">neutral</td></tr>
+        <tr><td>Recording</td><td><span class="recbtn sm on" style="display:inline-block;vertical-align:middle"></span></td><td class="cr">Recording 00:12:31</td><td>Pause, Stop</td><td class="cr">red</td></tr>
+        <tr><td>Paused</td><td><span class="recbtn sm" style="display:inline-block;vertical-align:middle"></span></td><td class="co">Paused 00:04:12</td><td>Resume, Stop</td><td class="co">orange</td></tr>
+        <tr><td>Finishing</td><td><span style="display:inline-block;width:16px;height:16px;border-radius:8px;border:2px solid var(--label3);border-top-color:var(--label)"></span></td><td>Finishing…</td><td>none (duplicates blocked)</td><td class="c2">neutral</td></tr>
+        <tr><td>Failed</td><td><span class="recbtn sm" style="display:inline-block;vertical-align:middle"></span></td><td class="cr">Recording stopped: error</td><td>Record (new take), Details</td><td class="cr">red text</td></tr>
+      </table>
+      <h2 style="margin-top:18px; font-size:13px">Picture tally</h2>
+      <table class="t">
+        <tr><th>Role</th><th>Ring</th><th>Badge</th><th>When</th></tr>
+        <tr><td>On air (Program)</td><td><span style="display:inline-block;width:34px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 3px var(--red)"></span></td><td><span class="role air" style="height:20px;font-size:10.5px">ON AIR · Program</span></td><td class="c2">Program mode, selected feed</td></tr>
+        <tr><td>Next</td><td><span style="display:inline-block;width:34px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 2px var(--green)"></span></td><td><span class="role nxt" style="height:20px;font-size:10.5px">NEXT</span></td><td class="c2">Queued cut (pending feed)</td></tr>
+        <tr><td>Consumer on air</td><td><span style="display:inline-block;width:34px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 3px var(--red)"></span></td><td><span class="role air" style="height:20px;font-size:10.5px">ON AIR · Zoom</span></td><td class="c2">Separate mode, its camera is in use</td></tr>
+        <tr><td>Idle</td><td><span style="display:inline-block;width:34px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 1px var(--sep)"></span></td><td class="c2">— (none)</td><td class="c2">Not published / not selected</td></tr>
+      </table>
+    </div>
+
+    <!-- 7 Accessibility -->
+    <div class="card">
+      <h2><span class="no">7</span>Accessibility</h2>
+      <p class="lead">Round 3 must keep everything the current app already does (dense <code>.help</code> strings, labels and values) and add the following.</p>
+      <ul class="l">
+        <li><b>Tally is never color-only.</b> Every ring has a text badge (ON AIR · Program / NEXT / ON AIR · Zoom) and the strip repeats it ("On air in Program").</li>
+        <li><b>VoiceOver pictures:</b> one element per picture, e.g. <code>"Feed 1, on air in Program, recording 12 minutes 31 seconds, output"</code>. Overlay buttons are separate elements in reading order: identity, tools, signal, REC.</li>
+        <li><b>Meters:</b> <code>.accessibilityValue("Peak −9.8 dB, RMS −14.2 dB")</code> per channel (existing behavior); updates throttled to 2 Hz for speech.</li>
+        <li><b>Reduce Transparency:</b> glass becomes opaque <code>windowBackgroundColor</code> / <code>controlBackgroundColor</code>; picture overlays get a solid dark capsule.</li>
+        <li><b>Increase Contrast:</b> rings 4 → 5 pt, separators full opacity, chips get borders.</li>
+        <li><b>Keyboard:</b> full Tab order sidebar → toolbar → pictures → strips → status bar; ⌘1–⌘4 move focus between feeds; Space toggles the focused control; every action is in a menu with its shortcut.</li>
+        <li><b>Help text carried over:</b> GPU % scope, bypass meaning, timecode modes, preview vs. camera output, Program limits.</li>
+        <li><b>Motion:</b> no animated meters or pulsing REC with Reduce Motion; REC shows a static dot.</li>
+      </ul>
+    </div>
+
+    <!-- 8 Light -->
+    <div class="card wide">
+      <h2><span class="no">8</span>Light appearance</h2>
+      <p class="lead">The same components with system colors in Light. Picture overlays stay dark glass because they sit on video; everything else follows the appearance.</p>
+      <div class="light" style="display:grid; grid-template-columns: 560px 1fr; gap: 28px; align-items:start">
+        <div class="lwin"><div class="col3" id="lightcol" style="gap:10px"></div></div>
+        <div style="display:flex; flex-direction:column; gap:18px">
+          <div class="dd glass" id="lightdd" style="width:340px">
+            <div class="ddtop">
+              <div class="picture" data-scene="mcu" style="height:184px; border-radius:11px;">
+                <div class="overlay" style="left:7px; top:7px;"><div class="pill sm glass" style="color:#fff">Ultracam · Program</div></div>
+                <div class="overlay" style="right:7px; top:7px;"><span class="badge red" style="background:rgba(255,69,58,0.88);color:#fff">ON AIR</span></div>
+                <div class="overlay" style="left:7px; right:7px; bottom:7px; justify-content:space-between; color:#fff">
+                  <span class="pill sm glass mono" style="font-weight:600">14:22:31:12</span>
+                  <span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 2 · 12:31</span></span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2"><span><span class="cg">●</span> Live in Zoom · effects active</span><span class="mono" style="font-size:10.5px">1080p29.97</span></div>
+            </div>
+            <div class="msep"></div>
+            <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feeds<span class="key">⌘↩</span></div>
+            <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+            <div class="mi hl"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Automatic Switching<span class="key">⌃⌥A</span></div>
+            <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:#ff3b30"></i></span>Stop All Recordings<span class="key">⌥⌘R</span></div>
+          </div>
+          <ul class="l" style="color:var(--label)">
+            <li>Strip background <code>.quaternary</code> fill on <code>windowBackgroundColor</code>.</li>
+            <li>Badges and chips use the same hues at light-mode system values (red #ff3b30, green #34c759, blue #007aff).</li>
+            <li>Sidebar/toolbar glass and the dropdown pick up the light material automatically.</li>
+          </ul>
+          <div class="lwin" style="padding:0; position:relative; height:30px; overflow:hidden; border-radius:10px">
+            <div class="sbar tnum" style="border-top:none">
+              <div class="seg2" style="color:#1a8f3c"><i data-i="camlink" class="sm"></i>Ultracam · Program → Zoom</div><div class="div"></div>
+              <div class="seg2"><i data-i="program" class="sm"></i>Feed 1 on air · Auto</div><div class="div"></div>
+              <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 feeds 12:31</span> · 8TB 1 h 35 m left</div>
+              <div class="sp"></div><div class="seg2">CPU 48.6% · GPU 29.8%</div>
+            </div>
+          </div>
+          <div style="font-size:11px" class="c2">Status bar in Light: same segments, separator and hover fill from system colors.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9 Performance -->
+    <div class="card wide">
+      <h2><span class="no">9</span>Performance rules (non-negotiable)</h2>
+      <p class="lead">These come from how the capture and monitor runtime works today (README "Monitor tools", <code>MonitorCoordinator</code> registration, the comment in <code>UltracamApp</code>). A layout that breaks them needs runtime changes first.</p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 6px 36px">
+        <ul class="l">
+          <li><b>One main native preview stays mounted.</b> The selected feed's <code>previewRenderer</code> view is never recreated by navigation, collapse or layout changes. Collapsing a strip doesn't touch the picture.</li>
+          <li><b>Other pictures are monitor surfaces.</b> They use <code>MonitorCoordinator.registerSurface</code> and report <code>isVisible = false</code> when hidden, occluded, collapsed or frozen, so they do no GPU work.</li>
+          <li><b>Scopes mount only when on</b> for that feed and visible; refresh 10/15/30 Hz per settings; adaptive quality may lower cadence under pressure.</li>
+        </ul>
+        <ul class="l">
+          <li><b>The menu bar preview renders only while the dropdown is open</b> (<code>miniPreviewRenderer</code>); closed means no frames enqueued. Dropdown thumbnails are monitor surfaces.</li>
+          <li><b>Sampling only while visible:</b> status bar resources (1 Hz), recording counters (2 Hz while a take runs), diagnostics window counters. No timers when hidden.</li>
+          <li><b>Sidebar thumbnails are periodic stills</b> (≤ 1 per 2 s) or omitted, never extra live renderers.</li>
+          <li><b>No per-frame SwiftUI state.</b> Video frames never flow through observable state; overlays update on discrete events.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  // NEW tag in the shortcuts table
+  document.querySelectorAll('td').forEach((td) => { if (td.textContent === '${NEW}') td.innerHTML = newtag; });
+  window.addEventListener('load', () => setTimeout(() => { document.body.dataset.h = document.documentElement.scrollHeight; }, 50));
+  mount('lightcol', tile(FEEDS.f1, { role: 'air' }) + strip(FEEDS.f1, { role: 'air' }));
+</script>
+</body></html>

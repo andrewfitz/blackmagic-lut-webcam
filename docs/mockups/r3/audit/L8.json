@@ -1,0 +1,775 @@
+[
+ {
+  "id": "L8-01",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "menubar",
+   "states"
+  ],
+  "location": "Program mode with Feed 1 (2160p59.94, frame-rate limit off) and Feed 2 (2160p29.97)",
+  "issue": "Cutting between Program sources whose processed output differs in size, chroma or frame rate disconnects and reconnects the Program camera sink on every cut. The mocked configuration does exactly this, and the UI neither prevents nor warns.",
+  "evidence": "ProgramOutputBridge.sameContract compares width/height/pixelFormat/duration; reconnectLocked(to:) rebuilds the sink when a cut frame is rejected with 'negotiated format'. AppModel.reconcileProgramTransportDemand derives the contract from the on-air producer's configuration. r3.js FEEDS: f1 2160p 59.94 with fx [1,1,1,0] (limit off) gives 59.94 output; f2 2160p 29.97 gives 29.97 output.",
+  "scenario": "Each cut between Feed 1 and Feed 2 drops or blinks Zoom's picture while the sink renegotiates.",
+  "severity": "P0",
+  "confidence": "high",
+  "recommendation": "Add a Program output format, or enforce a shared contract across Program sources. Flag any source whose output differs, in its strip and in the sidebar's Program section. Block or warn before entering Program with mismatched sources.",
+  "alternatives": [
+   "Auto-enable the frame-rate limit on 59.94 sources in Program mode",
+   "Show a 'format differs from Program' badge on the source picture"
+  ],
+  "affects": [
+   "r3.js strip()/sidebar()",
+   "main-expanded",
+   "program-view",
+   "states",
+   "settings Camera/Switcher",
+   "spec §5"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-02",
+  "lens": "code-truth",
+  "pages": [
+   "single",
+   "menubar",
+   "diagnostics",
+   "main-expanded"
+  ],
+  "location": "Signal path / dropdown stat / Delivered rows",
+  "issue": "Mock data contradicts the pipeline: Feed 1 is 2160p59.94 with effect 4 (frame-rate limit) off, yet the pages show '1080p29.97' to Zoom and 'Delivered 29.97 fps'.",
+  "evidence": "single.html:120,127 (step 4 struck through, then 'Zoom 1080p29.97'); single.html:61 and menubar.html:127 '1080p29.97'; diagnostics.html:88 'Delivered 29.97 fps'; r3.js FEEDS.f1 fx [1,1,1,0].",
+  "scenario": "A reviewer or engineer learns the wrong rule: that 59.94 sources reach Zoom at 29.97 without the limit.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Make the values consistent: either show 1080p59.94, or turn on effect 4 for Feed 1 in FEEDS and in every hand-written copy.",
+  "alternatives": [],
+  "affects": [
+   "r3.js FEEDS",
+   "single",
+   "menubar",
+   "diagnostics"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-03",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "standalone",
+   "single",
+   "four-up",
+   "program-view"
+  ],
+  "location": "Channel strip effect chips, processing switch, LUT, and ⋯ popover settings for non-selected feeds",
+  "issue": "Independent per-feed output controls are shown as if they already exist, but AppModel edits only the selected feed. configuration, pipelineEnabled, gamut, LUT state, previewEnabled and automaticFeedEnabled are selected-feed singletons loaded by applySelectedDescriptor, and chooseLUT acts on selectedFeedID.",
+  "evidence": "AppModel.swift applySelectedDescriptor (~544-571), selectFeed (422-439), chooseLUT (342). Headless feeds use descriptor.configuration only at start (startFeed 659-680).",
+  "scenario": "The user flips Feed 2's LUT chip in its strip. Nothing in the model can apply it today without first selecting Feed 2, which reloads its LUT and rebinds both previews.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Treat per-feed controls as a NEW model refactor: per-feed view models that own configuration, pipeline, LUT, gamut, automatic and preview state, routed through feedCoordinator.reconfigureCapture(feedID:). List it first in the implementation plan.",
+  "alternatives": [
+   "Keep the selected-feed model, and make interacting with a strip visibly select that feed"
+  ],
+  "affects": [
+   "AppModel",
+   "FeedInterface",
+   "r3 strips",
+   "spec §4"
+  ],
+  "effort": "L"
+ },
+ {
+  "id": "L8-04",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "diagnostics",
+   "program-view",
+   "four-up"
+  ],
+  "location": "Per-feed audio meters, Live · format badges, timecode, delivered/drops, Diagnostics Feed 2 tab, status-bar Audio popover",
+  "issue": "Live stats for non-selected feeds have no data source: capture updates from any feed other than the selected one are discarded.",
+  "evidence": "AppModel.installCaptureUpdateHandler has 'guard self.selectedFeedID == feedID else { return }' before 'self.update = update'. Only recording statistics are tracked per feed (RecordingModel.feeds[].statistics).",
+  "scenario": "Feed 2's strip meters and the Diagnostics Feed 2 tab would stay empty or show stale values.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "NEW: keep a CaptureUpdate per FeedID and drive strips, diagnostics and status popovers from it.",
+  "alternatives": [],
+  "affects": [
+   "AppModel",
+   "r3 strips",
+   "diagnostics",
+   "states"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-05",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "menubar",
+   "standalone",
+   "app-menus",
+   "states"
+  ],
+  "location": "Toolbar Stop, dropdown 'Stop Feeds' / 'Stop All Feeds', strip 'Stop Feed'",
+  "issue": "Stop is misrepresented. AppModel.stop() stops only the selected feed, in both modes. In Program mode the headless sources keep running, and the Program transport can stay up if the on-air producer is headless. stop() also ends the selected feed's recording without saying so.",
+  "evidence": "AppModel.stop() 701-710 calls feedCoordinator.stop(selectedFeedID) and recordingModel.stop(feedID: selectedFeedID). FeedCoordinator.stop(_:) stops one session. reconcileProgramTransportDemand only requires the on-air producer to be running.",
+  "scenario": "After a Program meeting the user presses Stop. Feed 2 (headless, possibly on air) keeps capturing and Zoom keeps receiving Program.",
+  "severity": "P0",
+  "confidence": "high",
+  "recommendation": "Define explicit commands and runtime APIs: Stop Feed N (warns that it ends Feed N's recording) and Stop All Feeds / End Session (stops every source and the Program route). Label the toolbar Stop with what it stops.",
+  "alternatives": [],
+  "affects": [
+   "AppModel",
+   "toolbar()",
+   "strip()",
+   "menubar",
+   "app-menus",
+   "spec §5"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-06",
+  "lens": "code-truth",
+  "pages": [
+   "main-collapsed",
+   "standalone",
+   "states",
+   "menubar"
+  ],
+  "location": "Per-strip Start Feed / Stop Feed for a non-selected feed",
+  "issue": "No model API starts or stops an arbitrary feed. start() and stop() use selectedFeedID, and other feeds start only through the automatic policy or as Program headless sources.",
+  "evidence": "AppModel.start()/startFeed()/stop(); reconcileAutomaticFeed starts non-selected feeds with startCapture(feedID:).",
+  "scenario": "Pressing 'Start Feed' on Feed 2's strip in Separate mode has nothing to call without changing the selection.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "NEW runtime API start(feedID:)/stop(feedID:) that handles preview ownership and camera output enable per feed.",
+  "alternatives": [],
+  "affects": [
+   "AppModel",
+   "strip()"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-07",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "menubar",
+   "states",
+   "spec"
+  ],
+  "location": "Green NEXT ring / 'queued' / 'Cut to Feed 2 at the next speech gap after 10 s' / 'Auto holds Feed 1 for 1.8 s more'",
+  "issue": "A persistent NEXT and a hold countdown imply the director exposes its planned next camera and remaining hold time. It doesn't. The model only exposes switcherPendingFeedID: a decision queued until the next Program frame boundary, normally about one frame.",
+  "evidence": "AppModel.switcherPendingFeedID = feedCoordinator.programOutput.pendingFeedID. AutoSwitcherBridge returns instructions and has no forecast API. menubar.html:100 'Auto holds Feed 1 for 1.8 s more'.",
+  "scenario": "Users trust a NEXT indicator the runtime can't produce, or engineers end up fabricating it.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "This is an unmarked invention. Either tag it NEW and add a bridge API for candidate and hold state, or redesign: green means a pending cut (brief), plus a shot timer built from the applied-decision time and the configured min/soft/max (feasible today).",
+  "alternatives": [
+   "Show 'eligible to cut after the minimum shot' instead of a predicted target"
+  ],
+  "affects": [
+   "r3.js tile()/strip()/sidebar()",
+   "program-view",
+   "menubar",
+   "states",
+   "spec §5"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-08",
+  "lens": "code-truth",
+  "pages": [
+   "main-collapsed",
+   "program-view",
+   "states"
+  ],
+  "location": "Director timeline speech lanes per camera",
+  "issue": "The director hears one audio stream (the selected feed's embedded audio, max of L/R), not speech per camera, so per-camera speech lanes would be fabricated.",
+  "evidence": "AppModel.feedAutoSwitcherAudio ingests update.audioRMS/Peak from the selected feed only. AutoSwitcherTimelineRecorder records a single AudioCue stream plus decisions with reason and forced flags.",
+  "scenario": "A timeline showing Feed 2 'speaking' misleads users about why the director cut.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Keep the timeline (NEW) but show one speech lane (naming its source feed), plus the on-air lanes and the cut reasons and forced flags the recorder already has.",
+  "alternatives": [],
+  "affects": [
+   "main-collapsed",
+   "program-view",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-09",
+  "lens": "code-truth",
+  "pages": [
+   "settings",
+   "program-view",
+   "main-expanded"
+  ],
+  "location": "Switcher › Director mode 'Transcript assisted' (default)",
+  "issue": "Transcript assisted is the default mode, but the app has no built-in speech recognizer. Transcript cues only arrive if an external adapter calls ingestAutoSwitcherTranscript, and the UI presents the mode without a caveat.",
+  "evidence": "AppSettingsStore NaturalTalkingHeadSettings mode = .transcriptAssisted; the comment above AppModel.ingestAutoSwitcherTranscript says 'The app currently has no built-in speech recognizer'. settings.html:160.",
+  "scenario": "The user picks Transcript assisted expecting word-aware cuts, but it behaves as audio-only.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Add the caption 'No transcript source connected — cuts use audio only' together with the connection state, or default to Low latency until an ASR source exists.",
+  "alternatives": [],
+  "affects": [
+   "settings",
+   "sidebar() Output"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-10",
+  "lens": "code-truth",
+  "pages": [
+   "single"
+  ],
+  "location": "Right column shows Luma Waveform and RGB Parade at the same time for Feed 1",
+  "issue": "A feed can show only one scope mode today; MonitorScopeSettings has a single 'mode'.",
+  "evidence": "MonitorConfiguration.swift MonitorScopeSettings { enabled, mode, gain, graticule, refreshHz }.",
+  "scenario": "Engineers can't build the page as drawn without a config/schema change and twice the scope cost.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Show one scope per feed with a mode toggle, or mark multiple scopes as NEW with a MonitorScopeSettings change.",
+  "alternatives": [],
+  "affects": [
+   "single",
+   "monitor-tools",
+   "MonitorToolsCore"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-11",
+  "lens": "code-truth",
+  "pages": [
+   "main-collapsed",
+   "app-menus",
+   "settings",
+   "states"
+  ],
+  "location": "Rename…, Add Camera, Output mode 'Change while stopped'",
+  "issue": "Topology edits are locked while any source is active OR any recording is active. The ⋯ popover and the Feed menu show Rename enabled during a live, recording session, and the lock message leaves out recording.",
+  "evidence": "AppModel.renameFeed/addFeed/removeFeed/setOutputMode all guard on canEditFeedTopology; FeedLifecycleDemandPolicy.canEditTopology = !loading && !sourceActive && !recordingActive. main-collapsed.html:129, app-menus.html:108.",
+  "scenario": "The user tries to rename Feed 1 mid-meeting and nothing happens.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Disable with the reason 'Stop all feeds and recordings to change'. NEW alternative: allow renaming while running, since it only changes names and the registry display.",
+  "alternatives": [],
+  "affects": [
+   "main-collapsed",
+   "app-menus",
+   "settings",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-12",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "single",
+   "standalone",
+   "program-view",
+   "menubar",
+   "settings"
+  ],
+  "location": "Sidebar Automation 'Start with camera apps' and the dropdown row",
+  "issue": "Shown as one session-wide switch, but automatic start is per feed (descriptor.automaticFeed). The current toggle is the selected feed's flag.",
+  "evidence": "AppModel.applySelectedDescriptor sets automaticFeedEnabled = descriptor.automaticFeed; reconcileAutomaticFeed iterates descriptors and reads descriptor.automaticFeed. r3.js sidebar() Automation rows.",
+  "scenario": "With two feeds, the switch silently controls only the selected one.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Either show it per feed (strip ⋯ / collapsed state) or make it a NEW global setting applied to all feeds, and say which feeds it covers.",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "menubar",
+   "settings Camera"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-13",
+  "lens": "code-truth",
+  "pages": [
+   "settings",
+   "main-expanded",
+   "menubar",
+   "states"
+  ],
+  "location": "NEW 'Record with camera apps' + 'Stop when the last camera app closes'",
+  "issue": "Automatic mode treats an active or paused recording as demand and never stops a feed that is recording. Auto-recording would therefore keep capture alive after Zoom closes, unless the two rules are implemented together.",
+  "evidence": "AppModel.reconcileAutomaticFeed: policy.demand(camera || programRequested || recording); case .stop: guard ... !recording.",
+  "scenario": "Zoom closes, and the backup keeps recording and capture keeps running indefinitely.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Specify this as one coupled NEW feature (start a take on route demand; when demand ends, stop and finalize, then release capture) and show both rules as one control.",
+  "alternatives": [],
+  "affects": [
+   "settings Recording",
+   "sidebar()",
+   "AppModel",
+   "RecordingModel"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L8-14",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single",
+   "diagnostics",
+   "settings",
+   "menubar"
+  ],
+  "location": "Recording size/bitrate/time-left values",
+  "issue": "Mock throughput is unrealistic for ProRes 422 UHD: '18.4 GB · 184 Mb/s' after 12:31 at 2160p59.94. Apple's ProRes white paper gives about 943 Mb/s at 59.94 and about 471 Mb/s at 29.97. The time-left figures also don't follow from the free space shown.",
+  "evidence": "r3.js FEEDS f1 rec size/rate; settings '2.1 TB free · ~3 h 10 m'. RecordingStatistics already measures videoMegabitsPerSecond.",
+  "scenario": "The NEW time-left feature is designed around numbers 4–5× too low; real takes fill drives far faster.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Use realistic data, and base time left on the measured videoMegabitsPerSecond (using a codec/rate table until the first second is measured).",
+  "alternatives": [],
+  "affects": [
+   "r3.js FEEDS",
+   "settings",
+   "diagnostics"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-15",
+  "lens": "code-truth",
+  "pages": [
+   "menubar",
+   "program-view"
+  ],
+  "location": "Program picture in the dropdown and in Program view",
+  "issue": "previewRenderer and miniPreviewRenderer are bound to the selected feed, so a Program picture has to be a monitor surface (target 'program'). That's feasible, but it's an owned, size-limited picture under the monitor governor, not native passthrough.",
+  "evidence": "AppModel.selectFeed binds previewRenderer and miniPreviewRenderer to the selected feed; MonitorCoordinator.updateTargets(programAvailable:) provides the Program target.",
+  "scenario": "Under load the Program picture can degrade or be refused while the native feed picture doesn't, which looks like a bug.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Document this in spec §9, and design the 'monitor unavailable / reduced' state for Program pictures (dropdown and Program view).",
+  "alternatives": [],
+  "affects": [
+   "spec §9",
+   "menubar",
+   "program-view",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-16",
+  "lens": "code-truth",
+  "pages": [
+   "four-up",
+   "program-view",
+   "standalone",
+   "menubar",
+   "main-expanded"
+  ],
+  "location": "Simultaneous live pictures per page",
+  "issue": "Pages need more simultaneous pictures than there are native renderers. Every non-selected or Program picture is a monitor surface sharing one presentation/analysis budget, and that budget can refuse presentation ('insufficient presentation capacity'). The refusal state isn't designed.",
+  "evidence": "Counts: main-expanded 2 pictures + 2 scopes; main-collapsed 2 + 2 scopes; program-view 3; single 1 (+2 scopes, see L8-10); standalone 2 + 2 scopes, plus 2 in the dropdown; four-up 4 (1 native + 3 surfaces); menubar (a) 3 surfaces while open, (c) 2. README: 'Additional windows can report insufficient presentation capacity'.",
+  "scenario": "In Four Up, with the dropdown and a detached monitor open, a tile goes blank with no explanation.",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "Add a 'Monitor unavailable — capacity' tile state with Retry, give the on-air picture priority, and note the budget in spec §9.",
+  "alternatives": [],
+  "affects": [
+   "states",
+   "spec §9",
+   "r3.js tile()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-17",
+  "lens": "code-truth",
+  "pages": [
+   "monitor-tools",
+   "spec"
+  ],
+  "location": "Tool toggles without a master 'Monitor tools' switch",
+  "issue": "The current MonitorConfiguration keeps a toolsEnabled master switch, and the selected feed uses native passthrough only while tools are off. One-tap tools is a schema and behavior change, and turning any tool on switches that picture from native video to an owned monitor picture.",
+  "evidence": "MonitorToolsToolbar Toggle('Monitor tools', isOn: $configuration.toolsEnabled); MonitorBoundTile.usesNativePreview requires !toolsEnabled.",
+  "scenario": "Users don't know that tapping a tool changes that feed's picture path (latency and scaling).",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Tag it NEW, derive toolsEnabled from 'any tool on' with a migration, and note the picture-path change in the spec.",
+  "alternatives": [],
+  "affects": [
+   "monitor-tools",
+   "spec §4",
+   "MonitorToolsCore/UI"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-18",
+  "lens": "code-truth",
+  "pages": [
+   "monitor-tools",
+   "menubar",
+   "states",
+   "app-menus"
+  ],
+  "location": "Unmarked inventions and a shortcut collision",
+  "issue": "Several items aren't in the app and aren't tagged NEW: ⌘= / ⌘− / ⌘0 zoom (monitor-tools keyboard card), 'Show Live Preview' (menubar d), 'Input settings…' (states No-signal tile), per-take progress in the quit sheet (today the app waits via terminateLater with no UI), and the orange 'Skipped by Auto' tally (source health exists but has no UI). app-menus also assigns ⌘0 to 'Main window', which collides with ⌘0 'fit'. 'Swap Pictures' already exists (Swap tiles), so it isn't an invention.",
+  "evidence": "monitor-tools keyboard card; menubar (d); states #4/#18; UltracamApp AppDelegate.applicationShouldTerminate → .terminateLater; MonitorWorkspaceShell 'Swap tiles'.",
+  "scenario": "Scope creep and contradictory shortcuts reach implementation.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Tag each one NEW and resolve ⌘0 (keep it for the main window; zoom to fit becomes ⌥⌘0, or View menu only).",
+  "alternatives": [],
+  "affects": [
+   "monitor-tools",
+   "menubar",
+   "states",
+   "app-menus",
+   "spec §6"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-19",
+  "lens": "code-truth",
+  "pages": [
+   "settings",
+   "monitor-tools"
+  ],
+  "location": "Docs vs code drift (false color)",
+  "issue": "The working tree changed during the session. False color is now Off / Sony S-Log3 / EL Zone (both gated on a Sony S-Log3 source), with an EL Zone exposure-offset stepper (−10…+10 in 0.25 steps) and 'Unsupported saved mode/input' for legacy ARRI settings. README and UI_REDESIGN §3.3 still describe ARRI. New files: ELZoneProfile.swift, SonyFalseColor.swift.",
+  "evidence": "MonitorToolsToolbar.swift lines ~60-120; MonitorConfiguration MonitorFalseColorMode { off, elZone, sonySLog3, arri }; README 'ARRI-style false color…'.",
+  "scenario": "Building from the inventory would bring back modes that have been removed.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Refresh UI_REDESIGN §3.3 and the README. Treat the inventory as a snapshot and re-check each section against the code before implementation.",
+  "alternatives": [],
+  "affects": [
+   "docs/UI_REDESIGN.md",
+   "README.md"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-20",
+  "lens": "code-truth",
+  "pages": [
+   "main-collapsed",
+   "menubar",
+   "app-menus"
+  ],
+  "location": "'Publish as Camera' per feed",
+  "issue": "Correctly tagged NEW, but it has to be a new flag: the existing FeedDescriptor.enabled disables the feed entirely (stops it and drops it from Program and the registry). r3 also has no control for 'enabled'.",
+  "evidence": "VirtualCameraRegistryPublishing.forFeeds publishes feeds.filter(\\.enabled) with enabled: true; FeedCoordinator stops a running feed when it's disabled.",
+  "scenario": "Engineers wire 'Publish' to enabled, so turning publishing off kills that camera's capture and recording.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Specify a separate publish flag (registry descriptor enabled:false) and decide where 'enabled' lives (⋯ popover).",
+  "alternatives": [],
+  "affects": [
+   "spec §4",
+   "main-collapsed",
+   "AppSettingsStore"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-21",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "settings"
+  ],
+  "location": "Editing Auto strategy/shot timing while live",
+  "issue": "Any switcher setting change while the director is running tears down and recreates the Rust bridge, resetting its state mid-meeting. The UI presents the steppers and sliders as safe to adjust live.",
+  "evidence": "AppModel.updateSwitcher: 'if autoSwitcherBridge != nil { stopAutoSwitcher() }', then reconcileAutoSwitcher().",
+  "scenario": "Nudging Minimum shot during a call resets the shot history and can trigger an early cut.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add the caption 'Applies by restarting the director', or hold edits until the next pause / behind an Apply button.",
+  "alternatives": [],
+  "affects": [
+   "sidebar()",
+   "settings Switcher",
+   "program-view"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-22",
+  "lens": "code-truth",
+  "pages": [
+   "main-expanded",
+   "single",
+   "menubar",
+   "main-collapsed"
+  ],
+  "location": "Effect chips / Processing switch / ⇧⌘B while Zoom is live",
+  "issue": "Any effect or processing change on a running feed resets the output path ('Updating output…', previews flushed). Per the README, format-changing effects (Downscale, Color, Frame rate, bypass) renegotiate the camera transport. There's no live warning in the strips, the ⋯ popover or the dropdown.",
+  "evidence": "AppModel.configuration/pipelineEnabled didSet → reconfigure() → CaptureController.reconfigure (sampleFactory.reset, flush previews, 'Updating output…'). README: 'The producer stops and drains its camera transport before negotiating a changed output format'.",
+  "scenario": "Toggling 4:2:0 mid-call blanks Zoom briefly.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Mark format-changing controls with a live badge ('Interrupts Zoom briefly') and confirm when a consumer is connected. LUT-only changes can stay unguarded.",
+  "alternatives": [],
+  "affects": [
+   "strip()",
+   "main-collapsed popover",
+   "menubar",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L8-new-list",
+  "items": [
+   {
+    "feature": "Per-feed independent controls (effects, processing, LUT, gamut, automatic, preview). Shown as existing, actually NEW",
+    "work": "Refactor the AppModel selected-feed singletons into per-feed state; route through FeedCoordinator.reconfigureCapture(feedID:); generalise per-feed LUT loading (the restoreHeadlessLUT path)."
+   },
+   {
+    "feature": "Per-feed live stats (meters, formats, TC, drops)",
+    "work": "Store a CaptureUpdate per FeedID instead of discarding non-selected updates."
+   },
+   {
+    "feature": "Per-feed Start/Stop and Stop All Feeds / End Session",
+    "work": "start(feedID:)/stop(feedID:) APIs; in Program mode, stop all sources and the route; explicit 'ends recording' semantics."
+   },
+   {
+    "feature": "Record with camera apps + stop when the last app closes",
+    "work": "Couple RecordingModel.record/stop to route demand in reconcileAutomaticFeed; make sure capture is released after finalize."
+   },
+   {
+    "feature": "Disk time left + low-space warnings",
+    "work": "Poll volume capacity (only while visible or recording); estimate from RecordingStatistics.videoMegabitsPerSecond × active takes; thresholds; optional safe stop."
+   },
+   {
+    "feature": "Recent takes list",
+    "work": "Index of finished takes (onRecordingStarted/finished URLs) or a folder scan; Reveal in Finder."
+   },
+   {
+    "feature": "Publish as camera per feed",
+    "work": "New FeedDescriptor flag separate from enabled; registry descriptor enabled:false; demand monitor routes."
+   },
+   {
+    "feature": "Program format lock / mismatch warning",
+    "work": "A Program output contract setting, or a per-source format check against the ProgramOutputBridge contract."
+   },
+   {
+    "feature": "Live-disruption warnings for format-changing effects",
+    "work": "UI knowledge of which toggles change the output contract, plus whether a consumer is connected."
+   },
+   {
+    "feature": "Director timeline",
+    "work": "Expose AutoSwitcherTimelineRecorder events in memory (decisions, applied, reasons, the single audio cue stream)."
+   },
+   {
+    "feature": "Shot timer",
+    "work": "Current shot start from the last applied decision; thresholds from NaturalTalkingHeadSettings."
+   },
+   {
+    "feature": "NEXT / planned cut and hold countdown",
+    "work": "New AutoSwitcherBridge API for the candidate camera and remaining hold, or drop it and use pendingFeedID only."
+   },
+   {
+    "feature": "Skipped by Auto (source health)",
+    "work": "Expose FeedCoordinator's Program source health to the UI."
+   },
+   {
+    "feature": "Menu bar recording / attention dots",
+    "work": "Composite the status item image from recording and attention state."
+   },
+   {
+    "feature": "Hybrid dropdown (NSStatusItem + NSMenu custom view)",
+    "work": "AppKit status item with an NSHostingView preview item; Program preview through a monitor surface; spike rendering during menu tracking."
+   },
+   {
+    "feature": "Diagnostics window with per-feed tabs, 60 s history, Copy Diagnostics",
+    "work": "Per-feed CaptureUpdate (above); ring buffers sampled only while visible; text export."
+   },
+   {
+    "feature": "First-launch onboarding card",
+    "work": "First-run state in the settings store; steps bound to installer, devices, LUT and folder."
+   },
+   {
+    "feature": "Open at login, launch behavior, default layout, strip density",
+    "work": "SMAppService login item; new settings keys; layout auto-by-count in MonitorWorkspaceState."
+   },
+   {
+    "feature": "Program view layout and auto layout by camera count",
+    "work": "New MonitorWorkspaceLayout case; picker hosted in the toolbar."
+   },
+   {
+    "feature": "One-tap tools (no master switch)",
+    "work": "MonitorConfiguration migration that derives toolsEnabled; document the picture-path change."
+   },
+   {
+    "feature": "Multiple scopes per feed (only if single.html is kept)",
+    "work": "MonitorScopeSettings supports multiple modes; double the scope budget."
+   },
+   {
+    "feature": "Proposed shortcuts and menus (⌃1–⌃4, ⌃⌥A, ⌘R/⌥⌘R, ⌘1–⌘4, ⌥⌘1–4, ⌥⌘S, ⌥⌘K, ⌥⌘I, ⌘0, ⌘O, ⌘=/⌘−)",
+    "work": "Wire the commands; resolve the ⌘0 collision."
+   },
+   {
+    "feature": "Copy Timecode, Show Live Preview, Input settings…, quit progress sheet, Forget Saved LUTs, Reset all settings",
+    "work": "Small UI commands; the quit sheet needs per-take finalize progress from RecordingModel."
+   },
+   {
+    "feature": "Rename while running (optional)",
+    "work": "Relax canEditFeedTopology for name-only edits and republish the registry names."
+   }
+  ]
+ },
+ {
+  "id": "L8-renderers",
+  "items": [
+   {
+    "page": "main-expanded",
+    "pictures": 2,
+    "scopes": 2,
+    "runtime": "Selected feed native (previewRenderer); other feed a monitor surface; 2 scope surfaces"
+   },
+   {
+    "page": "main-collapsed",
+    "pictures": 2,
+    "scopes": 2,
+    "runtime": "Same, plus timeline data"
+   },
+   {
+    "page": "program-view",
+    "pictures": 3,
+    "scopes": 0,
+    "runtime": "Program is a monitor surface; selected feed native; other feed a surface"
+   },
+   {
+    "page": "single",
+    "pictures": 1,
+    "scopes": 2,
+    "runtime": "Native preview; two scopes need a schema change (L8-10)"
+   },
+   {
+    "page": "standalone",
+    "pictures": 2,
+    "scopes": 2,
+    "runtime": "Plus 2 in the dropdown: miniPreviewRenderer (selected) + 1 surface"
+   },
+   {
+    "page": "four-up",
+    "pictures": 4,
+    "scopes": 0,
+    "runtime": "1 native + 3 surfaces; the governor may refuse presentation"
+   },
+   {
+    "page": "menubar (a)",
+    "pictures": 3,
+    "scopes": 0,
+    "runtime": "Program surface + 2 thumbnail surfaces while the menu is open; miniPreviewRenderer unused (bound to the selected feed)"
+   },
+   {
+    "page": "menubar (b)/(g)",
+    "pictures": 1,
+    "scopes": 0,
+    "runtime": "miniPreviewRenderer"
+   },
+   {
+    "page": "menubar (c)",
+    "pictures": 2,
+    "scopes": 0,
+    "runtime": "miniPreviewRenderer + 1 surface"
+   },
+   {
+    "page": "monitor-tools detached window",
+    "pictures": 1,
+    "scopes": 1,
+    "runtime": "Surface"
+   }
+  ]
+ },
+ {
+  "id": "L8-package-api",
+  "items": [
+   "MonitorTileChrome → chrome built from overlay zones (identity, tools, signal, recording, hover slots; role badge and tally ring supplied by the host). Remove the caption rows, the picture-signal picker row and the inline diagnostics.",
+   "MonitorToolsToolbar → an icon toggle group with a popover per tool (tap toggles; long-press or ⌥-click opens settings); toolsEnabled derived and migrated.",
+   "MonitorWorkspaceShell → layout picker owned by the host (toolbar), a new .program layout and auto-by-count, a focus binding exposed to the host (for selected-feed sync and menu commands), and Swap/Expand as commands instead of inline buttons.",
+   "Zoom/freeze/clean state moved from MonitorBoundTile @State into the presenter (needed for View menu commands and badges).",
+   "Scope view usable outside the chrome (a column card under the strip) with a header (mode · signal · Hz) and expand/dock; multiple modes optional.",
+   "MonitorDiagnosticsView → a structured-values API for the Diagnostics window instead of preformatted text lines.",
+   "MonitorFalseColorLegend compact on-picture variant (Sony thresholds).",
+   "A 'presentation refused / reduced' state surfaced to host tiles (exists as presenter.isPresentationAdmitted/presentationStatus; needs styling hooks)."
+  ]
+ },
+ {
+  "id": "L8-suspects",
+  "items": [
+   {
+    "suspect": "S1",
+    "verdict": "confirmed-risk",
+    "note": "In current code a tile tap means focus (MonitorWorkspaceShell TapGesture). Cut-on-click is new and would share that gesture."
+   },
+   {
+    "suspect": "S2",
+    "verdict": "confirmed",
+    "note": "Every per-feed edit goes through selectedFeedID (L8-03), and changing selection also rebinds both native previews."
+   },
+   {
+    "suspect": "S3",
+    "verdict": "confirmed",
+    "note": "reconfigure() resets the output, and the README says transport renegotiates on a format change (L8-22). Program cuts between mismatched formats also reconnect (L8-01)."
+   },
+   {
+    "suspect": "S6",
+    "verdict": "confirmed",
+    "note": "The Stop commands differ in what they act on in code (stopping a feed also stops its take)."
+   },
+   {
+    "suspect": "S7",
+    "verdict": "confirmed-worse",
+    "note": "In Program mode Stop stops only the selected feed; headless sources continue (L8-05)."
+   },
+   {
+    "suspect": "S11",
+    "verdict": "confirmed",
+    "note": "Unmarked: per-feed independent controls, stats and start/stop; the NEXT forecast; the hold countdown; per-camera speech lanes; simultaneous scopes; ⌘=/⌘−/⌘0 zoom; Show Live Preview; Input settings…; quit progress; the Skipped-by-Auto tally. Swap Pictures is NOT an invention."
+   },
+   {
+    "suspect": "S12",
+    "verdict": "confirmed",
+    "note": "False color changed (L8-19); re-verify the inventory section by section."
+   },
+   {
+    "suspect": "S15",
+    "verdict": "partially-confirmed",
+    "note": "Hand-built strips encode states the builder lacks (paused, no signal), and copies spread the data contradiction (L8-02)."
+   }
+  ]
+ }
+]

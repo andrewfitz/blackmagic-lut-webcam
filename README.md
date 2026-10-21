@@ -89,6 +89,111 @@ visible without replacing a working LUT. Start is unavailable when the selected
 device is missing. Preview errors include a retry action that leaves camera
 output running.
 
+## Monitor tools
+
+The main preview offers **Single**, resizable **Side by Side**, and **Four Up**
+layouts. Choose a feed independently in each tile, or detach it into another
+window. The tray has its own feed choice. Tools are off by default, and each
+feed retains its own settings.
+
+Enable **Monitor tools** for thirds/center/safe-area guides, IRE zebras, red or
+other colored source-focus highlights, RGB parade and luma waveform. Picture and
+scope signals can independently use Source or Processed Output. **Freeze** and
+**Clean**, scope visibility and 1×–4× zoom affect only their own view.
+Hidden/occluded views suspend monitor work; recording and virtual-camera output
+keep their existing image branches. The diagnostics show requested and delivered
+rates, skips, picture/scope ages and shared monitoring memory. Under pressure,
+monitoring can reduce display size and scope sampling/cadence while preserving
+source-resolution focus analysis, then recover after five healthy seconds.
+If output processing exceeds a source-frame deadline, new monitor analysis
+pauses while clean preview continues. Fresh healthy processing for one second
+allows reduced analysis; five further healthy seconds restore normal quality.
+This preserves the requested tools and keeps pressure from one producer visible
+to the shared monitor governor, including when that producer's views are hidden.
+Additional windows can report insufficient presentation capacity and retry when
+a window closes or becomes smaller.
+
+**Sony S-Log3** false color uses Sony Monitor & Control's published source IRE
+bands with Ultracam display colors. It supports S-Gamut3.Cine and S-Gamut3;
+camera EI does not shift these bands. **EL Zone** decodes Sony channels before
+source-gamut scene luminance and stops relative to 18% gray. It uses the published
+public-chart palette and Ultracam's versioned continuous-band convention. The
+manual monitor exposure offset adds stops; it does not infer camera EI. Sony M&C
+EL Zone matching is not tested. Neither mode claims Sony sensor clipping/noise
+limits. Historical Sony ARRI-style settings migrate to Sony S-Log3; legacy literal
+ARRI data remains readable as an unsupported saved choice. Select the matching source
+profile, input range and Log transport mapping; these declarations do not
+calibrate the capture device. Source Log overlays are labeled as code-value views. Program supports output guides, zebras and scopes;
+source-focus and false color require source correspondence unavailable on Program.
+PQ, HLG and unknown-transfer pictures retain clean native presentation; composed
+overlays are unavailable for those signals. Numeric scopes can remain available
+with their signal interpretation labeled.
+
+Peaking uses a noise-rejecting Scharr confidence mask, with source-resolution
+edges preserved when the display is reduced. Reduced previews use bounded
+footprint filtering. Scopes rotate sampled positions and normalize density by
+the actual sample population. Composite storage has a bounded pool; eligible
+already-owned monitor buffers avoid a second CPU upload, with a guarded copy
+fallback for other memory layouts.
+
+Both false-color references, including EL's explicit interval convention, are
+documented in [the color reference receipt](docs/MONITOR_COLOR_REFERENCES.md).
+See [the Sony quality execution plan](docs/MONITOR_SONY_QUALITY_PLAN.md) for the
+current change and measurement gates.
+See [the implementation and qualification plan](docs/MONITOR_TOOLS_PLAN.md) for
+current test coverage and outstanding hardware checks.
+
+## Recording and interrupted takes
+
+Choose a default output folder in **Recording**, or choose a separate folder in
+each camera feed's recording row. **Use default** clears that camera's override.
+Each camera can record with its own folder even if no default is selected.
+Folder changes apply to the next take. **PC time** is the default timecode mode;
+it writes the computer's clock into the file, aligned to the first video frame.
+ProRes 422 10-bit and HEVC Main10 4:2:2 use fragmented QuickTime MOV containers,
+with a one-second initial fragment and ten-second subsequent fragment intervals.
+Normal Stop drains the encoder and finalizes the whole take on a worker, while
+**Finishing…** keeps duplicate recording actions disabled. Quitting waits for
+active recordings to finish.
+
+Each feed shows its own status, elapsed recording time, current file size and
+video-frame drop count. While a take is active, its counters refresh twice a
+second; FPS and video bitrate reflect encoded output. **Encoder details** shows
+hardware acceleration, smoothed/peak submission-to-callback latency, writer and
+encoder queues, audio packet drops, and encoder/writer errors. Paused time and
+intentionally ignored paused/stopped callbacks do not increase elapsed time or
+video-frame losses. Final take statistics remain visible until the next take.
+
+**Ultracam total**, above Recording and in the menu bar panel, reports app CPU,
+combined GPU video-processing busy time and memory footprint. CPU uses all
+Ultracam process threads (100% means one core). GPU busy time unions completed
+Metal processing/copy intervals from all feeds so overlapping work counts once;
+it excludes the hardware media encoder and system display compositor. This is
+not a whole-machine GPU utilization reading or a per-encoder utilization claim.
+
+Completed takes use readable feed names and local timestamps, for example
+`Feed 1/Feed 1_2026-10-19_21-13-55_003.mov`. During recording, a hidden `.partial`
+file and an Ultracam recovery journal remain beside the final destination.
+The default and per-camera folders' read/write sandbox bookmarks persist across
+launches. Camera folder choices follow the feed when it is renamed or reordered.
+
+After an interruption, launch Ultracam with the recording drive connected. The
+Recording controls offer **Recover** for interrupted takes in the saved folders;
+choosing another recording folder also checks it. Recovery copies complete
+fragments into a separate `_Recovered.mov` without re-encoding and keeps the
+interrupted original unchanged. A recovered take is not offered again while its
+recovered movie exists. The hidden original still occupies space; keep it until
+you have verified the recovered movie.
+
+An interruption can lose the last unfinished fragment, and a take interrupted
+before its first fragment may have no recoverable video. Fragmentation cannot
+guarantee recovery from drive failure, filesystem damage or unflushed writes
+following a power loss. Existing non-fragmented recordings are not upgraded.
+
+Run `bash scripts/recording-recovery-smoke.sh` to SIGKILL synthetic 4K writers
+before normal finalization and verify recovery for both codecs, with embedded
+audio and generated timecode. This helper never opens a capture device.
+
 ## Build and synthetic checks
 
 Requirements: Apple silicon, Xcode, macOS 15 or later, Blackmagic Desktop Video
@@ -200,9 +305,9 @@ the nearest speech gap and using the configured grace period only when no safe
 gap arrives. The standalone package also accepts realtime JSONL or PCM16LE and
 can analyze complete audio/video files offline; see
 [Tools/auto-switcher/README.md](Tools/auto-switcher/README.md).
-Recorded source movies use the stable feed identifier plus a UTC datetime in
-their filenames, while each switcher session writes a matching datetime JSON
-sidecar in the recording folder.
+Recorded source movies use the readable feed name and a local datetime in
+their filenames. Each switcher session writes a datetime JSON sidecar in the
+recording folder.
 
 ## Qualification status and boundaries
 
@@ -214,13 +319,14 @@ reported while the detector waits for a supported signal. The build
 fetches checksum-pinned, permissively licensed Blackmagic headers and dispatch
 source from official OBS upstream; Blackmagic Desktop Video supplies the runtime.
 
-The preview receives the same final pixel buffer and timing as camera output.
-AVSampleBufferDisplayLayer renders it through native video hardware without
-CGImage readback or per-frame SwiftUI state. Preview sample attachments are
-independent from camera transport. Its only extra operation is display fitting
-and the native display color conversion; every selected processing checkbox
-affects both preview and camera output. Capture can run in preview mode before
-the camera extension is signed and installed.
+With Monitor Tools off, the selected main/tray processed preview receives the
+same final pixel buffer and timing as camera output. AVSampleBufferDisplayLayer
+renders it through native video hardware without CGImage readback or per-frame
+SwiftUI state. Preview sample attachments are independent from camera transport;
+native fitting and display color conversion apply. Monitor surfaces can instead
+select Source, retain a frozen frame, or display an owned, size-limited picture
+with overlays. These monitor-only operations leave camera output unchanged.
+Capture can run in preview mode before the camera extension is signed and installed.
 
 On Apple silicon, eligible packed capture memory is read directly by Metal.
 The allocation is retained and locked through GPU completion; page alignment,
@@ -240,8 +346,9 @@ The UI shows
 source timestamp gaps, capture admission drops, pool pressure, transport drops
 and native preview delivery separately. Intentional frame-rate reduction does
 not count as a dropped frame.
-No footage is recorded or written to disk. There is no audio virtual device or
-SMPTE/DF timecode transport in this version. Select your existing microphone or
+Footage is written only when recording is started; monitoring does not save
+frames. The virtual camera supplies video without an audio device or SMPTE/DF
+timecode transport. Select your existing microphone or
 Blackmagic audio input separately in Zoom and qualify A/V synchronization.
 Signal loss leaves automatic HDMI detection armed; the extension clears its latest image and emits black
 after 0.5 seconds without a producer frame. Queue depth and pixel-buffer

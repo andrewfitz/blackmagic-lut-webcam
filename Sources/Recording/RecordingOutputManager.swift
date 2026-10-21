@@ -233,17 +233,15 @@ public final class RecordingOutputManager: @unchecked Sendable {
         throw RecordingOutputError.unsafePath
       }
     }
-    let sessionToken = sessionID.uuidString.unicodeScalars.reduce(UInt64(0)) { partial, scalar in
-      partial &* 131 &+ UInt64(scalar.value)
-    }
     let nonce = pathNonce
     pathNonce &+= 1
-    let uniqueToken = sessionToken &* 1_000_003 &+ nonce
-    let stemBase = "\(feedID)-\(Self.utcFileStem())-\(uniqueToken)"
+    let take = String(format: "%03llu", nonce + 1)
+    let stemBase = "\(feedID)_\(Self.fileTimestamp())_\(take)"
     var stem = stemBase
     var suffix = 2
     while fileManager.fileExists(atPath: feedDirectory.appendingPathComponent(".\(stem).partial").path)
-      || fileManager.fileExists(atPath: feedDirectory.appendingPathComponent("\(stem).\(configuration.fileExtension)").path) {
+      || fileManager.fileExists(atPath: feedDirectory.appendingPathComponent("\(stem).\(configuration.fileExtension)").path)
+      || fileManager.fileExists(atPath: feedDirectory.appendingPathComponent(".\(stem).partial.ultracam-recovery").path) {
       stem = "\(stemBase)-\(suffix)"
       suffix += 1
     }
@@ -260,11 +258,11 @@ public final class RecordingOutputManager: @unchecked Sendable {
       feedDirectory: feedDirectory, temporaryFile: temporary, finalFile: final)
   }
 
-  private static func utcFileStem() -> String {
+  private static func fileTimestamp() -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(secondsFromGMT: 0)
-    formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+    formatter.timeZone = .current
+    formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
     return formatter.string(from: Date())
   }
 
@@ -317,7 +315,9 @@ public final class RecordingOutputSession: @unchecked Sendable {
   private var reservedBytes: UInt64
   private var bytesWrittenValue: UInt64 = 0
   private var releasedReservation = false
+  private var ownsTemporaryFile = false
   private var externalWriterOwnsFile = false
+  private var recoveryJournal: RecordingRecoveryJournal?
 
   fileprivate init(manager: RecordingOutputManager, paths: RecordingOutputPaths, expectedBytes: UInt64) {
     self.manager = manager
@@ -353,6 +353,7 @@ public final class RecordingOutputSession: @unchecked Sendable {
       }
       let next = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
       handle = next
+      ownsTemporaryFile = true
       stateValue = .recording
     } catch let error as RecordingOutputError {
       stateValue = .failed
@@ -375,6 +376,8 @@ public final class RecordingOutputSession: @unchecked Sendable {
     }
     do {
       try prepareFilesystemLocked()
+      recoveryJournal = try RecordingRecoveryJournal(temporary: paths.temporaryFile, final: paths.finalFile)
+      ownsTemporaryFile = true
       externalWriterOwnsFile = true
       stateValue = .recording
     } catch let error as RecordingOutputError {
@@ -493,6 +496,8 @@ public final class RecordingOutputSession: @unchecked Sendable {
         throw RecordingOutputError.destinationExists
       }
       try manager.fileManagerRef.moveItem(at: paths.temporaryFile, to: paths.finalFile)
+      recoveryJournal?.remove()
+      recoveryJournal = nil
       stateValue = .finished
       releaseReservationLocked()
       return paths.finalFile
@@ -507,6 +512,17 @@ public final class RecordingOutputSession: @unchecked Sendable {
     }
   }
 
+  /// Stop owning a failed take without deleting its media or recovery journal.
+  public func preserveForRecovery() {
+    lock.lock(); defer { lock.unlock() }
+    handle?.synchronizeFile()
+    handle?.closeFile()
+    handle = nil
+    recoveryJournal = nil
+    stateValue = .failed
+    releaseReservationLocked()
+  }
+
   public func cancel() throws {
     lock.lock(); defer { lock.unlock() }
     guard stateValue != .finished && stateValue != .cancelled else {
@@ -515,7 +531,7 @@ public final class RecordingOutputSession: @unchecked Sendable {
     handle?.synchronizeFile()
     handle?.closeFile()
     handle = nil
-    if manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path) {
+    if ownsTemporaryFile && manager.fileManagerRef.fileExists(atPath: paths.temporaryFile.path) {
       do { try manager.fileManagerRef.removeItem(at: paths.temporaryFile) }
       catch {
         stateValue = .failed
@@ -523,6 +539,8 @@ public final class RecordingOutputSession: @unchecked Sendable {
         throw RecordingOutputError.ioFailure(error.localizedDescription)
       }
     }
+    recoveryJournal?.remove()
+    recoveryJournal = nil
     stateValue = .cancelled
     releaseReservationLocked()
   }
@@ -532,7 +550,9 @@ public final class RecordingOutputSession: @unchecked Sendable {
     guard stateValue != .finished && stateValue != .cancelled else { return }
     handle?.closeFile()
     handle = nil
-    try? manager.fileManagerRef.removeItem(at: paths.temporaryFile)
+    if ownsTemporaryFile { try? manager.fileManagerRef.removeItem(at: paths.temporaryFile) }
+    recoveryJournal?.remove()
+    recoveryJournal = nil
     stateValue = .cancelled
     releaseReservationLocked()
   }

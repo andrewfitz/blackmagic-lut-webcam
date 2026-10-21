@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Main window · strips collapsed</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .content3.flowc { display: flex; flex-direction: column; gap: 12px; }
+  .content3.flowc .cols2 { height: auto; flex: none; }
+  .cuts { border-radius: 14px; background: var(--fill); padding: 10px 12px; flex: none; }
+  .cuts .hdr { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 0 2px 8px; }
+  .cuts .crow { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: 12px; padding: 0 2px; border-top: 0.5px solid var(--sep); }
+  .cuts .crow .t { font-family: var(--mono); font-size: 11px; color: var(--label2); width: 64px; }
+  .calm { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--label3); font-size: 11.5px; }
+  .pressed { background: var(--fill3) !important; }
+  .strip3.collapsed .r { gap: 6px; }
+  .strip3.collapsed .minimeter { width: 40px; }
+  .strip3.collapsed .fx4 { gap: 3px; }
+  .strip3.collapsed .fx4 span { padding: 0 5px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Main window: same meeting, all strips collapsed (calm), Camera 2 ⋯ menu open</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3 flowc">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+      <div class="cuts">
+        <div class="hdr"><b>Recent Cuts</b><span class="c2">Program · last 3</span><span style="margin-left:auto" class="c3">Auto · Natural talking head</span></div>
+        <div class="crow"><span class="t">14:22:23</span><span>Cut to <b>Camera 1</b></span><span class="c2">Camera 2 reached the 30 s maximum shot · nearest speech gap</span><span style="margin-left:auto" class="badge">Auto</span></div>
+        <div class="crow"><span class="t">14:21:58</span><span>Cut to <b>Camera 2</b></span><span class="c2">Speech gap after 12.4 s on Camera 1</span><span style="margin-left:auto" class="badge">Auto</span></div>
+        <div class="crow"><span class="t">14:21:31</span><span>Cut to <b>Camera 1</b></span><span class="c2">Manual cut (⌃1)</span><span style="margin-left:auto" class="badge blue">Manual</span></div>
+      </div>
+      <div class="calm">Scopes are off · turn them on per camera from the picture's tool bar (⌥⌘K)</div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- Camera 2 ⋯ menu (native NSMenu) -->
+  <div class="menu glass" id="dotsmenu" style="left: 1078px; top: 490px; width: 296px; background: rgba(40,40,44,0.86);">
+    <div class="mh" style="padding-left:10px">Camera 2</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="inspector" class="sm"></i></span>Show Inspector<span class="key">⌥⌘I</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cut" class="sm"></i></span>Cut to Camera 2<span class="key">⌃2</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Recording<span class="key">⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Choose Recording Folder…</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cube" class="sm"></i></span>Load LUT…<span class="key">⌘O</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="scope" class="sm"></i></span>Copy Monitor Settings To<span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi dis"><span class="ck"></span><span class="ico"></span>Rename…<small>Stop all cameras to rename</small></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="info" class="sm"></i></span>Diagnostics…</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Camera</div>
+    <div class="mi dis"><span class="ck"></span><span class="ico"><i data-i="trash" class="sm"></i></span>Remove Camera…<small>Stop the camera first</small></div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 268px; top: 458px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1356px; top: 458px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 268px; top: 560px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 758px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 676px; top: 914px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Same session sidebar as the expanded window: output, Program summary, drives with time left, recent takes, automation.</span></div>
+    <div><span class="n">2</span><span>A collapsed strip is one line: chevron, name, role (On air), REC elapsed, effect chips with checkmarks, audio, the record control and ⋯. Problems tint the line orange or red, so collapsing never hides them.</span></div>
+    <div><span class="n">3</span><span>⋯ is a native menu, not a popover (D5). Deep settings open in the inspector (⌥⌘I). Items the app blocks while running stay visible but disabled, with the reason.</span></div>
+    <div><span class="n">4</span><span>Collapsed is calm: scopes are off by default. The freed space shows only Recent Cuts (from the cuts the switcher applies) and whitespace.</span></div>
+    <div><span class="n">5</span><span>The collapse toggle (⌥⌘S) shows as active. Cuts and Auto stay in the toolbar; the record control keeps its verb.</span></div>
+    <div><span class="n">6</span><span>Status bar in the fixed order: output · Program · recording with time left per drive · audio · resources.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Meeting', subtitle: 'Ultracam · Program in use · 2 recording', layout: 'split', collapsedAll: true }));
+  mount('c1', tile(CAMS.c1, { role: 'air', selected: true }) + strip(CAMS.c1, { expanded: false, role: 'air', selected: true }));
+  mount('c2', tile(CAMS.c2, {}) + strip(CAMS.c2, { expanded: false }).replace(/<span class="btn icon">(<i data-i="ellipsis"[^>]*><\/i>)<\/span>(\s*<\/div><\/div>)$/, '<span class="btn icon pressed">$1</span>$2'));
+  mount('st', statusbar({ mode: 'program' }));
+</script>
+</body></html>

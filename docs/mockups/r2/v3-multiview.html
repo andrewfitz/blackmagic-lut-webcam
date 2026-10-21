@@ -1,0 +1,246 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 2 · V3 · Rail + Multiview</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css"><script src="../kit.js"></script>
+<style>
+  .desktop { height: 1170px; }
+  .content { position: absolute; left: 80px; right: 316px; top: 64px; bottom: 46px; display: flex; flex-direction: column; gap: 10px; }
+  .mv { display: grid; grid-template-columns: 610px 1fr; gap: 8px; height: 343px; flex: none; }
+  .mv .src { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
+  .mv .picture { border-radius: 12px; height: 100%; }
+  .kk { width: 22px; height: 22px; border-radius: 7px; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+  .cutbar { border-radius: 12px; background: var(--fill); padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; flex: none; }
+  .bigcut { height: 40px; border-radius: 12px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 8px; font-weight: 600; background: var(--fill2); }
+  .bigcut .kk { background: rgba(255,255,255,0.15); }
+  .bigcut.air { background: rgba(255,69,58,0.9); color: #fff; }
+  .bigcut.next { box-shadow: inset 0 0 0 2px var(--green); }
+  .tlcard { flex: 1; border-radius: 12px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .marks { position: relative; height: 16px; margin-left: 54px; font-size: 9.5px; color: var(--label2); }
+  .marks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .tl .lane { height: 30px; }
+  .tl .lane .lt { height: 20px; }
+  .vline { position: absolute; top: 24px; bottom: 22px; width: 1px; background: rgba(255,255,255,0.25); }
+  .rail .ricon { width: 48px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: var(--label2); position: relative; }
+  .rail .ricon.sel { background: rgba(255,255,255,0.18); color: var(--label); }
+  .ddcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .ddcuts .picture { height: 86px; border-radius: 9px; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">V3 · Rail + Multiview: two-camera meeting via Program, backup of both sources</div>
+
+  <div class="window win2">
+    <!-- Rail -->
+    <div class="rail glass" style="background: rgba(48,48,52,0.6);">
+      <div style="position:absolute; top:20px; left:8px; gap:6px" class="traffic"><span style="width:11px;height:11px"></span><span style="width:11px;height:11px"></span><span style="width:11px;height:11px"></span></div>
+      <div class="rtile air">1<span class="dot red rd" style="width:6px;height:6px"></span><span class="lab">Feed 1</span></div>
+      <div class="rtile next">2<span class="dot red rd" style="width:6px;height:6px"></span><span class="lab">Feed 2</span></div>
+      <div class="ricon"><i data-i="plus" class="sm"></i></div>
+      <div class="rsep"></div>
+      <div class="ricon sel"><i data-i="program"></i></div>
+      <div class="ricon" style="color:var(--green)"><i data-i="camlink"></i></div>
+      <div class="ricon"><i data-i="recordring"></i><span class="dot red" style="position:absolute;top:7px;right:9px;width:6px;height:6px"></span></div>
+      <div style="margin-top:auto" class="ricon"><i data-i="sidebar"></i></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar" style="left: 80px; right: 8px; padding-left: 4px;">
+      <div class="title"><b>Program</b><small>Live in Zoom · Auto · backup recording 2 feeds</small></div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="stop"></i>Stop</div></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="layers"></i>Effects</div><div class="tb-btn dim"><i data-i="bypass"></i>Bypass</div></div>
+      <div class="tb-group glass"><div class="tb-btn on" title="Multiview"><i data-i="program"></i></div><div class="tb-btn dim"><i data-i="split"></i></div><div class="tb-btn dim"><i data-i="grid"></i></div></div>
+      <div class="tb-prominent red"><i data-i="stop" class="sm"></i><span class="tnum">12:31</span><span style="font-weight:500;opacity:0.8">· 2</span></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="inspector"></i></div></div>
+    </div>
+
+    <div class="content">
+      <div class="mv">
+        <div class="picture" data-scene="mcu">
+          <div class="overlay" style="left:10px; top:10px;"><div class="pill glass"><i data-i="program" class="sm"></i>Program<i data-i="chevud" class="sm"></i></div><span class="badge red" style="height:22px;background:rgba(255,69,58,0.88);color:#fff">ON AIR · Zoom</span></div>
+          <div class="overlay" style="right:10px; top:10px;"><div class="tb-group glass" style="height:30px"><div class="tb-btn" style="height:24px"><i data-i="guides" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="zebra" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="scope" class="sm"></i></div><div class="tb-btn" style="height:24px"><i data-i="detach" class="sm"></i></div></div></div>
+          <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass mono">14:22:31:12</span><span class="pill sm glass">Feed 1 · 8.2 s</span></div>
+          <div class="overlay" style="right:10px; bottom:10px;"><span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 2 · 12:31</span></span></div>
+        </div>
+        <div class="src">
+          <div class="picture tally" data-scene="mcu">
+            <div class="overlay" style="left:8px; top:8px;"><span class="kk">1</span><span class="pill sm glass">Feed 1</span></div>
+            <div class="overlay" style="right:8px; top:8px;"><span class="badge red" style="background:rgba(255,69,58,0.88);color:#fff">ON AIR</span></div>
+            <div class="overlay" style="left:8px; bottom:8px;"><span class="pill sm glass"><span class="dot red"></span>12:31</span></div>
+            <div class="overlay" style="right:8px; bottom:8px; width:60px"><div class="vmeter" style="height:16px; transform:rotate(90deg); transform-origin:center"></div></div>
+          </div>
+          <div class="picture tally-g" data-scene="wide">
+            <div class="overlay" style="left:8px; top:8px;"><span class="kk">2</span><span class="pill sm glass">Feed 2</span></div>
+            <div class="overlay" style="right:8px; top:8px;"><span class="badge green" style="background:rgba(48,209,88,0.85);color:#04220d">NEXT</span></div>
+            <div class="overlay" style="left:8px; bottom:8px;"><span class="pill sm glass"><span class="dot red"></span>12:31</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cutbar">
+        <div style="display:flex; align-items:center; gap:8px">
+          <div class="bigcut air"><span class="kk">1</span>Feed 1</div>
+          <div class="bigcut next"><span class="kk">2</span>Feed 2<span class="c2" style="font-weight:500;font-size:11.5px">queued</span></div>
+          <div class="bigcut c3"><span class="kk">3</span>—</div>
+          <div style="width:0.5px;height:26px;background:var(--sep);margin:0 4px"></div>
+          <span style="display:flex;align-items:center;gap:7px;font-weight:600"><i data-i="auto" class="sm"></i>Auto<div class="switch sm on"></div></span>
+          <span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span>
+          <span style="margin-left:auto" class="c2" style="font-size:11.5px">⌃1 ⌃2 cut · ⌃A auto</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; font-size:11.5px">
+          <span style="width:120px"><b class="tnum">Shot 8.2 s</b><span class="c2"> · Feed 1</span></span>
+          <div style="flex:1; padding-bottom:12px">
+            <div class="shot"><i style="width:27%"></i>
+              <span class="mk" style="left:33.3%"></span><span class="mk" style="left:66.6%"></span><span class="mk" style="left:100%; background:var(--red)"></span>
+              <span class="mkl" style="left:33.3%">min 10 s</span><span class="mkl" style="left:66.6%">soft max 20 s</span><span class="mkl" style="left:96%">max 30 s</span>
+            </div>
+          </div>
+          <span class="c2" style="width:220px; text-align:right">Cut to Feed 2 at the next speech gap after 10 s</span>
+        </div>
+      </div>
+
+      <div class="tlcard">
+        <div style="display:flex; align-items:center; gap:8px; font-size:12px"><b>Director Timeline</b><span class="c2">last 2 min · on air and speech per camera</span><span class="newtag">NEW</span>
+          <span style="margin-left:auto" class="c3" style="font-size:11px">Saved as a sidecar with the recordings</span></div>
+        <div class="tl" style="position:relative">
+          <div class="marks"><span style="left:22%">speech gap</span><span style="left:41%">emphasis · Feed 2</span><span style="left:63%">speech gap</span><span style="left:82%">max shot</span><span style="left:100%; color:#fff">now</span></div>
+          <div class="lane"><span class="ln">Feed 1</span><div class="lt"><i class="air" style="left:0;width:22%"></i><i class="air" style="left:41%;width:22%"></i><i class="air" style="left:82%;width:18%"></i></div></div>
+          <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp1" viewBox="0 0 400 14" preserveAspectRatio="none"></svg></div></div>
+          <div class="lane"><span class="ln">Feed 2</span><div class="lt"><i class="air" style="left:22%;width:19%"></i><i class="air" style="left:63%;width:19%"></i></div></div>
+          <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp2" viewBox="0 0 400 14" preserveAspectRatio="none"></svg></div></div>
+          <div class="vline" style="left:calc(54px + (100% - 54px) * 0.22)"></div>
+          <div class="vline" style="left:calc(54px + (100% - 54px) * 0.41)"></div>
+          <div class="vline" style="left:calc(54px + (100% - 54px) * 0.63)"></div>
+          <div class="vline" style="left:calc(54px + (100% - 54px) * 0.82)"></div>
+          <div class="vline" style="left:calc(100% - 1px); background:#fff"></div>
+        </div>
+        <div style="display:flex; gap:14px; font-size:10.5px" class="c2"><span><span style="display:inline-block;width:10px;height:8px;border-radius:2px;background:rgba(255,69,58,0.75)"></span> on air</span><span><span style="display:inline-block;width:10px;height:8px;border-radius:2px;background:rgba(100,176,255,0.7)"></span> speech activity (director input)</span><span style="margin-left:auto">5 cuts · average shot 21 s · 0 forced</span></div>
+        <div class="form" style="margin-top:2px">
+          <div class="row" style="min-height:28px;font-size:11.5px"><span class="mono c2" style="font-size:11px;width:84px">14:22:23</span><span class="lbl">Cut to <b>Feed 1</b><span class="c2"> · Feed 2 reached max shot 30 s, nearest speech gap</span></span><span class="badge orange">max shot</span></div>
+          <div class="row" style="min-height:28px;font-size:11.5px"><span class="mono c2" style="font-size:11px;width:84px">14:21:58</span><span class="lbl">Cut to <b>Feed 2</b><span class="c2"> · speech gap after 12.4 s on Feed 1</span></span><span class="badge">speech gap</span></div>
+          <div class="row" style="min-height:28px;font-size:11.5px"><span class="mono c2" style="font-size:11px;width:84px">14:21:31</span><span class="lbl">Cut to <b>Feed 1</b><span class="c2"> · emphasis hold on Feed 2 ended</span></span><span class="badge blue">emphasis</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inspector (Program context) -->
+    <div class="inspector glass" style="width: 300px; background: rgba(40,40,44,0.7); bottom: 38px;">
+      <div style="padding: 0 12px">
+        <div class="tabs">
+          <div class="on"><i data-i="program" class="sm"></i>Program</div>
+          <div><i data-i="recordring" class="sm"></i>Record</div>
+          <div><i data-i="info" class="sm"></i>Info</div>
+        </div>
+      </div>
+      <div class="scroll">
+        <div class="form-h">Output</div>
+        <div class="form">
+          <div class="row"><i data-i="camlink" class="cg"></i><span class="lbl">Ultracam · Program<small class="cg">In use by Zoom</small></span></div>
+          <div class="row"><span class="lbl">Output mode<small>Change while stopped</small></span><span class="popup plain" style="opacity:0.6">Program<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        </div>
+        <div class="form-h">Switching <span style="display:flex;gap:6px;align-items:center;font-weight:500">Auto<div class="switch sm on"></div></span></div>
+        <div class="form">
+          <div class="row"><span class="lbl">Strategy</span><span class="popup plain">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+          <div class="row"><span class="lbl">Anchor</span><span class="popup plain">Automatic<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+          <div class="row"><span class="lbl">Emphasis</span><span class="popup plain">Feed 2<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        </div>
+        <div class="form-h">Shot Timing <span class="btn borderless" style="font-size:11.5px">Settings…</span></div>
+        <div class="form">
+          <div class="row"><span class="lbl">Minimum shot</span><span class="val tnum">10 s</span><span class="btn icon" style="width:40px">−  +</span></div>
+          <div class="row"><span class="lbl">Soft maximum</span><span class="val tnum">20 s</span><span class="btn icon" style="width:40px">−  +</span></div>
+          <div class="row"><span class="lbl">Maximum</span><span class="val tnum">30 s</span><span class="btn icon" style="width:40px">−  +</span></div>
+        </div>
+        <div class="form-h">Backup Recording</div>
+        <div class="form">
+          <div class="row"><span class="dot red"></span><span class="lbl">Feed 1<small class="tnum">12:31 · 18.4 GB · 0 dropped</small></span><span class="btn icon"><i data-i="stop" class="sm"></i></span></div>
+          <div class="row"><span class="dot red"></span><span class="lbl">Feed 2<small class="tnum">12:31 · 9.1 GB · 0 dropped</small></span><span class="btn icon"><i data-i="stop" class="sm"></i></span></div>
+        </div>
+        <div class="note">Records both clean sources and the cut timeline, so the edit can be rebuilt or re-cut later.</div>
+      </div>
+    </div>
+
+    <div class="sbar tnum">
+      <div class="seg2 hover cg"><i data-i="camlink" class="sm"></i>Ultracam · Program → Zoom</div>
+      <div class="div"></div>
+      <div class="seg2"><i data-i="program" class="sm"></i>Feed 1 on air · Auto</div>
+      <div class="div"></div>
+      <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 feeds 12:31</span> · 8TB 1 h 35 m left<span class="newtag">NEW</span></div>
+      <div class="sp"></div>
+      <div class="seg2">CPU 52.3% · GPU (video) 33.0% · Memory 1.81 GB</div>
+    </div>
+  </div>
+
+  <!-- ================= Hybrid dropdown: Program + graphical cuts ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="picture" data-scene="mcu" style="height:178px; border-radius:11px;">
+        <div class="overlay" style="left:7px; top:7px;"><div class="pill sm glass"><i data-i="program" class="sm"></i>Ultracam · Program</div></div>
+        <div class="overlay" style="right:7px; top:7px;"><span class="badge red" style="background:rgba(255,69,58,0.85);color:#fff">ON AIR</span></div>
+        <div class="overlay" style="left:7px; right:7px; bottom:7px; justify-content:space-between">
+          <span class="pill sm glass mono" style="font-weight:600">14:22:31:12</span>
+          <span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 2 · 12:31</span></span>
+        </div>
+      </div>
+      <div class="ddcuts">
+        <div class="picture tally" data-scene="mcu"><div class="overlay" style="left:5px; top:5px;"><span class="kk" style="width:18px;height:18px;font-size:10.5px">1</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 1 · on air</span></div></div>
+        <div class="picture tally-g" data-scene="wide"><div class="overlay" style="left:5px; top:5px;"><span class="kk" style="width:18px;height:18px;font-size:10.5px">2</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 2 · next</span></div></div>
+      </div>
+      <div style="font-size:11px; padding:7px 4px 0" class="c2">Click a camera to cut · Auto holds Feed 1 for 1.8 s more</div>
+    </div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Automatic Switching<span class="key">⌃A</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Strategy<span class="sub" style="font-size:12px">Natural Talking Head<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop All Recordings<small class="tnum">2 · 12:31</small><span class="key">⌥⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="msep"></div>
+    <div class="mh">Cameras</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Feed 1<small>On air · REC</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot green" style="box-shadow:none"></span></span>Feed 2<small>Next · REC</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feeds<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="stat">CPU 52% · GPU 33% · 1.81 GB · 8TB 1 h 35 m left</div>
+  </div>
+
+  <div class="callout" style="left: 20px; top: 200px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 650px; top: 140px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 108px; top: 486px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 108px; top: 626px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1326px; top: 150px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The sidebar collapses to a 64 pt <b>rail</b>: one tile per camera (tally ring + REC dot), then Program, Output and Recording. Click the toggle to expand it to V1's session sidebar. Room for 4 cameras.</span></div>
+    <div><span class="n">2</span><span>Multiview: Program (what Zoom sees) large, sources beside it with red/green tally. Click a source, or press ⌃1 / ⌃2, to cut.</span></div>
+    <div><span class="n">3</span><span>Cut bar: numbered cuts, a queued cut, Auto and strategy, plus a shot timer marking min / soft max / max so you can see when the director will cut.</span></div>
+    <div><span class="n">4</span><span><span class="newtag" style="margin:0 4px 0 0">NEW</span>Director timeline: on air and speech activity per camera, with cut reasons. Makes auto-switching readable and matches the sidecar it already writes.</span></div>
+    <div><span class="n">5</span><span>The inspector follows the rail selection. Program shows output, switching, shot timing and backup recording of both clean sources.</span></div>
+    <div><span class="n">6</span><span>Dropdown: Program preview, with live camera thumbnails that act as cut buttons, then compact rows for auto, recording, cameras and app.</span></div>
+  </div>
+</div>
+<script>
+  // Speech activity bars for the timeline (illustrative).
+  function bars(sel, seed, active) {
+    const svg = document.querySelector(sel);
+    let s = seed, out = '';
+    for (let x = 0; x < 400; x += 3) {
+      s = (s * 9301 + 49297) % 233280;
+      const on = active.some(([a, b]) => x / 400 >= a && x / 400 <= b);
+      const h = on ? 3 + (s / 233280) * 11 : (s / 233280) * 2;
+      out += `<rect x="${x}" y="${14 - h}" width="2" height="${h}" fill="rgba(100,176,255,${on ? 0.75 : 0.25})"/>`;
+    }
+    svg.innerHTML = out;
+  }
+  bars('.sp1', 7, [[0, 0.2], [0.43, 0.6], [0.84, 1]]);
+  bars('.sp2', 3, [[0.23, 0.39], [0.38, 0.41], [0.64, 0.8]]);
+</script>
+</body></html>

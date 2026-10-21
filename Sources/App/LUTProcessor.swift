@@ -16,6 +16,20 @@ final class LUTProcessor {
     var outputPoolActive: Bool
   }
 
+  /// Opt-in qualification timestamps. The normal capture path leaves the
+  /// observer nil; diagnostics never retain a frame or command buffer.
+  struct CommandTiming: Sendable {
+    let commitBegin: Double
+    let commitReturn: Double
+    let gpuStart: Double
+    let gpuEnd: Double
+    let waitReturn: Double
+    let meterReturn: Double
+  }
+
+  // Configure on this processor's owning serial queue before processing.
+  var commandTimingObserver: (@Sendable (CommandTiming) -> Void)?
+
   private(set) var packedInputDiagnostics = PackedInputDiagnostics()
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
@@ -315,8 +329,20 @@ final class LUTProcessor {
       $0.setTexture(final, index: 0); $0.setTexture(y, index: 1); $0.setTexture(uv, index: 2)
       $0.setBytes(&parameters, length: MemoryLayout<Parameters>.size, index: 1)
     }
+    let timingObserver = commandTimingObserver
+    let commitBegin = timingObserver == nil ? 0 : ProcessInfo.processInfo.systemUptime
     command.commit()
+    let commitReturn = timingObserver == nil ? 0 : ProcessInfo.processInfo.systemUptime
     command.waitUntilCompleted()
+    let waitReturn = timingObserver == nil ? 0 : ProcessInfo.processInfo.systemUptime
+    if command.status == .completed {
+      AppGPUActivity.shared.record(start: command.gpuStartTime, end: command.gpuEndTime)
+    }
+    if let timingObserver {
+      timingObserver(CommandTiming(commitBegin: commitBegin, commitReturn: commitReturn,
+        gpuStart: command.gpuStartTime, gpuEnd: command.gpuEndTime, waitReturn: waitReturn,
+        meterReturn: ProcessInfo.processInfo.systemUptime))
+    }
     withExtendedLifetime(wrappers) {}
     guard command.status == .completed else { throw VideoError.message(command.error?.localizedDescription ?? "GPU processing failed.") }
     // Pool buffers can carry attachments from their previous use. Start from a

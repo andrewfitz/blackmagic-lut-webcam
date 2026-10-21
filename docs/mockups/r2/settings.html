@@ -1,0 +1,190 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam mockup · Round 2 · Settings</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css"><script src="../kit.js"></script>
+<style>
+  .sw { position: absolute; top: 78px; display: flex; flex-direction: column; }
+  .sw-title { height: 38px; display: flex; align-items: center; padding: 0 16px; position: relative; flex: none; }
+  .sw-title b { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; pointer-events: none; }
+  .panes { display: flex; justify-content: center; gap: 2px; padding: 0 12px 10px; flex: none; border-bottom: 0.5px solid var(--sep); }
+  .pane { width: 74px; height: 50px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; font-size: 11px; color: var(--label2); }
+  .pane svg.i { width: 20px; height: 20px; }
+  .pane.on { background: var(--fill3); color: var(--label); }
+  .pane.on svg.i { color: var(--blue); }
+  .narrow .pane { width: 62px; font-size: 10px; }
+  .sbody { flex: 1; overflow: hidden; padding: 4px 22px 18px; }
+  .sbody .form-h { padding: 14px 6px 6px; font-size: 12px; color: var(--label); }
+  .sbody .row { min-height: 31px; padding: 5px 11px; }
+  .foot { font-size: 11px; color: var(--label2); padding: 6px 8px 0; line-height: 1.4; }
+  .sl { display: flex; align-items: center; gap: 12px; flex: 1; }
+  .sl .lbl { flex: none; width: 150px; }
+  .sl .v { width: 48px; text-align: right; color: var(--label2); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .sl .slider { margin-right: 4px; }
+  .path { font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .disc { display: flex; align-items: center; gap: 6px; padding: 14px 6px 6px; font-size: 12px; font-weight: 600; }
+  .dimrow { opacity: 0.42; }
+  .shotbox { padding: 12px 14px 26px; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra"><i data-i="videofill"></i></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 2 · Settings window (⌘,)</div>
+
+  <!-- ================= Window 1: Recording ================= -->
+  <div class="window sw" style="left: 30px; width: 610px; height: 904px;">
+    <div class="sw-title"><div class="traffic"><span></span><span></span><span></span></div><b>Recording</b></div>
+    <div class="panes">
+      <div class="pane"><i data-i="gear"></i>General</div>
+      <div class="pane on"><i data-i="recordring"></i>Recording</div>
+      <div class="pane"><i data-i="video"></i>Camera</div>
+      <div class="pane"><i data-i="program"></i>Switcher</div>
+      <div class="pane"><i data-i="scope"></i>Monitor</div>
+      <div class="pane"><i data-i="sliders"></i>Advanced</div>
+    </div>
+    <div class="sbody">
+      <div class="form-h">Destination</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Default folder</span><i data-i="folder" class="sm c2"></i><span class="path">/Volumes/8TB/Takes</span><span class="btn">Change…</span><span class="btn icon"><i data-i="search" class="sm"></i></span></div>
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:6px; padding:9px 11px">
+          <div style="display:flex; align-items:center; gap:6px"><span>8TB</span><span class="newtag">NEW</span><span class="c2 tnum" style="margin-left:auto; font-size:12px">2.1 TB free · ~3 h 10 m per feed at ProRes 422</span></div>
+          <div class="gauge"><i style="width:74%"></i></div>
+        </div>
+      </div>
+      <div class="foot">Folder changes apply to the next take. Read/write access is remembered between launches.</div>
+
+      <div class="form-h">Per-camera folders</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Feed 1</span><span class="path">Uses default</span><span class="btn">Choose…</span></div>
+        <div class="row"><span class="lbl">Feed 2</span><i data-i="folder" class="sm c2"></i><span class="path">/Volumes/Archive/B-cam</span><span class="btn">Change…</span><span class="btn borderless">Use Default</span></div>
+      </div>
+
+      <div class="form-h">Format</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Codec</span><span class="popup">ProRes 422 10-bit<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Timecode</span><span class="popup">PC time<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">File names</span><span class="mono c2">Feed 1/Feed 1_2026-10-20_09-41-03_001.mov</span></div>
+      </div>
+      <div class="foot">Records the clean source: 2160p 10-bit 4:2:2 with embedded audio. Effects and the LUT are not baked in. Also available: HEVC Main10 4:2:2.<br>PC time writes the computer's clock into the file, aligned to the first frame.</div>
+
+      <div class="form-h"><span>Automation <span class="newtag">NEW</span></span></div>
+      <div class="form">
+        <div class="row"><span class="lbl">Start backup recording when a camera app opens Ultracam</span><div class="switch on"></div></div>
+        <div class="row"><span class="lbl">Stop recording when the last camera app closes</span><div class="switch on"></div></div>
+        <div class="row"><span class="lbl">Warn when recording time is low</span><span class="popup plain">Less than 30 min<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+
+      <div class="form-h">Crash recovery</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Fragmented QuickTime movies<small>First fragment after 1 s, then every 10 s</small></span><span class="badge green">Always on</span></div>
+      </div>
+      <div class="foot">Interrupted takes can be recovered from the Recording tab. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding.<br>
+        Auto-switcher sessions also write a timestamped JSON timeline sidecar to the recording folder.</div>
+    </div>
+  </div>
+
+  <!-- ================= Window 2: Switcher ================= -->
+  <div class="window sw" style="left: 656px; width: 600px; height: 904px;">
+    <div class="sw-title"><div class="traffic"><span></span><span></span><span></span></div><b>Switcher</b></div>
+    <div class="panes">
+      <div class="pane"><i data-i="gear"></i>General</div>
+      <div class="pane"><i data-i="recordring"></i>Recording</div>
+      <div class="pane"><i data-i="video"></i>Camera</div>
+      <div class="pane on"><i data-i="program"></i>Switcher</div>
+      <div class="pane"><i data-i="scope"></i>Monitor</div>
+      <div class="pane"><i data-i="sliders"></i>Advanced</div>
+    </div>
+    <div class="sbody">
+      <div class="form-h">Strategy</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Automatic strategy</span><span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row dimrow"><div class="sl"><span class="lbl">Fixed interval</span><div class="slider"><i style="width:30%"></i><b style="left:30%"></b></div><span class="v">8.0 s</span></div></div>
+        <div class="row"><span class="lbl">Director mode</span><span class="popup plain">Transcript assisted<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+      <div class="foot">Also: Manual, Fixed interval, Dynamic analysis (later). Low latency mode cuts on audio cues alone, without waiting for the transcript.</div>
+
+      <div class="form-h">Shot timing</div>
+      <div class="form">
+        <div class="shotbox">
+          <div class="shot"><i style="width:40%"></i>
+            <span class="mk" style="left:28.6%"></span><span class="mk" style="left:57.1%"></span><span class="mk" style="left:85.7%; background:var(--red)"></span>
+            <span class="mkl" style="left:28.6%">Min 10 s</span><span class="mkl" style="left:57.1%">Soft max 20 s</span><span class="mkl" style="left:85.7%">Max 30 s · +2 s grace</span>
+            <span class="mkl" style="left:40%; top:-17px; color:var(--label2)">14 s shot</span>
+          </div>
+        </div>
+        <div class="row"><div class="sl"><span class="lbl">Minimum shot</span><div class="slider"><i style="width:28%"></i><b style="left:28%"></b></div><span class="v">10 s</span></div></div>
+        <div class="row"><div class="sl"><span class="lbl">Soft maximum</span><div class="slider"><i style="width:55%"></i><b style="left:55%"></b></div><span class="v">20 s</span></div></div>
+        <div class="row"><div class="sl"><span class="lbl">Maximum shot</span><div class="slider"><i style="width:82%"></i><b style="left:82%"></b></div><span class="v">30 s</span></div></div>
+        <div class="row"><div class="sl"><span class="lbl">Cooldown</span><div class="slider"><i style="width:15%"></i><b style="left:15%"></b></div><span class="v">1.5 s</span></div></div>
+        <div class="row"><div class="sl"><span class="lbl">Emphasis hold</span><div class="slider"><i style="width:33%"></i><b style="left:33%"></b></div><span class="v">5 s</span></div></div>
+        <div class="row"><div class="sl"><span class="lbl">Forced-cut grace</span><div class="slider"><i style="width:20%"></i><b style="left:20%"></b></div><span class="v">2 s</span></div></div>
+      </div>
+
+      <div class="disc"><i data-i="chevd" class="sm c2"></i>Advanced cut decisions</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Cut threshold</span><span class="val">0.68</span></div>
+        <div class="row"><span class="lbl">Hysteresis margin</span><span class="val">0.12</span></div>
+        <div class="row"><span class="lbl">Transcript confidence</span><span class="val">0.72</span></div>
+        <div class="row"><span class="lbl">Pause boundary</span><span class="val">0.22 s</span></div>
+        <div class="row"><span class="lbl">Boundary window</span><span class="val">0.24 s</span></div>
+        <div class="row"><span class="lbl">Candidate dwell</span><span class="val">0.30 s</span></div>
+        <div class="row"><span class="lbl">Forced boundary lookback</span><span class="val">1.0 s</span></div>
+        <div class="row"><span class="lbl">Transcript output delay</span><span class="val">0.35 s</span></div>
+      </div>
+      <div style="display:flex; align-items:flex-start; gap:12px; padding-top:8px">
+        <div class="foot" style="flex:1; padding-top:2px">Decisions apply at Program frame boundaries. A timeline sidecar is written to the recording folder.</div>
+        <span class="btn">Restore Defaults</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Window 3: Camera (narrow) ================= -->
+  <div class="window sw narrow" style="left: 1272px; width: 460px; height: 590px;">
+    <div class="sw-title"><div class="traffic"><span></span><span></span><span></span></div><b>Camera</b></div>
+    <div class="panes" style="padding-left:6px; padding-right:6px">
+      <div class="pane"><i data-i="gear"></i>General</div>
+      <div class="pane"><i data-i="recordring"></i>Recording</div>
+      <div class="pane on"><i data-i="video"></i>Camera</div>
+      <div class="pane"><i data-i="program"></i>Switcher</div>
+      <div class="pane"><i data-i="scope"></i>Monitor</div>
+      <div class="pane"><i data-i="sliders"></i>Advanced</div>
+    </div>
+    <div class="sbody" style="padding: 4px 16px 16px">
+      <div class="form-h">Camera extension</div>
+      <div class="form">
+        <div class="row"><i data-i="check" class="sm cg"></i><span class="lbl">Ultracam camera installed<small>Enabled in System Settings</small></span></div>
+        <div class="row"><span class="btn" style="opacity:0.4">Install Camera</span><span class="btn">Remove Camera</span></div>
+      </div>
+      <div class="foot">Changes go through System Settings › Login Items &amp; Extensions. Unavailable while a feed is running.</div>
+
+      <div class="form-h">Output</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Mode</span><div class="seg"><div class="on">Separate cameras</div><div>Program</div></div></div>
+      </div>
+      <div class="foot">Change while stopped.</div>
+
+      <div class="form-h">Published cameras</div>
+      <div class="form">
+        <div class="row"><i data-i="camlink" class="sm cg"></i><span class="lbl">Ultracam · Feed 1</span><span class="val cg" style="font-size:12px">In use by Zoom</span></div>
+        <div class="row"><i data-i="video" class="sm c2"></i><span class="lbl">Ultracam · Feed 2</span><span class="val" style="font-size:12px">Not in use</span></div>
+        <div class="row dimrow"><i data-i="program" class="sm c2"></i><span class="lbl">Ultracam · Program</span><span class="val" style="font-size:12px">Program mode only</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Legend (right column) ================= -->
+  <div class="legend" style="left: 1272px; bottom: auto; top: 690px; width: 460px; flex-direction: column; gap: 12px;">
+    <div><span class="n">1</span>Recording defaults (folders, codec, timecode, file names) move out of the main window. You set them once; the Record tab keeps the per-take controls.</div>
+    <div><span class="n">2</span>New: disk time remaining, and backup recording that starts and stops with the camera app, for meetings.</div>
+    <div><span class="n">3</span>All of the auto-switcher's tuning settings get a home. Only anchor and emphasis stay in the main window's Program panel.</div>
+    <div><span class="n">4</span>Camera install/remove and output mode are setup, not everyday controls. Published camera names show what Zoom will list.</div>
+    <div><span class="n">5</span>A standard Settings scene (⌘,) with grouped forms. "Hide from Dock" moves here (General) from the app menu and the tray footer.</div>
+  </div>
+</div>
+</body></html>

@@ -2,9 +2,20 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+  weak var model: AppModel?
   func applicationDidFinishLaunching(_ notification: Notification) {
     let hideFromDock = AppSettingsStore().hideFromDock
     NSApplication.shared.setActivationPolicy(hideFromDock ? .accessory : .regular)
+  }
+
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let model, model.recordingModel.hasActiveRecordings else { return .terminateNow }
+    model.saveSettings()
+    model.stop()
+    model.recordingModel.stopAll {
+      DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
+    }
+    return .terminateLater
   }
 }
 
@@ -18,6 +29,7 @@ struct UltracamApp: App {
     Window("Ultracam", id: "main") {
       ContentView(model: model)
         .frame(minWidth: 850, minHeight: 590)
+        .onAppear { appDelegate.model = model }
     }
     .defaultSize(width: 1080, height: 700)
     .commands {

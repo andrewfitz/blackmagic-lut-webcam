@@ -1,0 +1,122 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Single camera meeting</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .single { display: grid; grid-template-columns: minmax(0, 1fr) 252px; gap: 12px; height: 100%; }
+  .side3 { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .side3 .note3 { border-radius: 12px; background: var(--fill); padding: 9px 11px; font-size: 11.5px; color: var(--label2); line-height: 1.4; }
+  .path { flex: 1; border-radius: 14px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: 0; }
+  .path .chain { display: flex; align-items: center; gap: 6px; font-size: 11.5px; white-space: nowrap; min-width: 0; overflow: hidden; }
+  .path .node { height: 24px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; background: var(--fill2); }
+  .path .node.fx { background: rgba(10,132,255,0.22); color: var(--label); }
+  .path .node.fx::before { content: "✓"; font-size: 10px; color: #64b0ff; }
+  .path .node.out { background: rgba(48,209,88,0.16); color: var(--label); }
+  .path .arr { color: var(--label3); font-size: 11px; }
+  html.light .path .node.fx::before { color: #0062cc; }
+  html.light .newtag { color: #7a2fb0; background: rgba(191,90,242,0.14); box-shadow: inset 0 0 0 0.5px rgba(122,47,176,0.5); }
+  html.light .meter .bar b { background: rgba(0,0,0,0.7); }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · One camera: everyday meeting, automatic start + backup recording</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="single">
+        <div class="col3" id="c1"></div>
+        <div class="side3">
+          <div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Output · 15 Hz</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="luma" data-src="mcu"></canvas></div>
+          <div class="note3">One scope per camera. Switch between Luma and RGB Parade from the Scopes tool on the picture.</div>
+        </div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- ================= Hybrid dropdown (open) ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="picture" data-scene="mcu" style="height:184px; border-radius:11px;">
+        <div class="overlay" style="left:7px; top:7px;"><div class="pill sm glass">Ultracam · Camera 1</div></div>
+        <div class="overlay" style="right:7px; top:7px;"><span class="role air" style="height:20px;font-size:10.5px">ON AIR</span></div>
+        <div class="overlay" style="left:7px; right:7px; bottom:7px; justify-content:space-between">
+          <span class="pill sm glass mono" style="font-weight:600">14:22:31:12</span>
+          <span class="pill sm glass recpill"><span class="dot red"></span><span class="tnum">REC 12:31</span></span>
+          <div class="pill sm glass" style="width:84px; gap:3px; flex-direction:column; justify-content:center; align-items:stretch; padding:0 7px">
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:64%"></i></div></div>
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:60%"></i></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2">
+        <span><span class="cg">●</span> In use · effects active</span><span class="mono" style="font-size:10.5px">1080p 29.97</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Camera<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="video" class="sm"></i></span>Camera 1<span class="sub" style="font-size:12px">Effects, LUT, Input<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mh">Recording · 12:31</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop Recording<span class="key">⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Start with Camera Apps</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="record" class="sm"></i></span>Backup Recording<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam<span class="key">⌘0</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 31% · GPU 18% · 1.08 GB · 8TB 1 h 52 m left</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 272px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 600px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 272px; top: 822px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1076px; top: 150px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>With one camera the sidebar is the session: what's published and whether it's in use, recording and time left on the drive, recent takes with Show in Finder, Recover, and per-camera automation.</span></div>
+    <div><span class="n">2</span><span>The picture is selected (blue ring) and ON AIR because its camera has a client. The app can't tell which app, so it never names one. At rest only the name, tally, tool chips and REC show.</span></div>
+    <div><span class="n">3</span><span>The same channel strip as every layout: one record control plus Pause, folder and time left, the camera's output with effect chips and a labelled Processing switch, and audio.</span></div>
+    <div><span class="n">4</span><span>With one camera there's room for the signal path: source, each effect in order, and what the camera publishes, with delivered rate, processing time and drops.</span></div>
+    <div><span class="n">5</span><span>One scope per camera, because the camera's monitor settings hold a single scope mode. Turn scopes off from the picture and the picture grows.</span></div>
+    <div><span class="n">6</span><span>Menu bar dropdown: what Zoom receives, then 12 rows. Camera settings sit in one submenu, there's a single record row, and automation is per camera (Backup Recording is <span class="newtag" style="margin:0">NEW</span>).</span></div>
+  </div>
+</div>
+<script>
+  const c1 = { ...CAMS.c1, tools: [0, 0, 0, 0, 1], fxview: '' };
+  mount('sb', sidebar({ mode: 'separate', cams: ['c1'], inUse: ['c1'] }).split('Camera 1, Camera 2').join('Camera 1'));
+  mount('tb', toolbar({ title: 'Camera 1', subtitle: 'Ultracam · Camera 1 in use · recording', mode: 'separate', layout: 'single', rec: 'stop', recCount: 1 })
+    .replace('title="Stop All Cameras">', 'title="Stop Camera (⌘↩)">').replace('Stop Cameras</div>', 'Stop Camera</div>'));
+  mount('c1', tile(c1, { mode: 'separate', inUse: true, selected: true }) + strip(c1, { mode: 'separate', inUse: true, selected: true }) + `
+    <div class="path">
+      <div class="chain"><span class="k2">Signal path</span><span class="c2" style="font-size:11px">→ 1080p 29.97 · 4:2:0 to Ultracam · Camera 1</span>
+        <span style="margin-left:auto;font-size:11px" class="c2 tnum">Delivered 29.97 fps · processing 4.1 ms · <span class="cg">0 dropped</span></span></div>
+      <div class="chain">
+        <span class="node mono" style="font-size:10.5px">Input 2160p 59.94</span><span class="arr">→</span>
+        <span class="node fx">1 · LUT</span><span class="arr">→</span>
+        <span class="node fx">2 · 1080p</span><span class="arr">→</span>
+        <span class="node fx">3 · 4:2:0 8-bit</span><span class="arr">→</span>
+        <span class="node fx">4 · 29.97</span><span class="arr">→</span>
+        <span class="node out"><i data-i="camlink" class="sm" style="color:var(--green)"></i>Camera 1 out</span>
+      </div>
+    </div>`);
+  mount('st', statusbar({ mode: 'separate', cams: ['c1'], inUse: ['c1'] }));
+</script>
+</body></html>

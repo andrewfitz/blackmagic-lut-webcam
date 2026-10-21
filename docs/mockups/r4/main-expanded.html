@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Main window · strips expanded</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Main window: two-camera Program meeting, both recording, strips expanded, Camera 1 selected</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 560px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 520px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 760px; top: 70px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1168px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 676px; top: 914px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The session sidebar no longer repeats the cameras (the strips show them). It holds output, Program summary and shot timer, drives with time left, recent takes with Show in Finder, interrupted takes, and per-camera automation.</span></div>
+    <div><span class="n">2</span><span>At rest a picture shows only its name, tally and REC. Active tools show as small chips; hover or keyboard focus reveals the tool bar. A click <b>selects</b> the camera (blue ring) and never cuts. Red means ON AIR only.</span></div>
+    <div><span class="n">3</span><span>One record control per take, then Pause. Stop Camera sits in the header and asks before ending a recording. Effect chips show their state with a checkmark; the Processing switch has a label.</span></div>
+    <div><span class="n">4</span><span>Cuts live in the toolbar (⌃1/⌃2) and on each strip, with one Auto control (⌃⌥A). NEXT appears only while a cut is pending.</span></div>
+    <div><span class="n">5</span><span>Collapse strips (⌥⌘S), Stop Cameras, a record control that always has a verb ("Stop All (2)"), and the on-demand inspector (⌥⌘I).</span></div>
+    <div><span class="n">6</span><span>Fixed status bar order: output (no app names, the app only counts clients), Program, recording with time left per drive, audio, resources.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Meeting', subtitle: 'Ultracam · Program in use · 2 recording', layout: 'split' }));
+  mount('c1', tile(CAMS.c1, { role: 'air', selected: true, hover: true }) + strip(CAMS.c1, { role: 'air', selected: true }) +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="luma" data-src="mcu"></canvas></div>');
+  mount('c2', tile(CAMS.c2, {}) + strip(CAMS.c2, {}) +
+    '<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>RGB Parade</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="parade" data-src="wide"></canvas></div>');
+  mount('st', statusbar({ mode: 'program' }));
+</script>
+</body></html>

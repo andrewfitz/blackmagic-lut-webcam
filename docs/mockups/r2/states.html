@@ -1,0 +1,420 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam mockup · Round 2 · States</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="r2.css"><script src="../kit.js"></script>
+<style>
+  .desktop.board { height: auto; background: #101114; padding: 92px 24px 40px; }
+  .tag { top: 30px; left: 24px; }
+  .sub { position: absolute; top: 36px; left: 420px; font-size: 12px; color: var(--label2); }
+  .sgrid { display: grid; grid-template-columns: repeat(4, 410px); gap: 24px; align-items: start; }
+  .scard { display: flex; flex-direction: column; gap: 9px; }
+  .scard.w2 { grid-column: span 2; }
+  .scard.w4 { grid-column: span 4; }
+  .crop { background: var(--window); border-radius: 14px; padding: 12px; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.1), 0 10px 30px rgba(0,0,0,0.35); position: relative; overflow: hidden; }
+  .cap { font-size: 11.5px; color: var(--label2); line-height: 1.4; padding: 0 4px; }
+  .cap b { color: var(--label); font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .num { width: 18px; height: 18px; border-radius: 9px; background: rgba(255,255,255,0.14); color: var(--label); font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .ph { height: 200px; border-radius: 10px; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 0 30px; }
+  .ph .big { color: rgba(255,255,255,0.4); }
+  .ph b { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.85); }
+  .ph small { font-size: 11.5px; color: rgba(255,255,255,0.45); line-height: 1.35; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; flex: none;
+    background: conic-gradient(from 0deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.85) 300deg, rgba(255,255,255,0) 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
+  .prog { height: 5px; border-radius: 3px; background: var(--fill3); overflow: hidden; }
+  .prog i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+  .strip { display: flex; gap: 0; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(100deg, #1b2347 0%, #3b2b55 45%, #7a3f45 80%, #b8643c 100%); }
+  .strip > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px; position: relative; }
+  .strip > div + div::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 0.5px; background: rgba(255,255,255,0.18); }
+  .strip .mbicon { height: 24px; min-width: 34px; display: flex; align-items: center; justify-content: center; color: #fff; position: relative; border-radius: 7px; }
+  .strip .mbicon .bdg { position: absolute; right: 3px; top: 2px; width: 7px; height: 7px; border-radius: 4px; box-shadow: 0 0 0 1.5px rgba(40,30,70,0.9); }
+  .strip small { font-size: 11px; color: rgba(255,255,255,0.9); text-align: center; line-height: 1.3; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  .strip small i { font-style: normal; color: rgba(255,255,255,0.6); display: block; font-size: 10px; }
+  .wf { background: #0c0c0e; border-radius: 10px; position: relative; height: 170px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.12); overflow: hidden; }
+  .wf .tb { position: absolute; left: 0; right: 0; top: 0; height: 18px; display: flex; align-items: center; gap: 4px; padding: 0 8px; }
+  .wf .tb span { width: 6px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.25); }
+  .wf .bx { position: absolute; background: #2a2a2e; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.14); }
+  .wf .bx.pic { background: linear-gradient(135deg, #5a4a3e, #2e2a36); }
+  .wf .gl { position: absolute; border-radius: 6px; background: rgba(255,255,255,0.14); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.2); }
+  .wfcap { font-size: 11.5px; color: var(--label); font-weight: 600; margin-top: 7px; }
+  .wfcap small { display: block; color: var(--label2); font-weight: 400; font-size: 11px; }
+  .sheetwrap { height: 236px; border-radius: 10px; position: relative; overflow: hidden; background: #000; }
+  .sheetwrap .picture { position: absolute; inset: 0; opacity: 0.35; }
+  .sheet { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: 300px; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 9px; }
+  .appicon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(160deg, #3a3a40, #121214); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.3), 0 2px 6px rgba(0,0,0,0.5); color: #fff; }
+  .dd.inline { position: relative; width: auto; }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; font-size: 12px; color: var(--label2); line-height: 1.4; }
+  .notes b { color: var(--label); font-weight: 600; }
+</style></head>
+<body>
+<div class="desktop board">
+  <div class="tag">Round 2 · States &amp; edge cases (A foundation)</div>
+  <div class="sub">Each card crops one component in a non-happy state. <span class="newtag">NEW</span> marks proposals the current app doesn't have.</div>
+
+  <div class="sgrid">
+
+    <!-- 1 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="form-h" style="padding-top:0">Output · Virtual camera</div>
+        <div class="banner info">
+          <span class="bi"><i data-i="camlink"></i></span>
+          <div><b>Install the Ultracam camera to use it in Zoom</b><small>macOS asks you to approve it in System Settings.</small></div>
+          <div class="bact"><span class="btn blue">Install Camera</span></div>
+        </div>
+        <div class="banner" style="margin-top:8px">
+          <span class="bi c3"><i data-i="info"></i></span>
+          <div><b class="c2">Camera output needs a signed build</b><small>Preview and recording still work.</small></div>
+          <div class="bact"><span class="btn" style="opacity:0.4">Install Camera</span></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">1</span>Camera not installed / unsigned build</b>Signed builds offer Install in the Output section. Unsigned builds explain why and keep Install disabled. Capture, preview and recording stay available.</div>
+    </div>
+
+    <!-- 2 -->
+    <div class="scard">
+      <div class="crop">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+          <span class="dot"></span><b style="font-size:12.5px">Automatic · idle</b>
+          <span class="badge" style="margin-left:auto"><i data-i="auto" class="sm"></i>Start when camera is in use</span>
+        </div>
+        <div class="ph" style="height:180px">
+          <i data-i="video" class="big" style="width:28px;height:28px"></i>
+          <b>Waiting for a camera app</b>
+          <small>Ultracam starts when Zoom opens the camera, and stops when the last app closes it.</small>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">2</span>Automatic mode waiting</b>There's no Start button in automatic mode. Nothing captures and no GPU work is done until a camera client or a visible preview needs the feed.</div>
+    </div>
+
+    <!-- 3 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="banner err">
+          <span class="bi"><i data-i="info"></i></span>
+          <div><b>Couldn't start Feed 1</b><small>UltraStudio Mini Recorder 12G is in use by another app.</small></div>
+          <div class="bact"><span class="btn">Retry</span></div>
+        </div>
+        <div class="form" style="margin-top:10px">
+          <div class="row"><span class="lbl">Start when camera is in use<small>One attempt per camera session, no background retry loop</small></span><div class="switch on"></div></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">3</span>Automatic start failed</b>A failed start is tried once per camera session. Retry is explicit. Turning automatic mode off brings back manual Start/Stop.</div>
+    </div>
+
+    <!-- 4 -->
+    <div class="scard">
+      <div class="crop" style="padding:0">
+        <div class="ph" style="height:232px;border-radius:14px;position:relative">
+          <div class="overlay" style="left:10px;top:10px"><div class="pill sm glass">Feed 1<i data-i="chevud" class="sm"></i></div><div class="pill sm glass c2"><span class="dot"></span>No signal</div></div>
+          <i data-i="video" class="big" style="width:28px;height:28px"></i>
+          <b>No HDMI signal</b>
+          <small>Check the FX3 HDMI output: 4K 10-bit 4:2:2, RAW off, display LUT off.</small>
+          <span class="btn" style="margin-top:4px">Input settings…</span>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">4</span>No HDMI signal</b>Detection stays armed. The virtual camera sends black 0.5 s after the last frame. The tile never shows a stale picture as if it were live.</div>
+    </div>
+
+    <!-- 5 -->
+    <div class="scard">
+      <div class="crop" style="padding:0">
+        <div class="ph" style="height:232px;border-radius:14px;position:relative">
+          <div class="overlay" style="left:10px;top:10px"><div class="pill sm glass">Feed 2<i data-i="chevud" class="sm"></i></div><div class="pill sm glass co"><span class="dot orange"></span>Unsupported</div></div>
+          <i data-i="info" class="big co" style="width:28px;height:28px"></i>
+          <b>1920×1080i 59.94 isn't supported</b>
+          <small>Waiting for 2160p 29.97 or 59.94. Change the camera's HDMI output resolution.</small>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">5</span>Unsupported HDMI mode</b>The actual detected mode is reported, and detection keeps waiting for a supported signal. Recording and output stay unavailable for this feed.</div>
+    </div>
+
+    <!-- 6 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="form-h" style="padding-top:0">LUT</div>
+        <div class="form">
+          <div class="row"><i data-i="cube" class="cr"></i><span class="lbl">FX3_SLog3_to_709.cube<small class="cr">Saved LUT couldn't be restored: file moved or drive disconnected</small></span><span class="btn">Locate…</span></div>
+        </div>
+        <div class="form" style="margin-top:8px">
+          <div class="row"><div class="check off-dim"></div><span class="lbl c3">1 · LUT<small>Load a .cube to enable</small></span></div>
+          <div class="row"><div class="check on"></div><span class="lbl">2 · Downscale<small>1080p · Lanczos-3</small></span></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">6</span>LUT error</b>The saved choice is kept so it can be recovered. Capture keeps working without it. The LUT effect is disabled, while the other effects still apply.</div>
+    </div>
+
+    <!-- 7 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="chan" style="background:var(--fill)">
+          <div class="crow"><div class="recbtn dis"></div><div><b style="font-size:13px">Feed 1</b><div class="c2" style="font-size:11.5px">Ready · 2160p 59.94</div></div></div>
+          <div class="csep"></div>
+          <div class="banner warn" style="padding:8px 10px">
+            <span class="bi"><i data-i="folder"></i></span>
+            <div><b>Choose a folder to record Feed 1</b><small>Or set a default folder in Settings → Recording.</small></div>
+            <div class="bact"><span class="btn">Choose…</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">7</span>Record without a folder</b>Record is disabled until this camera or the default has a folder. Folder changes apply to the next take.</div>
+    </div>
+
+    <!-- 8 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="chan">
+          <div class="crow"><div class="recbtn dis on"></div><div style="flex:1"><b style="font-size:13px">Feed 1</b><div class="c2" style="font-size:11.5px;display:flex;gap:6px;align-items:center"><span class="spin" style="width:11px;height:11px"></span>Finishing… writing final fragment</div></div><span class="mono c2">38:12 · 56.1 GB</span></div>
+          <div class="csep"></div>
+          <div class="crow"><span class="tb-prominent neutral" style="height:30px;opacity:0.4"><i data-i="record" class="sm"></i>Record All</span><span class="c3" style="font-size:11.5px">Disabled while takes finish</span></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">8</span>Finishing a take</b>Stop drains the encoder and finalizes the movie in the background. Record actions stay disabled until it's done, so a take can't be started twice.</div>
+    </div>
+
+    <!-- 9 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="banner warn">
+          <span class="bi"><i data-i="refresh"></i></span>
+          <div><b>2 interrupted takes on 8TB</b><small>Recovery copies complete fragments into a separate _Recovered.mov. The original is kept.</small></div>
+        </div>
+        <div class="form" style="margin-top:8px">
+          <div class="row"><span class="lbl mono" style="font-size:11px">Feed 1_2026-10-19_21-13-55_003.mov<small>~41 min · interrupted</small></span><span class="btn">Recover</span></div>
+          <div class="row"><span class="lbl mono" style="font-size:11px">Feed 2_2026-10-19_21-13-55_003.mov<small class="cg">Recovered · 40:52</small></span><span class="btn">Show in Finder</span></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">9</span>Interrupted takes found</b>Shown at launch for saved folders, and when a folder is chosen. One recovery runs at a time. A recovered take isn't offered again.</div>
+    </div>
+
+    <!-- 10 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="form">
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;padding:10px 11px">
+            <div style="display:flex;align-items:center;gap:6px"><i data-i="folder" class="co"></i><b style="font-weight:600">8TB</b><span class="newtag">NEW</span><span class="co tnum" style="margin-left:auto;font-size:12px">12 min left at ProRes 422</span></div>
+            <div class="gauge"><i style="width:97%;background:var(--orange)"></i></div>
+          </div>
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;padding:10px 11px">
+            <div style="display:flex;align-items:center;gap:6px"><i data-i="folder" class="cr"></i><b style="font-weight:600">8TB</b><span class="cr tnum" style="margin-left:auto;font-size:12px">2 min left: recording will stop soon</span></div>
+            <div class="gauge"><i style="width:99.4%;background:var(--red)"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">10</span>Disk running low <span class="newtag">NEW</span></b>Free space becomes time remaining at the current codec and number of takes. It warns in orange at 15 min and in red at 3 min, and the status bar shows the same warning.</div>
+    </div>
+
+    <!-- 11 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="chan">
+          <div class="crow"><div class="recbtn sm on"></div><b>Feed 2</b><span class="c2 mono">12:31</span><span class="badge orange" style="margin-left:auto">14 dropped frames</span></div>
+          <div class="csep"></div>
+          <div class="crow c2" style="font-size:11.5px"><i data-i="chevd" class="sm"></i>Encoder details</div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-size:11.5px;padding-left:20px" class="tnum">
+            <span class="c2">Encoder</span><span>Hardware accelerated</span>
+            <span class="c2">Encode latency</span><span class="mono">4.1 ms · peak 9.8 ms</span>
+            <span class="c2">Writer queue</span><span class="mono">2/64 samples</span>
+            <span class="c2">Audio packets dropped</span><span class="mono">0</span>
+            <span class="c2">Encoder / writer errors</span><span class="mono">0 / 0</span>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">11</span>Dropped frames while recording</b>The drop count turns orange as soon as it's above zero. Encoder details expand in place. Paused time never counts as dropped frames.</div>
+    </div>
+
+    <!-- 12 -->
+    <div class="scard">
+      <div class="crop" style="padding:0">
+        <div class="ph" style="height:232px;border-radius:14px;position:relative">
+          <div class="overlay" style="left:10px;top:10px"><div class="pill sm glass">Feed 1<i data-i="chevud" class="sm"></i></div><div class="pill sm glass cg"><span class="dot green"></span>Output live</div></div>
+          <i data-i="eye" class="big" style="width:28px;height:28px"></i>
+          <b>Preview hidden</b>
+          <small>Camera output continues with your selected effects. Hidden views do no GPU work.</small>
+          <span class="btn" style="margin-top:4px">Show Preview <span class="c3" style="margin-left:4px">⇧⌘P</span></span>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">12</span>Preview hidden</b>This affects rendering only. In automatic mode, showing the preview counts as demand and starts capture, so the button's tooltip says so.</div>
+    </div>
+
+    <!-- 13 -->
+    <div class="scard">
+      <div class="crop">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="tb-group glass"><div class="tb-btn dim"><i data-i="layers"></i>Effects</div><div class="tb-btn on co"><i data-i="bypass"></i>Bypass</div></div>
+          <span class="c3" style="font-size:11px">⇧⌘B</span>
+        </div>
+        <div class="fx bypass" style="margin-top:12px"><span class="on">LUT</span><span class="on">1080p</span><span class="on">4:2:0</span><span>29.97</span></div>
+        <div class="note co" style="display:flex;gap:6px;align-items:center;padding:10px 2px 0"><i data-i="bypass" class="sm"></i>Complete bypass · original 2160p 59.94 10-bit 4:2:2</div>
+      </div>
+      <div class="cap"><b><span class="num">13</span>Complete bypass</b>The original resolution, color, pixels and frame rate are passed through. Effect selections stay saved, struck through, and come back with Effects.</div>
+    </div>
+
+    <!-- 14 -->
+    <div class="scard">
+      <div class="crop" style="padding:0">
+        <div class="picture" data-scene="mcu" data-fx="zebra" style="height:232px;border-radius:14px">
+          <div class="overlay" style="left:10px;top:10px"><div class="pill sm glass">Feed 1 · Source<i data-i="chevud" class="sm"></i></div></div>
+          <div class="overlay" style="left:10px;bottom:10px;right:10px"><div class="pill sm glass co" style="white-space:normal;height:auto;padding:5px 9px;line-height:1.3"><i data-i="info" class="sm"></i>Reduced monitoring · GPU deadline exceeded. Recovers after 5 s healthy.</div></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">14</span>Monitoring reduced under load</b>Monitor analysis drops first, while the clean picture and the recording/camera outputs are untouched. The badge stays up until full quality returns.</div>
+    </div>
+
+    <!-- 15 -->
+    <div class="scard">
+      <div class="crop" style="padding:0">
+        <div class="picture" data-scene="mcu" style="height:232px;border-radius:14px">
+          <div class="overlay" style="left:10px;top:10px"><div class="pill sm glass"><i data-i="program" class="sm"></i>Program<i data-i="chevud" class="sm"></i></div></div>
+          <div class="overlay" style="right:10px;top:10px">
+            <div class="tb-group glass" style="height:30px">
+              <div class="tb-btn on" style="height:24px"><i data-i="guides" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px"><i data-i="zebra" class="sm"></i></div>
+              <div class="tb-btn dim" style="height:24px"><i data-i="falsecolor" class="sm"></i></div>
+              <div class="tb-btn dim" style="height:24px"><i data-i="focus" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px"><i data-i="scope" class="sm"></i></div>
+            </div>
+          </div>
+          <div class="overlay" style="left:10px;bottom:10px;right:10px"><div class="pill sm glass c2" style="white-space:normal;height:auto;padding:5px 9px;line-height:1.3"><i data-i="info" class="sm"></i>False color and focus need a source feed, so they're unavailable on Program.</div></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">15</span>Program tile tool limits</b>Guides, zebra and scopes work on Program Output. Source-only tools are dimmed, with the reason given in place rather than hidden.</div>
+    </div>
+
+    <!-- 18 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="sheetwrap">
+          <div class="picture" data-scene="mcu"></div>
+          <div class="sheet glass" style="background:rgba(44,44,48,0.85)">
+            <div style="display:flex;gap:10px;align-items:center"><div class="appicon"><i data-i="videofill"></i></div><div><b style="font-size:13px">2 recordings are finishing</b><div class="c2" style="font-size:11.5px">Ultracam will quit when they're saved.</div></div></div>
+            <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Feed 1</span><span class="c2 tnum">Writing final fragment…</span></div>
+            <div class="prog"><i style="width:72%"></i></div>
+            <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Feed 2</span><span class="cg">Saved</span></div>
+            <div class="prog"><i style="width:100%;background:var(--green)"></i></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:2px"><span class="btn">Cancel Quit</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">18</span>Quit while recording</b>Quit stops capture and waits for active takes to finish. The sheet shows what's still being written, so the drive isn't unplugged early.</div>
+    </div>
+
+    <!-- 19 -->
+    <div class="scard">
+      <div class="crop" style="padding:8px">
+        <div class="dd inline glass" style="background:rgba(40,40,44,0.9)">
+          <div class="ddtop">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:13.5px">Ultracam</b><span class="badge">Stopped</span></div>
+            <div class="ph" style="height:150px;border-radius:11px">
+              <i data-i="video" class="big" style="width:24px;height:24px"></i>
+              <b style="font-size:12px">Feed stopped</b>
+              <small>Start the feed to view the HDMI input.</small>
+            </div>
+          </div>
+          <div class="mi hl"><span class="ck"></span><span class="ico"><i data-i="play" class="sm"></i></span>Start Feed<span class="key">⌘↩</span></div>
+          <div class="mi"><span class="ck"></span><span class="ico"><i data-i="auto" class="sm"></i></span>Start When Camera Is in Use</div>
+          <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+          <div class="msep"></div>
+          <div class="mi dis"><span class="ck"></span><span class="ico"><i data-i="record" class="sm"></i></span>Record All<span class="key">⌥⌘R</span></div>
+          <div class="msep"></div>
+          <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+          <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">19</span>Dropdown when stopped</b>The preview area turns into a placeholder at the same size (no layout jump). Start Feed is the default item. Record All is disabled until a feed is live.</div>
+    </div>
+
+    <!-- 20 -->
+    <div class="scard">
+      <div class="crop">
+        <div class="banner info">
+          <span class="bi" style="color:var(--red)"><i data-i="recordring"></i></span>
+          <div><b>Backup recording will start when Zoom opens the camera <span class="newtag">NEW</span></b><small>Records the clean source of Feed 1 to 8TB/Takes. Stops with the meeting.</small></div>
+        </div>
+        <div class="form" style="margin-top:8px">
+          <div class="row"><span class="lbl">Start when camera is in use</span><div class="switch on"></div></div>
+          <div class="row"><span class="lbl">Record when camera is in use <span class="newtag">NEW</span><small>Backup take for each camera session</small></span><div class="switch on"></div></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">20</span>Backup recording armed <span class="newtag">NEW</span></b>Proposal: tie a backup take to the camera session, so every meeting is recorded without anyone remembering to press Record.</div>
+    </div>
+
+    <!-- 16 -->
+    <div class="scard w2">
+      <div class="crop">
+        <div class="strip">
+          <div><span class="mbicon"><i data-i="video" class="lg"></i></span><small>Stopped<i>video</i></small></div>
+          <div><span class="mbicon" style="opacity:0.5"><i data-i="video" class="lg"></i></span><small>Waiting · automatic<i>video, dimmed</i></small></div>
+          <div><span class="mbicon"><i data-i="videofill" class="lg"></i></span><small>Live · effects<i>video.fill</i></small></div>
+          <div><span class="mbicon"><i data-i="bypass" class="lg"></i></span><small>Live · bypass<i>arrow.right.square</i></small></div>
+          <div><span class="mbicon"><i data-i="videofill" class="lg"></i><span class="bdg" style="background:var(--red)"></span></span><small>Recording <span class="newtag">NEW</span><i>video.fill + red dot</i></small></div>
+          <div><span class="mbicon"><i data-i="video" class="lg"></i><span class="bdg" style="background:var(--orange)"></span></span><small>Needs attention <span class="newtag">NEW</span><i>video + orange dot</i></small></div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">16</span>Menu bar icon states</b>The first four exist today. A red dot for recording and an orange dot for errors (no signal, failed start, disk low) let you check a backup recording without opening anything.</div>
+    </div>
+
+    <!-- 17 -->
+    <div class="scard w2">
+      <div class="crop">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+          <div>
+            <div class="wf">
+              <div class="tb"><span></span><span></span><span></span></div>
+              <div class="bx" style="left:6px;top:22px;width:18px;bottom:6px"></div>
+              <div class="bx pic" style="left:30px;top:22px;right:66px;height:82px"></div>
+              <div class="gl" style="left:34px;top:26px;width:30px;height:9px"></div>
+              <div class="bx" style="left:30px;top:110px;right:66px;bottom:6px;background:#202024"></div>
+              <div class="bx" style="right:6px;top:22px;width:54px;bottom:6px"></div>
+            </div>
+            <div class="wfcap">1 feed<small>Big single picture; sidebar shows the session panel (V1) or a rail (V3).</small></div>
+          </div>
+          <div>
+            <div class="wf">
+              <div class="tb"><span></span><span></span><span></span></div>
+              <div class="bx pic" style="left:6px;top:22px;width:calc(50% - 9px);height:72px"></div>
+              <div class="bx pic" style="right:6px;top:22px;width:calc(50% - 9px);height:72px"></div>
+              <div class="gl" style="left:10px;top:26px;width:26px;height:9px"></div>
+              <div class="gl" style="left:calc(50% + 7px);top:26px;width:26px;height:9px"></div>
+              <div class="bx" style="left:6px;top:100px;width:calc(50% - 9px);bottom:6px;background:#202024"></div>
+              <div class="bx" style="right:6px;top:100px;width:calc(50% - 9px);bottom:6px;background:#202024"></div>
+            </div>
+            <div class="wfcap">2 feeds<small>Side by side, each with its own record and output strip.</small></div>
+          </div>
+          <div>
+            <div class="wf">
+              <div class="tb"><span></span><span></span><span></span></div>
+              <div class="bx pic" style="left:6px;top:22px;width:calc(50% - 9px);height:62px"></div>
+              <div class="bx pic" style="right:6px;top:22px;width:calc(50% - 9px);height:62px"></div>
+              <div class="bx pic" style="left:6px;top:90px;width:calc(50% - 9px);height:62px"></div>
+              <div class="bx" style="right:6px;top:90px;width:calc(50% - 9px);height:62px;background:#000;display:flex"></div>
+              <div class="gl" style="left:10px;top:26px;width:22px;height:8px"></div>
+              <div class="gl" style="left:calc(50% + 7px);top:26px;width:22px;height:8px"></div>
+              <div class="gl" style="left:10px;top:94px;width:22px;height:8px"></div>
+              <div class="gl" style="left:calc(50% + 7px);top:94px;width:22px;height:8px"></div>
+              <div class="bx" style="left:6px;right:6px;top:157px;bottom:4px;background:#202024"></div>
+            </div>
+            <div class="wfcap">3–4 feeds<small>Four Up with compact strips. A 4th empty tile can show Program.</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b><span class="num">17</span>Layout scales with the number of feeds</b>The default layout follows the number of enabled feeds (1 → Single, 2 → Side by Side, 3–4 → Four Up). You can still override it, and the choice is saved.</div>
+    </div>
+
+    <!-- notes (fills the row) -->
+    <div class="scard w2">
+      <div class="crop">
+        <div class="form-h" style="padding-top:0">Conventions</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 22px;font-size:11.5px;color:var(--label2);line-height:1.4">
+          <div><b style="color:var(--label)">Honest values.</b> "—", "No signal" and "unavailable on Program" instead of zeros or stale pictures.</div>
+          <div><b style="color:var(--label)">Errors in place.</b> Each problem shows where it happens (tile, LUT row, record row), plus a status bar summary.</div>
+          <div><b style="color:var(--label)">One action per banner.</b> Retry, Locate…, Choose…, Recover, Install Camera.</div>
+          <div><span class="newtag" style="margin-left:0">NEW</span> means not in the current app.</div>
+        </div>
+      </div>
+      
+    </div>
+
+  </div>
+</div>
+</body></html>

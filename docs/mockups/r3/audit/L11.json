@@ -1,0 +1,804 @@
+[
+ {
+  "id": "L11-01",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "standalone",
+   "single",
+   "program-view"
+  ],
+  "location": "channel strip record row: 'Pause' + 'Stop' buttons; toolbar 'Stop'",
+  "issue": "'Stop' means two different things one row apart: the strip's Stop ends the recording, the toolbar's Stop stops the feed (capture + camera output).",
+  "evidence": "main-expanded text: toolbar 'Stop' and strip 'Pause'/'Stop'; standalone also 'Stop All · 12:31', 'Stop All Recordings', 'Stop All Feeds', 'Stop Feeds' (menubar a)",
+  "scenario": "Mid-meeting the user wants to end the backup take, clicks the toolbar Stop and Zoom goes black; or ends the take when meaning to stop the feed.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Always name the object: never a bare 'Stop'.",
+  "rewrite": {
+   "strip": "Pause · Stop Recording",
+   "toolbar feed control": "Stop Feed (Separate) / Stop All Feeds (Program)",
+   "dropdown": "Stop Feed / Stop All Feeds — one wording, not 'Stop Feeds'"
+  },
+  "alternatives": [
+   "icon-only stop square with tooltip 'Stop Recording'"
+  ],
+  "affects": [
+   "r3.js strip()",
+   "r3.js toolbar()",
+   "menubar",
+   "standalone",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-02",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "program-view",
+   "four-up",
+   "single",
+   "standalone"
+  ],
+  "location": "toolbar prominent red button '12:31 · 2' / '12:31 · 3' / '12:31' / 'Stop All · 12:31'",
+  "issue": "The main recording button has no verb on most pages; '12:31 · 2' reads as a status chip, not as 'click to stop both recordings'. Label differs per page.",
+  "evidence": "main-expanded '12:31 · 2'; four-up '12:31 · 3'; single '12:31'; standalone 'Stop All · 12:31'",
+  "scenario": "User clicks the red timer to see details and stops every take.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Verb first, status second, same pattern everywhere.",
+  "rewrite": {
+   "idle": "Record All",
+   "recording 1": "Stop Recording · 12:31",
+   "recording n": "Stop All (2) · 12:31"
+  },
+  "alternatives": [
+   "split button: status chip + separate stop control"
+  ],
+  "affects": [
+   "r3.js toolbar()",
+   "all main pages",
+   "spec §4/§6"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-03",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "single",
+   "four-up",
+   "menubar",
+   "diagnostics",
+   "states"
+  ],
+  "location": "'In use by Zoom', 'ON AIR · Zoom', 'Program → Zoom', 'Live in Zoom', 'Zoom is waiting for video', 'Not in a meeting'",
+  "issue": "Copy names the consumer app and asserts 'meeting', but the app only knows whether its virtual camera has a client ('Virtual camera connected' in CaptureController). Naming Zoom (or 'not in a meeting') is a fabricated value under the honesty rule, and it isn't marked NEW.",
+  "evidence": "CaptureController.swift:640 'Virtual camera connected — choose Ultracam in Zoom'; no client-app lookup in Sources (CMIOExtensionClient.signingID is not used); standalone dropdown 'Not in a meeting'",
+  "scenario": "User sees 'ON AIR · Zoom' while FaceTime or OBS is the actual client, or 'Not in a meeting' while a browser meeting uses the camera.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Say what is known; add the app name only as a NEW feature backed by the extension reporting the client's signing ID.",
+  "rewrite": {
+   "badge": "ON AIR (no app name) or 'ON AIR · Zoom' marked NEW",
+   "sidebar/status": "In use · 1 app",
+   "dropdown": "Virtual cameras not in use (replace 'Not in a meeting')",
+   "failed start": "A camera app is waiting for video"
+  },
+  "alternatives": [
+   "'In use by zoom.us' from signing ID (NEW)"
+  ],
+  "affects": [
+   "r3.js sidebar()/tile()/statusbar()",
+   "menubar",
+   "single",
+   "states",
+   "diagnostics",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-04",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "states",
+   "spec"
+  ],
+  "location": "picture badge 'ON AIR · Program' and strip 'On air in Program'",
+  "issue": "'ON AIR' is used for the feed selected in Program regardless of whether Program itself has a consumer. Spec §5 defines On air (Program) as 'Program mode, selected feed'. 'On air' should mean someone is receiving it.",
+  "evidence": "spec.txt tally table: On air (Program) → 'Program mode, selected feed'",
+  "scenario": "Before Zoom opens the camera, the picture already says ON AIR; the user assumes they are visible.",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "Reserve 'ON AIR' for a consumed output; use 'PROGRAM' when selected but unwatched.",
+  "rewrite": {
+   "Program selected, no client": "PROGRAM",
+   "Program selected, client connected": "ON AIR",
+   "strip": "In Program / On air"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js tile()/strip()",
+   "states §3",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-05",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single",
+   "four-up",
+   "states"
+  ],
+  "location": "strip header badge 'Live · 2160p 59.94'",
+  "issue": "'Live' (signal present, pipeline running) sits next to 'ON AIR' (being watched). In broadcast and meeting language these are synonyms, so a feed nobody is watching reads as live.",
+  "evidence": "main-expanded: 'Live · 2160p 59.94' on both strips; Feed 2 not on air",
+  "scenario": "Standalone recording: user thinks a 'Live' feed is being sent somewhere.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Describe the input, not 'live'.",
+  "rewrite": {
+   "badge": "● 2160p 59.94 (green dot = signal)",
+   "tooltip": "HDMI signal: 3840×2160 · 59.94 fps · 10-bit 4:2:2"
+  },
+  "alternatives": [
+   "'Signal · 2160p 59.94'"
+  ],
+  "affects": [
+   "r3.js strip()",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-06",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "program-view",
+   "menubar",
+   "states"
+  ],
+  "location": "Program cut bar 'Feed 2 queued' vs picture 'NEXT' vs dropdown 'next' vs states 'CUTTING…'",
+  "issue": "One concept, three words (queued / next / cut pending). States distinguish director-next (green NEXT) from manual cut-pending (CUTTING…), but the cut bar uses 'queued' for the director's pick.",
+  "evidence": "program-view 'queued'; main-expanded 'NEXT'; menubar 'Feed 2 · next'; states 'CUTTING…'",
+  "scenario": "Operator can't tell if Feed 2 will cut automatically or if their own cut is pending.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Two terms only: 'Next' (director's choice) and 'Cutting…' (your cut waiting for a frame).",
+  "rewrite": {
+   "cut bar": "Feed 2 · Next",
+   "manual pending": "Cutting to Feed 2…"
+  },
+  "alternatives": [],
+  "affects": [
+   "program-view",
+   "main pages",
+   "menubar",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-07",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "app-menus",
+   "settings",
+   "standalone"
+  ],
+  "location": "noun for a source channel: 'Cameras' section, 'Add Camera', 'Remove Camera', '2 cameras' vs 'Feed 1', 'Stop Feed 2 to remove it', 'Backup · 2 feeds', 'Rename Feed 1…', 'Remove Feed 1'",
+  "issue": "'Camera' means three things: the physical camera (FX3), the input channel (Feed 1), and the virtual camera (Ultracam · Feed 1). The same action is 'Remove Camera' in the popover and 'Remove Feed 1' in the Feed menu.",
+  "evidence": "main-collapsed popover 'Remove Camera' + 'Stop Feed 2 to remove it'; app-menus 'Remove Feed 1', 'Add Camera'; sidebar 'Cameras'; strip 'FX3 · Mini Recorder 12G'",
+  "scenario": "User removes 'Camera' expecting to drop the virtual camera from Zoom, or hunts for 'Feeds' in a list titled Cameras.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Feed = the input channel (all controls: Add Feed, Remove Feed, Feeds section). Camera = only the physical device and the published 'virtual camera'.",
+  "rewrite": {
+   "sidebar": "Feeds",
+   "popover": "Remove Feed 2…",
+   "menu": "Add Feed / Rename Feed 1… / Remove Feed 1…",
+   "recording summary": "2 feeds"
+  },
+  "alternatives": [
+   "call channels 'Camera 1/2' everywhere and the virtual camera 'Ultracam output'"
+  ],
+  "affects": [
+   "r3.js sidebar()",
+   "main-collapsed",
+   "app-menus",
+   "settings",
+   "states",
+   "spec"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L11-08",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "menubar",
+   "settings",
+   "app-menus",
+   "single"
+  ],
+  "location": "automation setting labels",
+  "issue": "One setting, four phrasings: 'Start with camera apps' (sidebar), 'Start When Camera Is in Use' (Feed menu), 'Start with Camera Apps' (dropdown), 'Start when camera is in use' (Settings, current app). Same for the NEW record option ('Record with camera apps' / 'Record when a camera app opens Ultracam').",
+  "evidence": "main-expanded sidebar; app-menus Feed; single dropdown; settings Camera/Recording",
+  "scenario": "User can't confirm the dropdown toggle and the sidebar switch are the same setting.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Keep the current app's wording and mirror it for recording.",
+  "rewrite": {
+   "start": "Start when camera is in use (menus: Start When Camera Is in Use)",
+   "record": "Record when camera is in use (menus: Record When Camera Is in Use)"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "menubar",
+   "single",
+   "settings",
+   "app-menus"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-09",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "single",
+   "standalone",
+   "monitor-tools",
+   "settings"
+  ],
+  "location": "picture signal picker 'Output' / 'Source' / 'Source · S-Log3'; Settings & monitor-tools 'Processed Output'",
+  "issue": "'Output' alone is ambiguous (output of what? to where?). Two names for the same option ('Output' vs 'Processed Output').",
+  "evidence": "main-expanded pill 'Output'; settings Monitor 'Source | Processed Output'; monitor-tools 'Output · as published · effects applied'",
+  "scenario": "User flips to 'Source' to check exposure, forgets, and later wonders why the picture looks flat while Zoom looks fine.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Use one pair everywhere; say which is which in the tooltip.",
+  "rewrite": {
+   "options": "With Effects | Camera Source",
+   "pill when Source": "Camera Source · S-Log3 (preview only)",
+   "tooltip": "With Effects: what Program and the virtual camera receive. Camera Source: the HDMI input before effects. Doesn't change output or recordings."
+  },
+  "alternatives": [
+   "keep 'Output | Source' but rename Settings 'Processed Output' to 'Output'"
+  ],
+  "affects": [
+   "r3.js tile()",
+   "monitor-tools",
+   "settings",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-10",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "single",
+   "four-up",
+   "diagnostics"
+  ],
+  "location": "recording format line 'ProRes 422 · clean source'",
+  "issue": "'clean source' is insider wording; the important fact (effects/LUT are not in the file) is implicit.",
+  "evidence": "strip row: 'ProRes 422 · clean source'; settings footnote explains it in full",
+  "scenario": "User applies a LUT for the meeting and is surprised the backup is flat S-Log3.",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "State it plainly in the strip; keep the long version in the tooltip.",
+  "rewrite": {
+   "strip": "ProRes 422 · camera original (no LUT/effects)",
+   "tooltip": "Records the HDMI input as received: 2160p 10-bit 4:2:2 with embedded audio. LUT, scaling and color effects apply only to the virtual camera and Program."
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js strip()",
+   "states",
+   "spec"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-11",
+  "lens": "microcopy",
+  "pages": [
+   "settings",
+   "app-menus"
+  ],
+  "location": "timecode mode 'Source timecode' (current app RecordingTimecodeMode.source)",
+  "issue": "The option named 'Source timecode' writes no timecode track (its own help says so). The name promises the camera's RP188 timecode in the file.",
+  "evidence": "RecordingModel.swift:33/41 title 'Source timecode', help 'No timecode track is written. Camera timecode still appears in the metadata panel…'",
+  "scenario": "Editor relies on camera TC for multicam sync; the files have none.",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Rename to what it does (until source TC recording exists).",
+  "rewrite": {
+   "modes": "Mac Clock (default) · Start at 00:00:00:00 · No Timecode Track",
+   "help for None": "No timecode track is written. Camera timecode is shown live but not recorded."
+  },
+  "alternatives": [
+   "implement real source TC and keep the name"
+  ],
+  "affects": [
+   "settings Recording pane",
+   "app-menus Record ▸ Timecode",
+   "RecordingModel titles"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-12",
+  "lens": "microcopy",
+  "pages": [
+   "settings",
+   "app-menus",
+   "standalone"
+  ],
+  "location": "'PC time' timecode label",
+  "issue": "'PC' is Windows vocabulary on a Mac app.",
+  "evidence": "settings 'PC time'; standalone status 'Timecode: PC time'; app-menus 'PC time'",
+  "scenario": "Minor confusion; looks unpolished.",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "Use Mac wording.",
+  "rewrite": {
+   "label": "Mac Clock",
+   "help": "Writes the Mac's clock as timecode, aligned to the first frame."
+  },
+  "alternatives": [],
+  "affects": [
+   "settings",
+   "app-menus",
+   "standalone",
+   "RecordingModel titles"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-13",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "standalone",
+   "four-up",
+   "single",
+   "menubar",
+   "states"
+  ],
+  "location": "elapsed time formats",
+  "issue": "Same quantity written five ways: '00:12:31', '12:31', 'REC 12:31', 'Paused 04:12', '⏸ 4:12', 'Paused 4:12'. Leading zeros and hours appear inconsistently, so 1:02:47 vs 12:31 can be misread.",
+  "evidence": "strip '00:12:31'; picture 'REC 12:31'; standalone 'PAUSED 04:12' vs dropdown '⏸ 4:12' and 'Paused 4:12'",
+  "scenario": "Long recordings: '1:02' could be 1 h 2 m or 1 m 2 s.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "h:mm:ss once ≥ 1 h, m:ss below; never mixed per screen.",
+  "rewrite": {
+   "rule": "0:12:31 everywhere a take can exceed an hour (strip, toolbar, dropdown), REC 12:31 allowed only in compact pills"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js all builders",
+   "menubar",
+   "standalone",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-14",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "single",
+   "program-view",
+   "diagnostics",
+   "four-up"
+  ],
+  "location": "video format notation",
+  "issue": "Formats are written six ways: '2160p 59.94', '2160p59.94', '3840×2160 · 29.97p · 10-bit 4:2:2', '1080p29.97', '1080p 29.97 · 4:2:0', '1920×1080 29.97p 4:2:0'.",
+  "evidence": "sidebar '2160p 59.94'; signal path 'Source 2160p59.94 · 4:2:2'; popover '3840×2160 · 29.97p · 10-bit 4:2:2'; dropdown '1080p29.97'",
+  "scenario": "Scanning two feeds side by side for a rate mismatch is slower than it should be.",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "Two forms only.",
+  "rewrite": {
+   "compact": "2160p 59.94",
+   "detail": "3840×2160 · 59.94 fps · 10-bit 4:2:2"
+  },
+  "alternatives": [],
+  "affects": [
+   "all builders",
+   "spec §3"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-15",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "diagnostics",
+   "standalone"
+  ],
+  "location": "units",
+  "issue": "Bitrate units differ ('184 Mb/s' vs '10609.61 Mbps' vs '1.54 Mbps'); sample rate '48.0 kHz' vs '48 kHz'; a 10 Gb/s value printed as 10609.61 Mbps.",
+  "evidence": "strip '184 Mb/s'; diagnostics 'Video bitrate 10609.61 Mbps', 'Audio bitrate 1.54 Mbps'",
+  "scenario": "Hard to compare encoded vs captured bitrate.",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "One symbol, scaled.",
+  "rewrite": {
+   "rule": "Mb/s and Gb/s with 3 significant figures: 10.6 Gb/s, 184 Mb/s, 1.54 Mb/s; 48 kHz"
+  },
+  "alternatives": [],
+  "affects": [
+   "diagnostics",
+   "strip",
+   "FeedDiagnostics formatters"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-16",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "standalone",
+   "four-up",
+   "diagnostics",
+   "states"
+  ],
+  "location": "status bar 'Audio OK'",
+  "issue": "'Audio OK' summarizes two feeds as one; it hides a feed with no embedded audio and isn't a measured value.",
+  "evidence": "status bar segment 'Audio OK' on 2- and 4-feed pages",
+  "scenario": "Feed 2's HDMI audio is missing; the status bar still says OK.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Report per-feed facts; warn by name.",
+  "rewrite": {
+   "normal": "Audio · 2 feeds",
+   "problem": "Feed 2: no embedded audio (orange)"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js statusbar()",
+   "diagnostics popover",
+   "states §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-17",
+  "lens": "microcopy",
+  "pages": [
+   "four-up",
+   "standalone",
+   "main-expanded",
+   "menubar"
+  ],
+  "location": "compressed status strings",
+  "issue": "Glyph soup: 'REC 2 · ⏸ 1 · 12:31', 'Recording 1 of 2 · 21.5 GB' (means 1 recording + 1 paused, not 1 of 2 done).",
+  "evidence": "four-up status bar; standalone dropdown 'Recording 1 of 2'",
+  "scenario": "User reads '1 of 2' as one take failed.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Words for states, glyphs only as decoration.",
+  "rewrite": {
+   "status bar": "Recording 2 · Paused 1 · 12:31",
+   "dropdown": "1 recording · 1 paused · 21.5 GB"
+  },
+  "alternatives": [],
+  "affects": [
+   "four-up",
+   "standalone",
+   "menubar",
+   "r3.js statusbar()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-18",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "program-view"
+  ],
+  "location": "sidebar shot timer caption 'cut after 10 s' and 'Feed 1 · 8.2 s'",
+  "issue": "'cut after 10 s' reads as a scheduled cut at 10 s; it's the minimum shot length (cut can happen any time after, at a speech gap). The dropdown uses a clearer 'Auto holds Feed 1 for 1.8 s more'.",
+  "evidence": "main-expanded sidebar; menubar a 'Auto holds Feed 1 for 1.8 s more'; program-view 'Cut to Feed 2 at the next speech gap after 10 s'",
+  "scenario": "Operator waits for a cut at 10 s that doesn't come.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Use the dropdown's phrasing everywhere.",
+  "rewrite": {
+   "sidebar": "Feed 1 · 8.2 s · can cut in 1.8 s"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-19",
+  "lens": "microcopy",
+  "pages": [
+   "main-collapsed",
+   "app-menus"
+  ],
+  "location": "⋯ popover / menu labels",
+  "issue": "Popover action rows use sentence case ('Reset monitor tools', 'Copy monitor settings to') while the same commands are title case in menus; 'Diagnostics…' has an ellipsis but opens a window without asking for input; 'Feeds Program' is not a phrase.",
+  "evidence": "main-collapsed popover: 'Reset monitor tools', 'Copy monitor settings to', 'Diagnostics…', 'Feeds Program'; monitor-tools context menu 'Reset Monitor Tools'",
+  "scenario": "Inconsistent polish; 'Feeds Program' unreadable.",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "Title case for buttons/menu items; ellipsis only when more input follows.",
+  "rewrite": {
+   "rows": "Reset Monitor Tools · Copy Monitor Settings To ▸ · Show Diagnostics",
+   "output row": "Used in Program (Publish as Camera available in Separate mode)"
+  },
+  "alternatives": [],
+  "affects": [
+   "main-collapsed",
+   "states LUT error card"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-20",
+  "lens": "microcopy",
+  "pages": [
+   "settings",
+   "monitor-tools",
+   "states",
+   "diagnostics"
+  ],
+  "location": "engineering jargon outside Diagnostics",
+  "issue": "Everyday surfaces leak internals: 'Without a producer frame for 0.5 s, the camera sends black'; 'matching source resolution and provenance are required'; 'GPU deadline exceeded'; 'writing final fragment'; 'sidecar'; 'counts as demand'.",
+  "evidence": "settings Camera footnote; monitor-tools Focus/Program captions; states 'Reduced monitoring · GPU deadline exceeded'; 'Finishing… writing final fragment'; timeline 'saved as a sidecar'",
+  "scenario": "User doesn't understand why focus peaking is greyed out on Program.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Plain language in UI, jargon only in Diagnostics.",
+  "rewrite": {
+   "black frame": "If Ultracam stops sending video for half a second, the camera app shows black.",
+   "Program focus": "Not available on Program: it switches between cameras, so there's no single source to analyze.",
+   "reduced": "Monitoring simplified to keep video smooth. Full quality returns automatically.",
+   "finishing": "Finishing… saving the file",
+   "sidecar": "also saved as a timeline file next to the recordings"
+  },
+  "alternatives": [],
+  "affects": [
+   "settings",
+   "monitor-tools",
+   "states",
+   "program-view",
+   "main-collapsed"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-21",
+  "lens": "microcopy",
+  "pages": [
+   "menubar",
+   "states"
+  ],
+  "location": "failed-start error",
+  "issue": "Error shown twice with different wording (banner 'Couldn't start Feed 1 — UltraStudio … is in use by another app' plus 'Zoom is waiting for video / Close the other app, then retry'); it asserts the cause (another app) although the SDK only reports the device busy/unavailable.",
+  "evidence": "menubar e; states 'Couldn't start · in use by another app'",
+  "scenario": "Device is actually unplugged; message sends the user hunting for another app.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "One message: what failed, likely cause hedged, one action.",
+  "rewrite": {
+   "banner": "Couldn't start Feed 1. The UltraStudio is busy or unavailable — another app may be using it. [Retry]"
+  },
+  "alternatives": [],
+  "affects": [
+   "menubar",
+   "states"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-22",
+  "lens": "microcopy",
+  "pages": [
+   "states"
+  ],
+  "location": "recording failed message",
+  "issue": "'Recording stopped after a source error.' gives no cause, no time, and no reassurance about what was saved.",
+  "evidence": "states 'Recording stopped after a source error.' (app's own RecordingModel message)",
+  "scenario": "After a cable glitch the user doesn't know whether the take is usable.",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Cause (if known) + what's saved + action.",
+  "rewrite": {
+   "message": "Recording stopped at 0:12:31: the HDMI signal was lost. Everything up to then is saved. [Show in Finder] [Record Again]"
+  },
+  "alternatives": [],
+  "affects": [
+   "states",
+   "RecordingModel error text"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L11-23",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "single",
+   "program-view",
+   "four-up",
+   "standalone"
+  ],
+  "location": "window title/subtitle 'Meeting', 'Recording Session', 'Recording'",
+  "issue": "Titles name modes the app doesn't have; the title would flip between 'Meeting' and 'Recording' as a client connects, which reads as a mode change.",
+  "evidence": "main-expanded 'Meeting'; four-up 'Recording Session'; standalone 'Recording'",
+  "scenario": "User looks for a Meeting/Recording mode switch that doesn't exist.",
+  "severity": "P3",
+  "confidence": "medium",
+  "recommendation": "Stable title, state in subtitle.",
+  "rewrite": {
+   "title": "Ultracam",
+   "subtitle": "Program → in use · recording 2 feeds"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js toolbar() callers"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-24",
+  "lens": "microcopy",
+  "pages": [
+   "main-expanded",
+   "main-collapsed",
+   "single"
+  ],
+  "location": "truncation of take names and paths",
+  "issue": "Take filenames truncate at the tail ('Feed 1_2026-10-20_08-…'), cutting the time and take number that distinguish takes; folders appear as breadcrumbs in strips ('Archive › B-cam') but raw paths in the popover ('/Volumes/Archive/B-cam').",
+  "evidence": "sidebar Recent Takes; popover Recording row",
+  "scenario": "Two takes from the same day look identical.",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "Human label first, truncate middle, one path style.",
+  "rewrite": {
+   "take row": "Today 08:02 · 38:12 (filename in tooltip, middle-truncated if shown)",
+   "paths": "Archive › B-cam everywhere; full path in tooltip"
+  },
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "main-collapsed popover",
+   "settings"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-25",
+  "lens": "microcopy",
+  "pages": [
+   "states",
+   "main-pages"
+  ],
+  "location": "current help strings not represented",
+  "issue": "Several current-app help texts and states have no home in r3: 'Retry preview' + 'Restart preview rendering. Camera output continues.'; 'Applying change…'; Start disabled 'Waiting for the saved LUT to finish loading.'; 'Waiting for video' placeholder.",
+  "evidence": "grep of rendered r3 text: no 'Retry preview', 'Applying change', 'Waiting for the saved LUT', 'Waiting for video'",
+  "scenario": "Preview fails mid-meeting; there's no visible recovery text.",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add these strings to the states board and tooltips spec.",
+  "rewrite": {
+   "preview error": "Preview stopped. Camera output continues. [Retry Preview]",
+   "applying": "Applying change…",
+   "start disabled": "Loading the saved LUT…"
+  },
+  "alternatives": [],
+  "affects": [
+   "states",
+   "spec §7",
+   "r3.js strip()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-26",
+  "lens": "microcopy",
+  "pages": [
+   "settings",
+   "main-collapsed",
+   "monitor-tools",
+   "program-view"
+  ],
+  "location": "in-UI explanatory paragraphs",
+  "issue": "Settings panes and popovers carry multi-sentence footnotes (Monitor 'Under load' 3 sentences, Camera pane paragraph, Processing explanation) that belong in tooltips or Help.",
+  "evidence": "settings Monitor/Camera footnotes; main-collapsed Processing caption",
+  "scenario": "Dense panes; key controls harder to scan.",
+  "severity": "P3",
+  "confidence": "medium",
+  "recommendation": "One short line max under a control; move the rest to .help and the Help book.",
+  "rewrite": {
+   "Processing caption": "Off: passes the camera signal through unchanged. ⇧⌘B"
+  },
+  "alternatives": [],
+  "affects": [
+   "settings",
+   "main-collapsed",
+   "monitor-tools"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L11-S4",
+  "type": "suspect_verdict",
+  "suspect": "S4",
+  "verdict": "confirmed (wording side)",
+  "notes": "ON AIR used without a consumer (L11-04) and 'Live' vs 'On air' (L11-05) add to the red/status confusion."
+ },
+ {
+  "id": "L11-S6",
+  "type": "suspect_verdict",
+  "suspect": "S6",
+  "verdict": "confirmed",
+  "notes": "Bare 'Stop' in strip vs toolbar; record button without verb; 'Stop Feeds'/'Stop All Feeds' variants (L11-01, L11-02)."
+ },
+ {
+  "id": "L11-S7",
+  "type": "suspect_verdict",
+  "suspect": "S7",
+  "verdict": "partially confirmed",
+  "notes": "Copy doesn't reveal mode-dependent scope: toolbar says 'Stop' in both modes; dropdown says 'Stop Feeds' in Program. Use 'Stop Feed' vs 'Stop All Feeds' by mode."
+ },
+ {
+  "id": "L11-S11",
+  "type": "suspect_verdict",
+  "suspect": "S11",
+  "verdict": "confirmed, extended",
+  "notes": "Consumer app names ('Zoom') and 'Not in a meeting' are unmarked inventions (L11-03)."
+ },
+ {
+  "id": "L11-S12",
+  "type": "suspect_verdict",
+  "suspect": "S12",
+  "verdict": "no copy drift found",
+  "notes": "No stale ARRI wording in visible r3 UI text after the Settings fix; RecordingTimecodeMode labels are current but misleading (L11-11)."
+ },
+ {
+  "id": "L11-S14",
+  "type": "suspect_verdict",
+  "suspect": "S14",
+  "verdict": "contributes",
+  "notes": "Dropdown rows carry secondary text and NEW tags; shorter labels (L11-01, L11-17) and dropping per-row stats would cut width, not height; height needs IA changes (L3)."
+ }
+]

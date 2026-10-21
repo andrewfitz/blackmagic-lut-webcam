@@ -1,0 +1,132 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Single camera meeting</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .single { display: grid; grid-template-columns: 1fr 252px; gap: 12px; height: 100%; }
+  .single .col3 { min-width: 0; }
+  .side3 { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .path { flex: 1; border-radius: 14px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: 0; }
+  .path .chain { display: flex; align-items: center; gap: 6px; font-size: 11.5px; white-space: nowrap; }
+  .path .node { height: 24px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; gap: 5px; background: var(--fill2); }
+  .path .node.fx { background: rgba(10,132,255,0.22); color: #a9d2ff; }
+  .path .node.off { color: var(--label3); text-decoration: line-through; }
+  .path .node.out { background: rgba(48,209,88,0.16); color: var(--green); }
+  .path .arr { color: var(--label3); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Single camera: everyday Zoom meeting, automatic start + backup recording</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="single">
+        <div class="col3" id="c1"></div>
+        <div class="side3">
+          <div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>Luma Waveform</b><span class="c2">Output</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="luma" data-src="mcu"></canvas></div>
+          <div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>RGB Parade</b><span class="c2">Output</span></div><canvas data-scope="parade" data-src="mcu"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- ================= Hybrid dropdown (open) ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="picture" data-scene="mcu" style="height:184px; border-radius:11px;">
+        <div class="overlay" style="left:7px; top:7px;"><div class="pill sm glass">Ultracam · Feed 1<i data-i="chevud" class="sm"></i></div></div>
+        <div class="overlay" style="right:7px; top:7px;"><span class="badge red" style="background:rgba(255,69,58,0.85);color:#fff">ON AIR · Zoom</span></div>
+        <div class="overlay" style="left:7px; right:7px; bottom:7px; justify-content:space-between">
+          <span class="pill sm glass mono" style="font-weight:600">14:22:31:12</span>
+          <span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 12:31</span></span>
+          <div class="pill sm glass" style="width:84px; gap:3px; flex-direction:column; justify-content:center; align-items:stretch; padding:0 7px">
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:64%"></i></div></div>
+            <div class="meter"><div class="bar" style="height:3px"><i style="width:60%"></i></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2">
+        <span><span class="cg">●</span> Live in Zoom · effects active</span><span class="mono" style="font-size:10.5px">1080p29.97</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feed<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="msep"></div>
+    <div class="mh">Feed 1</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sliders" class="sm"></i></span>Effects<span class="sub">3 of 4<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cube" class="sm"></i></span>LUT<span class="sub" style="font-size:12px">FX3_SLog3_to_709<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="video" class="sm"></i></span>Capture Input<span class="sub" style="font-size:12px">Mini Recorder 12G<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mh">Recording</div>
+    <div class="mi hl"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Recording<small class="tnum">12:31</small><span class="key">⌥⌘R</span><span class="newtag">NEW</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Start with Camera Apps</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"></span>Record with Camera Apps<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 31% · GPU 18% · 1.08 GB · 8TB 3 h 10 m left</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 280px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 640px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 272px; top: 840px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1316px; top: 150px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>With one camera, the session sidebar covers the whole meeting: the published camera and who's using it, the backup take and space left, recent takes with Recover, and the two automation switches. It hides with its toggle.</span></div>
+    <div><span class="n">2</span><span>Layout is Single, so the one picture gets the width. The red ring and "ON AIR · Zoom" mean Zoom is using this feed's camera. REC is bottom-right, the tools top-right.</span></div>
+    <div><span class="n">3</span><span>The same channel strip as the multi-camera layouts: backup recording (pause/stop, folder, time left, clean source), the published camera, processing with effect chips, and audio.</span></div>
+    <div><span class="n">4</span><span>With one feed there's room for the signal path: source → each enabled effect in order → what Zoom gets, plus delivered rate, processing time and drops.</span></div>
+    <div><span class="n">5</span><span>Scopes take the right column instead of the old inspector. Turn them off from the picture toolbar (⌥⌘K) and the picture grows.</span></div>
+    <div><span class="n">6</span><span>Menu bar dropdown: what Zoom sees (ON AIR, REC, TC, levels), then compact rows for feed, effects/LUT/input submenus, recording, automation and the app.</span></div>
+  </div>
+</div>
+<script>
+  // Page-local: keep scope scale labels small in tall, narrow scope cards.
+  (function () {
+    const orig = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (t, x, y, w) {
+      const m = /(\d+)px/.exec(this.font);
+      if (m && +m[1] > 22) this.font = this.font.replace(/\d+px/, '22px');
+      return orig.call(this, t, x, y, w);
+    };
+  })();
+  const f1 = { ...FEEDS.f1, left: '3 h 10 m', fxview: '', tools: [0, 0, 0, 0, 1] };
+  FEEDS.f1 = f1;
+  mount('sb', sidebar({ mode: 'separate', feeds: ['f1'] }));
+  mount('tb', toolbar({ title: 'Feed 1', subtitle: 'Live in Zoom · backup recording', mode: 'separate', layout: 'single', recLabel: '12:31' }));
+  mount('c1', tile(f1, { mode: 'separate', consumer: 'Zoom' }) + strip(f1, { mode: 'separate', consumer: 'Zoom' }) + `
+    <div class="path">
+      <div class="chain"><span class="k2">Signal path</span>
+        <span style="margin-left:auto" class="c2 tnum" style="font-size:11px">Delivered 29.97 fps · processing 4.1 ms · <span class="cg">0 drops</span></span></div>
+      <div class="chain">
+        <span class="node mono" style="font-size:10.5px">Source 2160p59.94 · 4:2:2</span><span class="arr">→</span>
+        <span class="node fx">1 · LUT</span><span class="arr">→</span>
+        <span class="node fx">2 · 1080p</span><span class="arr">→</span>
+        <span class="node fx">3 · 4:2:0 8-bit</span><span class="arr">→</span>
+        <span class="node off">4 · 29.97</span><span class="arr">→</span>
+        <span class="node out"><i data-i="camlink" class="sm"></i>Zoom 1080p29.97</span>
+      </div>
+    </div>`);
+  mount('st', statusbar({ mode: 'separate', feeds: 1 }));
+</script>
+</body></html>

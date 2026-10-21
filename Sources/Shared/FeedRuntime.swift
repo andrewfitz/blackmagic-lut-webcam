@@ -1,6 +1,7 @@
 import CoreMedia
 import CoreVideo
 import Foundation
+import MonitorToolsCore
 
 /// The result of routing one processed frame through the Program output.
 /// The scheduler decision remains available to diagnostics while the route
@@ -16,6 +17,7 @@ struct ProgramRouteResult: @unchecked Sendable {
 @MainActor
 final class ProgramOutputRoute {
   private(set) var switcher: SwitcherCoordinator
+  var onMonitorFrame: ((FeedID, ProcessedFrame<CVPixelBuffer>, CMTime, CMTime, Bool) -> Void)?
   let fanOut: FrameFanOut<CVPixelBuffer>
 
   init(settings: SwitcherSettings = .init(), feedIDs: [FeedID],
@@ -97,9 +99,10 @@ final class ProgramOutputRoute {
         duration: mapped.programDuration,
         width: metadata.width,
         height: metadata.height,
-        pixelFormat: metadata.pixelFormat)
+        pixelFormat: metadata.pixelFormat, processingRevision: metadata.processingRevision)
       let programFrame = ProcessedFrame(payload: frame.payload, metadata: mappedMetadata)
       report = fanOut.publish(programFrame)
+      onMonitorFrame?(feedID, programFrame, mapped.sourceTime, mapped.programTime, false)
     case let .cutApplied(mapped, flushStaleFrames):
       if flushStaleFrames { fanOut.drain() }
       let mappedMetadata = ProcessedFrameMetadata(
@@ -107,9 +110,10 @@ final class ProgramOutputRoute {
         duration: mapped.programDuration,
         width: metadata.width,
         height: metadata.height,
-        pixelFormat: metadata.pixelFormat)
+        pixelFormat: metadata.pixelFormat, processingRevision: metadata.processingRevision)
       let programFrame = ProcessedFrame(payload: frame.payload, metadata: mappedMetadata)
       report = fanOut.publish(programFrame)
+      onMonitorFrame?(feedID, programFrame, mapped.sourceTime, mapped.programTime, true)
     case .skipped:
       report = FrameFanOutReport(outcomes: [:])
     }
@@ -257,6 +261,8 @@ final class FeedCoordinator {
   private(set) var switcherCoordinator: SwitcherCoordinator
   private(set) var virtualCameraRegistrySnapshot: VirtualCameraRegistrySnapshot
   private let registryStore: VirtualCameraRegistryStore?
+  var programMonitorConfiguration: MonitorConfiguration
+  var monitorWorkspace: MonitorWorkspaceState
   private var sessions: [FeedID: FeedSession] = [:]
   let capturePool: FeedCapturePool
   let programOutput: ProgramOutputRoute
@@ -270,6 +276,8 @@ final class FeedCoordinator {
        capturePool: FeedCapturePool = FeedCapturePool(),
        registryStore: VirtualCameraRegistryStore? = nil) {
     let safe = snapshot.validated() ?? AppSettingsSnapshot()
+    programMonitorConfiguration = safe.programMonitorConfiguration
+    monitorWorkspace = safe.monitorWorkspace
     descriptors = safe.feeds
     // A persisted selection can point at a disabled descriptor. Keep the
     // collection and the live Program route on the same usable source so a
@@ -700,7 +708,8 @@ final class FeedCoordinator {
   var snapshot: AppSettingsSnapshot {
     AppSettingsSnapshot(feeds: descriptors, selectedFeedID: selectedFeedID,
       outputMode: outputMode, switcher: switcher,
-      virtualCameraRegistryVersion: virtualCameraRegistryVersion)
+      virtualCameraRegistryVersion: virtualCameraRegistryVersion,
+      programMonitorConfiguration: programMonitorConfiguration, monitorWorkspace: monitorWorkspace)
   }
 
   @discardableResult

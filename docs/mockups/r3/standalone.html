@@ -1,0 +1,149 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Standalone two-camera recording</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .mini2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mini2 .picture { height: 92px; border-radius: 9px; }
+  .pausedpic::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 3; pointer-events: none;
+    box-shadow: inset 0 0 0 2px rgba(255,159,10,0.55); }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Standalone recording: two cameras, no meeting, each recorded independently</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="cols2">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+      </div>
+    </div>
+    <div class="sbar tnum">
+      <div class="seg2 c2"><i data-i="camlink" class="sm"></i>Virtual cameras not in use</div>
+      <div class="div"></div>
+      <div class="seg2 hover"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">Feed 1 12:31</span><span class="co">· ⏸ Feed 2 4:12</span></div>
+      <div class="div"></div>
+      <div class="seg2">8TB 3 h 10 m left · Archive 5 h 40 m<span class="newtag">NEW</span></div>
+      <div class="div"></div>
+      <div class="seg2"><i data-i="clock" class="sm"></i>Timecode: PC time</div>
+      <div class="sp"></div>
+      <div class="seg2">CPU 41.2% · GPU (video) 24.7% · Memory 1.58 GB</div>
+    </div>
+  </div>
+
+  <!-- ================= Hybrid dropdown: two-feed recording ================= -->
+  <div class="dd glass" style="left: 1402px; top: 36px;">
+    <div class="ddtop">
+      <div class="mini2">
+        <div class="picture" data-scene="mcu"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px"><span class="dot red" style="width:5px;height:5px"></span>12:31</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 1</span></div></div>
+        <div class="picture pausedpic" data-scene="wide" data-tone="slog"><div class="overlay" style="left:5px; top:5px;"><span class="pill sm glass co" style="height:18px;font-size:10px;padding:0 6px">⏸ 4:12</span></div><div class="overlay" style="left:5px; bottom:5px;"><span class="pill sm glass" style="height:18px;font-size:10px;padding:0 6px">Feed 2</span></div></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; padding:7px 4px 0" class="c2 tnum">
+        <span><span class="cr">●</span> Recording 1 of 2 · 21.5 GB</span><span>Not in a meeting</span>
+      </div>
+    </div>
+    <div class="msep"></div>
+    <div class="mh">Cameras</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Feed 1<small class="tnum">Recording 12:31</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot orange"></span></span>Feed 2<small class="tnum">Paused 4:12</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm" style="color:var(--red)"></i></span>Stop All Recordings<span class="key">⌥⌘R</span><span class="newtag">NEW</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause All</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>Show Recordings in Finder</div>
+    <div class="mi dis tnum" style="font-size:12px"><span class="ck"></span><span class="ico"><i data-i="folder" class="sm"></i></span>8TB 3 h 10 m · Archive 5 h 40 m left<span class="newtag">NEW</span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop All Feeds</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="eye" class="sm"></i></span>Video Preview<span class="key">⇧⌘P</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="program" class="sm"></i></span>Output Mode<span class="sub" style="font-size:12px">Separate Cameras<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+    <div class="stat">CPU 41% · GPU 25% · 1.58 GB</div>
+  </div>
+
+  <div class="callout" style="left: 24px; top: 300px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 820px; top: 150px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 272px; top: 560px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 808px; top: 640px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1000px; top: 70px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1380px; top: 60px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The sidebar reflects a recording session: both cameras with their take state, both virtual cameras not in use, and time left on each destination drive.</span></div>
+    <div><span class="n">2</span><span>Monitoring per feed: zebra + guides on Feed 1's output, focus peaking on Feed 2's S-Log3 source. Paused shows as an orange pill and ring, never as a red tally.</span></div>
+    <div><span class="n">3</span><span>Each strip records on its own: Feed 1 is rolling, Feed 2 is paused with Resume/Stop. Paused time isn't counted as elapsed time or dropped frames.</span></div>
+    <div><span class="n">4</span><span>Each feed has its own output too: its virtual camera stays ready but unused, and its effects and audio are independent. Recordings stay the clean source.</span></div>
+    <div><span class="n">5</span><span>The toolbar covers the common case: Pause All and Stop All (⌥⌘R) with combined elapsed time. No cut buttons in Separate mode.</span></div>
+    <div><span class="n">6</span><span>Dropdown in recording form: both feeds side by side, then a submenu per camera (resume, folder, effects, publish) and time left on both drives.</span></div>
+  </div>
+</div>
+<script>
+  // Page-local: keep scope scale labels small.
+  (function () {
+    const orig = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (t, x, y, w) {
+      const m = /(\d+)px/.exec(this.font);
+      if (m && +m[1] > 22) this.font = this.font.replace(/\d+px/, '22px');
+      return orig.call(this, t, x, y, w);
+    };
+  })();
+
+  const f1 = { ...FEEDS.f1, left: '3 h 10 m', fxview: 'zebra,guides', tools: [1, 1, 0, 0, 1], signal: 'Output' };
+  const f2 = { ...FEEDS.f2, tone: 'slog', fxview: 'peak', tools: [0, 0, 0, 1, 1], signal: 'Source · S-Log3',
+    rec: { state: 'rec', t: '04:12', size: '3.1 GB', rate: '92 Mb/s', drops: 0 } };
+  FEEDS.f1 = f1; FEEDS.f2 = f2;
+
+  // Sidebar: recording session instead of a meeting.
+  let sb = sidebar({ mode: 'separate', feeds: ['f1', 'f2'], consumer: '—' });
+  sb = sb.replace(/<div class="side-h">Output<\/div>[\s\S]*?<div class="side-h">Recording<\/div>/,
+    `<div class="side-h">Output</div>
+     <div class="mini-row">${ic('camlink', '', 'color:var(--label3)')}<div style="flex:1;line-height:1.25"><span>Ultracam · Feed 1</span><small>Not in use</small></div></div>
+     <div class="mini-row">${ic('camlink', '', 'color:var(--label3)')}<div style="flex:1;line-height:1.25"><span>Ultracam · Feed 2</span><small>Not in use</small></div></div>
+     <div class="side-h">Recording</div>`);
+  sb = sb.replace('2160p 29.97 · REC 04:12', '2160p 29.97 · <span class="co">Paused 04:12</span>');
+  sb = sb.replace(/<span class="dot green"><\/span>(<div style="flex:1;line-height:1.25"><b style="font-weight:600">Feed 2)/, '<span class="dot orange"></span>$1');
+  sb = sb.replace(/<span class="dot green"><\/span>(<div style="flex:1;line-height:1.25"><b style="font-weight:600">Feed 1)/, '<span class="dot red"></span>$1');
+  sb = sb.replace(/Backup · 2 feeds<\/b><small class="tnum">[^<]*<\/small>/, 'Recording · 2 cameras</b><small class="tnum">1 rolling · 1 paused · 21.5 GB</small>');
+  sb = sb.replace(/1 h 35 m left<\/span><\/div>\s*<div class="gauge"><i style="width:74%"><\/i><\/div>/,
+    `3 h 10 m left</span></div>
+      <div class="gauge"><i style="width:74%"></i></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:3px">${ic('folder', 'sm c2')}Archive<span class="c2 tnum" style="margin-left:auto">5 h 40 m left</span></div>
+      <div class="gauge"><i style="width:41%"></i></div>`);
+  mount('sb', sb);
+
+  let tb = toolbar({ title: 'Recording', subtitle: '2 cameras · virtual cameras not in use', mode: 'separate', layout: 'split', recLabel: 'Stop All · 12:31' });
+  tb = tb.replace('<div class="tb-group glass"><div class="tb-btn" title="Collapse strips">',
+    `<div class="tb-group glass"><div class="tb-btn">${ic('pause', '')}Pause All</div></div><div class="tb-group glass"><div class="tb-btn" title="Collapse strips">`);
+  mount('tb', tb);
+
+  const scope = (mode, label, sig, src, tone) => `<div class="scope3"><div style="display:flex;align-items:center;gap:8px;font-size:11.5px"><b>${label}</b><span class="c2">${sig}</span><span style="margin-left:auto" class="c3">⌥⌘K</span></div><canvas data-scope="${mode}" data-src="${src}" data-tone="${tone}"></canvas></div>`;
+
+  mount('c1', tile(f1, { mode: 'separate' }) + strip(f1, { mode: 'separate' }) + scope('parade', 'RGB Parade', 'Output', 'mcu', '709'));
+
+  // Feed 2: paused — adapt the builder output.
+  let t2 = tile(f2, { mode: 'separate' });
+  t2 = t2.replace('class="picture "', 'class="picture pausedpic"')
+    .replace(/<span class="pill sm glass"><span class="dot red"><\/span><span class="tnum">REC 04:12<\/span><\/span>/,
+      `<span class="pill sm glass co">${ic('pause')}<span class="tnum">PAUSED 04:12</span></span>`);
+  let s2 = strip(f2, { mode: 'separate' });
+  s2 = s2.replace('class="recbtn on sm"', 'class="recbtn sm"')
+    .replace('<span class="k2" style="color:#ff6961">Recording</span><span class="elapsed tnum">00:04:12</span>',
+      '<span class="k2" style="color:var(--orange)">Paused</span><span class="elapsed tnum c2">00:04:12</span>')
+    .replace('3.1 GB · 92 Mb/s', '3.1 GB · same file')
+    .replace('<span class="cg" style="font-size:11px">0 dropped</span>', '<span class="c2" style="font-size:11px">0 dropped</span>')
+    .replace(/<span class="btn"><i data-i="pause" class="sm"><\/i>Pause<\/span>/, `<span class="btn">${ic('play')}Resume</span>`);
+  mount('c2', t2 + s2 + scope('luma', 'Luma Waveform', 'Source', 'wide', 'slog'));
+</script>
+</body></html>

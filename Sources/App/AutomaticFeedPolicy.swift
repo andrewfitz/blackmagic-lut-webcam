@@ -1,19 +1,56 @@
-// A failed start is attempted once per camera-use session. Repeated property
-// notifications or status updates must never create an automatic retry loop.
+/// Source ownership and transport demand are independent of the UI selection.
+enum FeedLifecycleDemandPolicy {
+  static func programTransportRequired(programMode: Bool, cameraRequested: Bool,
+                                       onAirProducerRunning: Bool) -> Bool {
+    programMode && cameraRequested && onAirProducerRunning
+  }
+
+  static func programContract(configuration: PipelineConfiguration, pipelineEnabled: Bool,
+                              detectedInputFast: Bool?) -> PipelineConfiguration {
+    var result = pipelineEnabled ? configuration : PipelineConfiguration(
+      applyLUT: false, downscale: false, convertTo420: false, reduceFrameRate: false)
+    result.inputFast = detectedInputFast ?? configuration.inputFast
+    return result
+  }
+
+  static func canStartSource(automaticEnabled: Bool, manuallyStopped: Bool, deviceAvailable: Bool, loading: Bool) -> Bool {
+    automaticEnabled && !manuallyStopped && deviceAvailable && !loading
+  }
+
+  static func canEditTopology(loading: Bool, sourceActive: Bool, recordingActive: Bool) -> Bool {
+    !loading && !sourceActive && !recordingActive
+  }
+
+  static func retainsAutomaticOwnership(automaticEnabled: Bool, wasAutomaticallyStarted: Bool) -> Bool {
+    automaticEnabled && wasAutomaticallyStarted
+  }
+}
+
+// Attempt a start once while either preview or camera apps need capture.
+// Repeated notifications must never create an automatic retry loop.
 struct AutomaticFeedPolicy {
   enum Action: Equatable { case start, stop }
   private(set) var requested = false
+  private(set) var previewRequested = false
+  var captureRequested: Bool { requested || previewRequested }
   private var attempted = false
 
   mutating func demand(_ requested: Bool) {
-    if self.requested != requested { attempted = false }
+    let wasRequested = captureRequested
     self.requested = requested
+    if wasRequested != captureRequested { attempted = false }
+  }
+
+  mutating func previewDemand(_ requested: Bool) {
+    let wasRequested = captureRequested
+    previewRequested = requested
+    if wasRequested != captureRequested { attempted = false }
   }
 
   mutating func retry() { attempted = false }
 
   mutating func action(ready: Bool, running: Bool) -> Action? {
-    if !requested { return running ? .stop : nil }
+    if !captureRequested { return running ? .stop : nil }
     guard ready, !running, !attempted else { return nil }
     attempted = true
     return .start

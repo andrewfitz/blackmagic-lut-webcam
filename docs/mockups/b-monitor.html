@@ -1,0 +1,187 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam mockup · B · Monitor-first</title>
+<link rel="stylesheet" href="kit.css"><script src="kit.js"></script>
+<style>
+  .win { left: 40px; top: 80px; width: 1320px; height: 743px; background: #000; }
+  .grid { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 3px; }
+  .grid .picture { height: 100%; }
+  .edge { position: absolute; left: 0; right: 0; top: 0; height: 90px; z-index: 3;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0)); pointer-events: none; }
+  .edge.bottom { top: auto; bottom: 0; height: 110px; background: linear-gradient(0deg, rgba(0,0,0,0.6), rgba(0,0,0,0)); }
+  .transport { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 6; height: 56px;
+    border-radius: 28px; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 10px; white-space: nowrap; }
+  .circle { width: 38px; height: 38px; border-radius: 19px; display: flex; align-items: center; justify-content: center; background: var(--fill2); }
+  .cutpill { height: 36px; border-radius: 18px; padding: 0 13px 0 6px; display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12.5px; background: var(--fill); }
+  .cutpill .k { width: 24px; height: 24px; border-radius: 12px; background: var(--fill2); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .cutpill.air { background: rgba(255,69,58,0.85); color: #fff; }
+  .cutpill.air .k { background: rgba(255,255,255,0.25); }
+  .cutpill.next { box-shadow: inset 0 0 0 2px var(--green); }
+  .vsep { width: 0.5px; height: 28px; background: rgba(255,255,255,0.18); }
+  .tilelabel { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: flex; gap: 6px; }
+  .popover { position: absolute; z-index: 10; width: 316px; border-radius: 18px; padding: 12px; background: rgba(38,38,42,0.82); }
+  .popover::before { content: ""; position: absolute; top: -8px; left: 44px; width: 16px; height: 16px; transform: rotate(45deg);
+    background: rgba(50,50,54,0.95); border-left: 0.5px solid var(--glass-edge); border-top: 0.5px solid var(--glass-edge); border-radius: 3px 0 0 0; }
+  .fc-legend { display: flex; height: 8px; border-radius: 4px; overflow: hidden; width: 220px; }
+  .fc-legend i { flex: 1; }
+  .scope-overlay { position: absolute; left: 12px; right: 12px; bottom: 44px; height: 128px; border-radius: 10px; overflow: hidden; z-index: 2;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(6px); }
+  .scope-overlay canvas { width: 100%; height: 100%; display: block; opacity: 0.95; }
+  .mbx-b { left: 1406px; top: 38px; width: 320px; }
+  .big { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .big > div { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11px; color: var(--label2); }
+  .big .circle { width: 50px; height: 50px; border-radius: 25px; color: var(--label); }
+  .big .circle.on { background: var(--blue); color: #fff; }
+  .big .circle.red { background: var(--red); color: #fff; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open"><i data-i="videofill"></i></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">B · Monitor-first: full-bleed picture, floating glass controls</div>
+
+  <div class="window win">
+    <div class="grid">
+      <div class="picture tally" data-scene="mcu">
+        <div class="overlay" style="left:12px; top:58px;"><div class="pill glass">Feed 1<i data-i="chevd" class="sm"></i></div><span class="pill sm glass"><span class="dot red"></span>REC 12:31</span></div>
+        <div class="overlay" style="right:12px; top:58px;"><span class="badge red" style="height:22px">ON AIR</span></div>
+      </div>
+      <div class="picture tally-g" data-scene="wide" data-fx="guides">
+        <div class="overlay" style="left:12px; top:58px;"><div class="pill glass">Feed 2<i data-i="chevd" class="sm"></i></div><span class="pill sm glass cg"><span class="dot green"></span>Live</span></div>
+        <div class="overlay" style="right:12px; top:58px;"><span class="badge green" style="height:22px">NEXT</span></div>
+        <div class="overlay" style="right:12px; bottom:84px;">
+          <div class="tb-group glass" style="height:32px">
+            <div class="tb-btn on" style="height:26px"><i data-i="guides" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="zebra" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="falsecolor" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="focus" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="scope" class="sm"></i></div>
+            <div class="tb-sep"></div>
+            <div class="tb-btn" style="height:26px"><i data-i="freeze" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="clean" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="zoom" class="sm"></i></div>
+            <div class="tb-btn" style="height:26px"><i data-i="detach" class="sm"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="picture" data-scene="mcu" data-fx="false">
+        <div class="overlay" style="left:12px; top:12px;"><div class="pill glass">Feed 1 · Source<i data-i="chevd" class="sm"></i></div><span class="pill sm glass">False color · ARRI-style</span></div>
+        <div class="overlay" style="left:12px; bottom:84px; flex-direction:column; align-items:flex-start; gap:4px">
+          <div class="fc-legend"><i style="background:#8c1ab3"></i><i style="background:#1a59f2"></i><i style="background:#555"></i><i style="background:#33cc40"></i><i style="background:#7a7a7a"></i><i style="background:#ff85b8"></i><i style="background:#aaa"></i><i style="background:#ffeb1a"></i><i style="background:#ff261a"></i></div>
+          <span style="font-size:10.5px; text-shadow:0 1px 3px #000">S-Log3 · S-Gamut3.Cine · EI800 reference bands</span>
+        </div>
+      </div>
+      <div class="picture" data-scene="mcu">
+        <div class="overlay" style="left:12px; top:12px;"><div class="pill glass"><i data-i="program" class="sm"></i>Program<i data-i="chevd" class="sm"></i></div><span class="pill sm glass">Auto · Natural talking head</span></div>
+        <div class="scope-overlay"><canvas data-scope="luma" data-src="mcu"></canvas></div>
+      </div>
+    </div>
+    <div class="edge"></div>
+    <div class="edge bottom"></div>
+
+    <!-- floating toolbar -->
+    <div class="toolbar" style="height: 54px;">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="tb-group glass" style="margin-left:10px"><div class="tb-btn"><i data-i="single"></i></div><div class="tb-btn"><i data-i="split"></i></div><div class="tb-btn on"><i data-i="grid"></i></div></div>
+      <div class="flex"></div>
+      <div class="title" style="align-items:center; text-shadow:0 1px 4px #000"><b>Ultracam</b><small>3 cameras · Program to Zoom</small></div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn on"><i data-i="layers"></i>Effects</div><div class="tb-btn dim"><i data-i="bypass"></i>Bypass</div></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="eye"></i></div><div class="tb-btn"><i data-i="info"></i></div><div class="tb-btn"><i data-i="gear"></i></div></div>
+    </div>
+
+    <!-- floating transport -->
+    <div class="transport glass" style="background: rgba(30,30,34,0.55)">
+      <div class="circle"><i data-i="stop"></i></div>
+      <div style="display:flex; flex-direction:column; line-height:1.1">
+        <span class="mono" style="font-size:16px; font-weight:600">14:22:31:12</span>
+        <span class="c2" style="font-size:10.5px">Source TC · 59.94p</span>
+      </div>
+      <div class="vmeter" style="height:34px"><div><i style="height:66%"></i></div><div><i style="height:61%"></i></div></div>
+      <div class="vsep"></div>
+      <div class="cutpill air"><span class="k">1</span>Feed 1</div>
+      <div class="cutpill next"><span class="k">2</span>Feed 2</div>
+      <div class="cutpill c3"><span class="k">3</span>Feed 3</div>
+      <div class="cutpill" style="padding:0 12px; gap:8px"><i data-i="auto" class="sm"></i>Auto<div class="switch sm on"></div></div>
+      <div class="vsep"></div>
+      <div class="tb-prominent red" style="height:38px"><i data-i="stop" class="sm"></i><span class="tnum">REC 12:31</span><span style="font-weight:500; opacity:0.8">· 2 feeds</span></div>
+    </div>
+
+    <!-- feed popover from tile title -->
+    <div class="popover glass" style="left: 22px; top: 100px;">
+      <div style="display:flex; align-items:center; gap:8px; padding: 0 2px 8px">
+        <b style="font-size:14px">Feed 1</b><span class="badge green">Live</span>
+        <span class="btn icon" style="margin-left:auto"><i data-i="ellipsis" class="sm"></i></span>
+      </div>
+      <div class="seg" style="display:flex; margin-bottom:4px"><div class="on" style="flex:1;justify-content:center">Picture</div><div style="flex:1;justify-content:center">Tools</div><div style="flex:1;justify-content:center">Record</div></div>
+      <div class="form-h">Signal</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Input</span><span class="popup plain">Mini Recorder 12G<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Format</span><span class="val mono">2160p 59.94 → 1080p 29.97</span></div>
+      </div>
+      <div class="form-h">Processing <div class="switch sm on"></div></div>
+      <div class="form">
+        <div class="row"><div class="check on"></div><span class="lbl">1 · LUT</span><span class="val" style="font-size:11.5px">FX3_SLog3_to_709</span></div>
+        <div class="row"><div class="check on"></div><span class="lbl">2 · Downscale</span><span class="val" style="font-size:11.5px">1080p Lanczos-3</span></div>
+        <div class="row"><div class="check on"></div><span class="lbl">3 · Color</span><span class="val" style="font-size:11.5px">4:2:0 8-bit</span></div>
+        <div class="row"><div class="check"></div><span class="lbl">4 · Frame rate</span><span class="val" style="font-size:11.5px">29.97 limit</span></div>
+      </div>
+      <div class="form-h">LUT</div>
+      <div class="form">
+        <div class="row"><i data-i="cube" class="c2"></i><span class="lbl">S-Gamut3.Cine / S-Log3</span><span class="btn">Change…</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Menu bar panel: no preview ================= -->
+  <div class="mbx glass mbx-b" style="background: rgba(36,36,40,0.62);">
+    <div style="display:flex; align-items:center; gap:10px; padding: 2px 4px 12px;">
+      <div class="circle" style="width:34px;height:34px;background:rgba(48,209,88,0.18);color:var(--green)"><i data-i="videofill"></i></div>
+      <div style="display:flex;flex-direction:column;line-height:1.2"><b style="font-size:14px">Live · Program</b><small class="c2" style="font-size:11.5px">Feed 1 on air · Zoom connected</small></div>
+    </div>
+    <div class="big">
+      <div><div class="circle"><i data-i="stop" class="lg"></i></div>Stop</div>
+      <div><div class="circle red"><i data-i="stop" class="lg"></i></div><span class="tnum">REC 12:31</span></div>
+      <div><div class="circle on"><i data-i="layers" class="lg"></i></div>Effects</div>
+      <div><div class="circle on"><i data-i="auto" class="lg"></i></div>Auto start</div>
+    </div>
+    <div class="form-h" style="padding-top:14px">Program</div>
+    <div style="display:flex; gap:6px">
+      <div class="cutpill air" style="flex:1; height:32px"><span class="k">1</span>Feed 1</div>
+      <div class="cutpill next" style="flex:1; height:32px"><span class="k">2</span>Feed 2</div>
+      <div class="cutpill c3" style="flex:1; height:32px"><span class="k">3</span>Feed 3</div>
+    </div>
+    <div class="form" style="margin-top:12px">
+      <div class="row"><span class="lbl">Timecode</span><span class="val mono">14:22:31:12</span></div>
+      <div class="row"><span class="lbl">Audio</span><div style="width:110px;display:flex;flex-direction:column;gap:3px"><div class="meter"><div class="bar" style="height:4px"><i style="width:64%"></i></div></div><div class="meter"><div class="bar" style="height:4px"><i style="width:60%"></i></div></div></div><span class="val tnum">−9.8 dB</span></div>
+      <div class="row"><span class="lbl">Recording</span><span class="val tnum">2 feeds · 31.2 GB</span></div>
+      <div class="row"><span class="lbl c2" style="display:flex;gap:6px;align-items:center"><i data-i="chevr" class="sm"></i>Show preview</span></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:12px; padding:0 4px; font-size:11px" class="c2 tnum">
+      <span>CPU 38% · GPU 22%</span>
+      <div style="margin-left:auto" class="btn">Open Monitor</div>
+      <div class="btn icon"><i data-i="gear" class="sm"></i></div>
+    </div>
+  </div>
+
+  <div class="callout" style="left: 18px; top: 268px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 1040px; top: 96px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1290px; top: 540px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 250px; top: 776px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1100px; top: 430px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1386px; top: 140px;"><span class="n">6</span></div>
+  <div class="legend">
+    <div><span class="n">1</span>No sidebar or inspector. Per-feed settings open in a popover from the tile's title pill (Picture · Tools · Record), so editing is tied to the picture you're looking at.</div>
+    <div><span class="n">2</span>Floating glass toolbar over the picture with a scroll edge effect: layout, Effects/Bypass, preview, diagnostics and Settings.</div>
+    <div><span class="n">3</span>Tile controls (tools, freeze, clean, zoom, detach) appear on hover in one glass group. Tally rings: red on air, green next.</div>
+    <div><span class="n">4</span>Transport bar: Start/Stop, timecode, audio, numbered Program cuts (1–3), Auto, and one Record button with elapsed time.</div>
+    <div><span class="n">5</span>Scopes and false color are per-tile modes drawn over the picture, with their legend and signal label kept on the tile.</div>
+    <div><span class="n">6</span>Menu bar panel has no preview (no second renderer, no extra GPU work) and opens the preview on demand. Big transport buttons and cuts.</div>
+  </div>
+</div>
+</body></html>

@@ -33,12 +33,7 @@ struct MenuBarInterface: View {
       Divider()
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          HStack {
-            Text("Output preview").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            Spacer()
-            PreviewVisibilityControl(model: model)
-          }
-          FeedPreview(model: model, compact: true)
+          MonitorCompactPreview(coordinator: model.monitorCoordinator, model: model)
           PreviewErrorNotice(model: model)
           Divider()
           PipelineControls(model: model, compact: true)
@@ -61,6 +56,7 @@ struct MenuBarInterface: View {
       }
       .scrollBounceBehavior(.basedOnSize)
       Divider()
+      AppResourceSummary(compact: true)
       Toggle("Hide from Dock", isOn: $model.hideFromDock)
         .toggleStyle(.checkbox)
         .font(.caption)

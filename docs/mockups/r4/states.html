@@ -1,0 +1,367 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · States & edge cases</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .desktop.board { height: auto; background: #101114; padding: 92px 24px 190px; }
+  html.light .desktop.board { background: #e6e6eb; }
+  .tag { top: 30px; left: 24px; }
+  .sub { position: absolute; top: 36px; left: 470px; font-size: 12px; color: var(--label2); }
+  .sech { display: flex; align-items: baseline; gap: 12px; margin: 36px 0 14px; padding-left: 34px; position: relative; }
+  .sech h2 { margin: 0; font-size: 16px; font-weight: 700; }
+  .sech > span:not(.callout) { font-size: 12px; color: var(--label2); }
+  .sech .callout { left: 0; top: -1px; }
+  .g4 { display: grid; grid-template-columns: repeat(4, 410px); gap: 24px; align-items: start; }
+  .g3 { display: grid; grid-template-columns: repeat(3, 554px); gap: 24px; align-items: start; }
+  .scard { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .w2 { grid-column: span 2; } .w3 { grid-column: span 3; } .w4 { grid-column: span 4; }
+  .crop { background: var(--window); border-radius: 14px; padding: 12px; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 0.5px rgba(255,255,255,0.1), 0 10px 30px rgba(0,0,0,0.35); }
+  html.light .crop { box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.1); }
+  .cap { font-size: 11.5px; color: var(--label2); line-height: 1.4; padding: 0 4px; }
+  .cap b { color: var(--label); font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .num { width: 18px; height: 18px; border-radius: 9px; background: var(--fill3); color: var(--label); font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; flex: none; display: inline-block;
+    background: conic-gradient(from 0deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.85) 300deg, rgba(255,255,255,0) 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
+  html.light .crop .spin:not(.onvid), html.light .sbcrop .spin { background: conic-gradient(from 0deg, rgba(0,0,0,0) 0deg, rgba(0,0,0,0.6) 300deg, rgba(0,0,0,0) 360deg); }
+  .spin.lg { width: 28px; height: 28px; -webkit-mask: radial-gradient(circle, transparent 10px, #000 10.5px); mask: radial-gradient(circle, transparent 10px, #000 10.5px); }
+  .pbar { height: 5px; border-radius: 3px; background: var(--fill3); overflow: hidden; }
+  .pbar i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+  .dimmed { opacity: 0.4; }
+  /* pictures in cards: 16:9 regardless of builder height handling */
+  .tw .picture { aspect-ratio: 16 / 9; border-radius: 12px; height: auto !important; }
+  .tw .picture.sel-ring { margin: 4px; }
+  /* sidebar crops (hand-built sections; the sidebar() builder is a full-height panel) */
+  .sbbg { background: linear-gradient(140deg, #2a2440, #1d1d22); border-radius: 18px; padding: 8px; }
+  html.light .sbbg { background: linear-gradient(140deg, #c9d6f3, #efe6f0); }
+  .sbcrop { border-radius: 16px; padding: 4px 10px 10px; background: rgba(48,48,52,0.82); box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 0.5px rgba(255,255,255,0.14); }
+  html.light .sbcrop { background: rgba(255,255,255,0.72); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.1); }
+  .sbcrop .side-h { padding-top: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .sbcrop .mini-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+  .sbcrop .mini-row small { font-size: 10.5px; color: var(--label2); display: block; }
+  .sbcrop .take { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; font-size: 11.5px; }
+  .sbcrop .take small { font-size: 10.5px; color: var(--label2); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  /* status bars */
+  .sbwrap { position: relative; height: 30px; width: 1320px; background: var(--window); border-radius: 0 0 12px 12px; overflow: hidden; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.1); }
+  html.light .sbwrap { box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12); }
+  .sbline { display: flex; align-items: center; gap: 18px; }
+  .sbline .lab { width: 330px; font-size: 11.5px; color: var(--label2); line-height: 1.35; }
+  .sbline .lab b { color: var(--label); font-weight: 600; display: block; font-size: 12.5px; }
+  .seg2.warnseg { background: rgba(255,159,10,0.14); color: var(--orange); }
+  .seg2.errseg { background: rgba(255,69,58,0.16); color: #ff6961; }
+  html.light .seg2.errseg { color: #c4271d; }
+  /* menu bar icons */
+  .mbstrip { display: flex; border-radius: 12px; overflow: hidden; background: linear-gradient(100deg, #1b2347 0%, #3b2b55 45%, #7a3f45 80%, #b8643c 100%); }
+  html.light .mbstrip { background: linear-gradient(100deg, #c9d6f3 0%, #e3d6ee 45%, #f1d2c6 80%, #f4c9a6 100%); }
+  .mbstrip > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px; position: relative; }
+  .mbstrip > div + div::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 0.5px; background: rgba(255,255,255,0.2); }
+  .mbicon { height: 24px; min-width: 34px; display: flex; align-items: center; justify-content: center; color: #fff; position: relative; border-radius: 7px; }
+  html.light .mbicon { color: #111; }
+  .mbicon .bdg { position: absolute; right: 2px; top: 1px; width: 8px; height: 8px; border-radius: 4px; box-shadow: 0 0 0 1.5px rgba(40,30,70,0.9); }
+  html.light .mbicon .bdg { box-shadow: 0 0 0 1.5px rgba(230,220,235,0.95); }
+  .mbstrip small { font-size: 11px; color: rgba(255,255,255,0.94); text-align: center; line-height: 1.3; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  html.light .mbstrip small { color: #111; text-shadow: none; }
+  .mbstrip small i { font-style: normal; opacity: 0.7; display: block; font-size: 10px; }
+  /* dropdowns, menus, sheets inline */
+  .ddw .dd, .ddw .menu { position: relative; left: auto; top: auto; }
+  .ddwrap { background: linear-gradient(150deg, #29304f, #3b2b55 60%, #6b3a46); border-radius: 16px; padding: 14px; display: flex; justify-content: center; gap: 14px; align-items: flex-start; }
+  html.light .ddwrap { background: linear-gradient(150deg, #c9d6f3, #e3d6ee 60%, #f1d2c6); }
+  .sheetwrap { height: 250px; border-radius: 12px; position: relative; overflow: hidden; background: #000; }
+  .sheetwrap > .picture { position: absolute; inset: 0; opacity: 0.35; }
+  html.light .sheetwrap { background: #cfcfd6; }
+  .sheet { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); width: 320px; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 9px;
+    background: rgba(44,44,48,0.9); box-shadow: 0 0 0 0.5px rgba(255,255,255,0.16), 0 20px 50px rgba(0,0,0,0.5); }
+  html.light .sheet { background: rgba(246,246,248,0.95); box-shadow: 0 0 0 0.5px rgba(0,0,0,0.15), 0 20px 50px rgba(0,0,0,0.2); }
+  .sheet .btnrow { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .sheet .btn { height: 26px; padding: 0 14px; }
+  .destr { color: #ff6961 !important; }
+  html.light .destr { color: #c4271d !important; }
+  .appicon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(160deg, #3a3a40, #121214); display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.3), 0 2px 6px rgba(0,0,0,0.4); }
+  .onb { position: relative; border-radius: 16px; overflow: hidden; background: var(--window); padding: 18px; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14), 0 10px 30px rgba(0,0,0,0.4); }
+  html.light .onb { box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.12); }
+  .step { display: flex; align-items: center; gap: 12px; padding: 10px 12px; position: relative; }
+  .step + .step::before { content: ""; position: absolute; top: 0; left: 50px; right: 0; height: 0.5px; background: var(--sep); }
+  .step .sn { width: 26px; height: 26px; border-radius: 13px; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; background: var(--fill2); }
+  .step .sn.done { background: var(--green); color: #05230e; }
+  .step .st { flex: 1; line-height: 1.3; }
+  .step .st small { display: block; font-size: 11px; color: var(--label2); }
+  /* transitions */
+  .trow { display: flex; align-items: center; gap: 10px; }
+  .trow > .strip3 { flex: 1; min-width: 0; }
+  .arrow { flex: none; color: var(--label3); font-size: 18px; }
+  .tlab { width: 150px; flex: none; font-size: 11.5px; color: var(--label2); line-height: 1.35; }
+  .tlab b { display: block; color: var(--label); font-size: 12.5px; }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; font-size: 12px; color: var(--label2); line-height: 1.4; }
+  .notes b { color: var(--label); font-weight: 600; }
+  /* Local fit fixes (builder gaps reported): compact chips so separate-mode output rows fit 530 pt; ellipsize long labels. */
+  .crop .strip3 .fx4 { gap: 3px; }
+  .crop .strip3 .r { gap: 8px; }
+  .g3 .crop { padding: 8px; }
+  .crop .strip3 .fx4 span { padding: 0 5px; gap: 2px; }
+  .crop .strip3 .lblsw { gap: 4px; font-size: 11px; }
+  .crop .strip3 .r > div[style*="min-width:0"] { overflow: hidden; }
+  .crop .strip3 .r > div[style*="min-width:0"] > span { overflow: hidden; text-overflow: ellipsis; }
+  .trow > .strip3 { overflow: hidden; }
+  .trow .fx4, .trow .minimeter { display: none; }
+  .legend.r2 { position: absolute; }
+</style></head>
+<body>
+<div class="desktop board">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right"><div class="extra" style="position:relative"><i data-i="videofill"></i></div><i data-i="wifi"></i><i data-i="battery" class="lg"></i><span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span></div>
+  </div>
+  <div class="tag">Round 4 · States &amp; edge cases</div>
+  <div class="sub">True-scale crops of round-4 components outside the happy path, built from the shared builders. <span class="newtag">NEW</span> marks proposals the app doesn't have yet.</div>
+
+  <div class="sech"><span class="callout"><span class="n">1</span></span><h2>Channel strips · expanded</h2><span>One record control per take. Record is enabled only when the camera is live, a folder is set and no take is finishing.</span></div>
+  <div class="g3" id="strips"></div>
+
+  <div class="sech"><span class="callout"><span class="n">2</span></span><h2>Channel strips · collapsed</h2><span>Chevron or ⌥⌘S. Warnings tint the line orange and errors red, so collapsing never hides a problem.</span></div>
+  <div class="g3"><div class="scard w3"><div class="crop" id="collapsed" style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px"></div></div></div>
+
+  <div class="sech"><span class="callout"><span class="n">3</span></span><h2>Pictures &amp; Program</h2><span>Red = ON AIR only. NEXT appears only while a cut is pending. A click selects (blue ring) and never cuts.</span></div>
+  <div class="g4" id="pics"></div>
+
+  <div class="sech"><span class="callout"><span class="n">4</span></span><h2>Session sidebar</h2><span>Problems show in the section they belong to, with one action each.</span></div>
+  <div class="g4" id="side"></div>
+
+  <div class="sech"><span class="callout"><span class="n">5</span></span><h2>Status bar</h2><span>Real 1320 pt width, fixed order: output · Program · recording · audio · problems · resources. The worst state colors its segment.</span></div>
+  <div class="g4"><div class="scard w4"><div class="crop" id="sbars" style="display:flex;flex-direction:column;gap:12px;padding:16px"></div></div></div>
+
+  <div class="sech"><span class="callout"><span class="n">6</span></span><h2>Sheets, menus &amp; the menu bar</h2><span>Confirmation, locked topology, keep-awake, quit, onboarding, dropdown and icon states.</span></div>
+  <div class="g4" id="misc"></div>
+
+  <div class="sech"><span class="callout"><span class="n">7</span></span><h2>Transitions</h2><span>How a strip moves between states. Every arrow is driven by a real recorder or capture event.</span></div>
+  <div class="g4"><div class="scard w4"><div class="crop" id="trans" style="display:flex;flex-direction:column;gap:12px;padding:16px"></div></div></div>
+
+  <div class="legend r2" id="legend">
+    <div><span class="n">1</span><span>Expanded strips use the builder's states: Ready, Recording, Paused, Finishing, Saved, No folder, Failed, Recording · no signal, Stopped, Waiting for HDMI, Updating output, plus bypass and LUT loading.</span></div>
+    <div><span class="n">2</span><span>Collapsed strips keep the same words and color, plus a record button that disables by the same rule.</span></div>
+    <div><span class="n">3</span><span>No orange ring for a skipped source (D4): a text badge says why. No dashed "cutting" ring: a pending cut is NEXT. Unplugged input and no HDMI signal have different words.</span></div>
+    <div><span class="n">4</span><span>Sidebar: first run, install, approval pending, unsigned build, interrupted takes, disk space, armed backup and the automatic-mode line.</span></div>
+    <div><span class="n">5</span><span>Status bar: normal, recording, warning (no signal while recording), error (drive full) and nothing published. No app names, only "in use".</span></div>
+    <div><span class="n">6</span><span>Stop Camera asks before ending a take. Rename and Add say why they're locked. The app keeps the Mac awake while cameras run and warns before a lid close.</span></div>
+    <div><span class="n">7</span><span>Transitions: Ready → Recording → Finishing → Saved; Recording ↔ Recording · no signal; Recording → Failed → Saved up to the last fragment.</span></div>
+  </div>
+</div>
+
+<script>
+  // ---------- page helpers (local names only) ----------
+  const card = (cls, inner, n, title, text) =>
+    `<div class="scard ${cls}">${inner}<div class="cap"><b><span class="num">${n}</span>${title}</b>${text}</div></div>`;
+  const crop = (inner, style = '') => `<div class="crop" style="${style}">${inner}</div>`;
+  const tw = (html) => `<div class="tw">${html}</div>`;
+  const C1 = CAMS.c1, C2 = CAMS.c2;
+  const pausedCam = { ...C2, rec: { ...C2.rec, state: 'paused', t: '00:04:12', size: '11.1 GB' } };
+  const idleCam = (c) => ({ ...c, rec: { ...c.rec, state: 'idle' } });
+  const dropCam = { ...C1, rec: { ...C1.rec, drops: 14 } };
+  // Custom picture placeholders for states the tile builder doesn't cover.
+  const phTile = (name, iconName, title, small, extra = '', badge = '', ring = '') =>
+    `<div class="picture ${ring}" style="background:#0b0b0d"><div class="ph">${iconName === 'spin' ? '<span class="spin lg onvid"></span>' : ic(iconName, 'lg')}<b>${title}</b><small>${small}</small>${extra}</div>
+      <div class="overlay" style="left:10px; top:10px;"><div class="pill glass">${name}${ic('chevud')}</div>${badge}</div></div>`;
+  // Stop Camera button removed / LUT-loading variants are done by small string edits on builder output.
+  const lutLoading = strip(idleCam(C1), { state: 'stopped', mode: 'separate' })
+    .replace('<span class="btn"><i data-i="play" class="sm"></i>Start Camera</span>', '<span class="spin"></span><span class="btn dimmed"><i data-i="play" class="sm"></i>Start Camera</span>')
+    .replace('Start the camera to record', 'Waiting for the saved LUT…');
+
+  // ---------- 1 · expanded strips ----------
+  const S = (c, o) => strip(c, { mode: 'separate', ...o });
+  mount('strips', [
+    card('', crop(S(idleCam(C1), { state: 'ready' })), 1, 'Ready', 'Live with a folder. The round record button starts a take; ⌘R does the same for the selected camera.'),
+    card('', crop(S(C1, { state: 'recording', inUse: true })), 2, 'Recording', 'Elapsed, size, bitrate and drops refresh twice a second. Pause sits beside it; Stop Camera is in the header and asks first.'),
+    card('', crop(S(pausedCam, { state: 'paused' })), 3, 'Paused', 'Orange words, not red. Resume continues the same file; paused time never counts as elapsed or dropped.'),
+    card('', crop(S(C1, { state: 'finishing' })), 4, 'Finishing', 'Stop drains the encoder and finalizes on a worker. Recording actions stay disabled until the file is saved.'),
+    card('', crop(S(idleCam(C1), { state: 'saved' })), 5, 'Saved', 'The last take stays visible with its file name, duration and Show in Finder until the next take starts.'),
+    card('', crop(S(idleCam(C1), { state: 'nofolder' })), 6, 'No folder', 'Record is disabled until this camera or the default has a folder. Folder changes apply to the next take.'),
+    card('', crop(S(idleCam(C1), { state: 'failed' })), 7, 'Failed · drive disconnected', 'Names what happened and how much was saved (to the last complete fragment). Show in Finder and Details.'),
+    card('', crop(S(C1, { state: 'recnosignal', inUse: true })), 8, 'Recording · no signal', 'The HDMI signal dropped while recording. The take stays open but frames are missing, so the gap is counted and shown in orange.'),
+    card('', crop(S(idleCam(C1), { state: 'stopped' })), 9, 'Camera stopped', 'Start Camera is the one action. Recording needs a running camera.'),
+    card('', crop(S(idleCam(C1), { state: 'waiting' })), 10, 'Waiting for HDMI', 'Detection stays armed. Record becomes available as soon as a supported signal arrives.'),
+    card('', crop(S(C1, { state: 'updating', inUse: true }).replace(' Updating output…</span>', ' Updating output…</span>').replace('<span>Ultracam · Camera 1</span>', '')), 11, 'Updating output', 'A format-changing effect (1080p, 4:2:0, 29.97) was toggled while in use. Allowed without a prompt (D2); the output pauses briefly and says so.'),
+    card('', crop(S(C1, { state: 'recording', bypass: true, inUse: true }).replace('● 2160p 59.94</span>', '● 2160p 59.94</span><span class="badge orange">Complete bypass</span>')), 12, 'Complete bypass', 'Processing off: original 2160p 59.94 10-bit 4:2:2 is passed through. Effect choices stay saved, struck through.'),
+    card('', crop(S(dropCam, { state: 'recording', inUse: true })), 13, 'Dropped frames', 'The drop count turns orange as soon as it is above zero. Details live in Diagnostics.'),
+    card('', crop(lutLoading), 14, 'LUT loading', 'The saved LUT is restoring. Start waits for it rather than starting without the LUT; a failed restore keeps capture usable.'),
+    card('', crop(strip(C1, { role: 'air', mode: 'program', programInUse: false })), 15, 'In Program · no viewer yet', 'Program mode, but no app is using Ultracam · Program. The badge says Program, not On air.'),
+  ].join(''));
+
+  // ---------- 2 · collapsed strips ----------
+  const K = (c, o) => strip(c, { expanded: false, mode: 'separate', ...o });
+  mount('collapsed', [
+    K(idleCam(C1), { state: 'ready' }), K(C1, { state: 'recording' }),
+    K(pausedCam, { state: 'paused' }), K(C1, { state: 'finishing' }),
+    K(idleCam(C1), { state: 'saved' }), K(idleCam(C1), { state: 'nofolder' }),
+    K(idleCam(C1), { state: 'failed' }), K(C1, { state: 'recnosignal' }),
+    K(idleCam(C1), { state: 'stopped' }), K(idleCam(C1), { state: 'waiting' }),
+    K(dropCam, { state: 'recording' }), K(C1, { state: 'recording', bypass: true }),
+  ].join(''));
+
+  // ---------- 3 · pictures ----------
+  const T = (c, o) => tw(tile(c, o));
+  const holdBadge = '<span class="pill sm glass">Auto · holding 8.2 s</span>';
+  mount('pics', [
+    card('', T(C1, { role: 'air', programInUse: true }), 1, 'ON AIR', 'Program mode, and an app is using Ultracam · Program. Red ring plus a text badge, never color alone.'),
+    card('', T(C1, { role: 'air', programInUse: false }), 2, 'PROGRAM · no viewer', 'Selected for Program, but nothing is watching yet. Outlined badge, no red ring.'),
+    card('', T(C2, { role: 'next' }), 3, 'NEXT · cut pending', 'Only while a cut is queued for the next Program frame (switcherPendingFeedID). It disappears when the cut applies.'),
+    card('', tw(tile(C1, { role: 'air' }).replace('<span class="role air">ON AIR</span>', '<span class="role air">ON AIR</span>' + holdBadge)), 4, 'Auto holding · Hold Current Shot', 'Auto keeps the shot for its minimum length. Program ▸ Hold Current Shot pauses Auto on this camera until you release it.'),
+    card('', tw(phTile('Camera 2', 'video', 'No HDMI signal', 'Check the camera\'s HDMI output: 2160p 29.97 or 59.94, 10-bit 4:2:2, RAW off.', '', '<span class="badge orange" style="height:22px">Skipped by Auto · no signal</span>')), 5, 'Skipped by Auto', 'D4: no orange ring. A text badge explains why the director won\'t cut here; the camera rejoins when frames arrive.'),
+    card('', T(idleCam(C2), { state: 'nosignal' }), 6, 'No HDMI signal', 'The input is connected but sends nothing usable. Detection stays armed; the virtual camera sends black after 0.5 s.'),
+    card('', tw(phTile('Camera 1', 'info', 'Mini Recorder 12G disconnected', 'Reconnect it or choose another input.', '<span class="btn" style="margin-top:4px">Choose Input…</span>')), 7, 'Input unplugged', 'Different words from No signal: the device itself is gone, so the fix is a cable or another input.'),
+    card('', T(idleCam(C2), { state: 'unsupported' }), 8, 'Unsupported HDMI mode', 'The detected mode is named exactly. Recording and output wait for a supported signal.'),
+    card('', tw(phTile('Camera 1', 'spin', 'Starting Camera 1…', 'Opening the UltraStudio and waiting for the first frame.')), 9, 'Starting · connecting', 'Shown between Start and the first frame, so a slow device never looks like a failure.'),
+    card('', T(C1, { state: 'updating', role: 'air' }), 10, 'Updating output', 'A format-changing effect changed while Zoom is connected. The picture keeps showing the input; the pill says the output is renegotiating.'),
+    card('', T(C1, { state: 'recnosignal', role: 'air' }), 11, 'Recording · no signal', 'The REC pill turns orange with the gap length. The menu bar icon gets the same orange badge.'),
+    card('', T(C1, { state: 'hidden' }), 12, 'Preview hidden', 'Rendering only. Camera output and recording continue; hidden previews do no GPU work.'),
+    card('', tw(phTile('Camera 1', 'info', 'Preview stopped', 'The preview renderer reported an error. Camera output keeps running.', '<span class="btn" style="margin-top:4px">' + ic('refresh') + 'Retry Preview</span>')), 13, 'Preview error · Retry Preview', 'Restores the current app\'s preview retry. It restarts rendering only.'),
+    card('', T(idleCam(C1), { state: 'stopped' }), 14, 'Camera stopped', 'Start Camera on the picture and in the strip. ⌘↩ starts the cameras.'),
+    card('', T(C1, { role: 'air', selected: true }), 15, 'Selected (blue ring)', 'Selection = keyboard focus (D7). ⌘1–⌘4 move it; ⇧⌘B, ⌘R and the Camera menu act on it. Blue is never a tally color.'),
+    card('', tw(phTile('Program', 'video', 'Program shows black', 'No camera has a signal. Zoom receives black until one returns.', '', '<span class="role prog">PROGRAM</span>', 'tally-air')), 16, 'No healthy source', 'Program view: the on-air camera was lost and none can replace it. The ring stays red because Zoom is still watching.'),
+  ].join(''));
+
+  // ---------- 4 · sidebar crops ----------
+  const sbw = (inner) => `<div class="sbbg"><div class="sbcrop">${inner}</div></div>`;
+  mount('side', [
+    card('', sbw(`<div class="side-h">Cameras · 0<span class="btn icon" style="height:22px;width:22px">${ic('plus')}</span></div>
+      <div class="mini-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:10px 8px"><b style="font-size:12.5px">Connect an UltraStudio</b><small>No Blackmagic capture device found. Check Desktop Video is installed and the device is connected.</small><span class="btn">${ic('refresh')}Refresh</span></div>`),
+      1, 'First run · no inputs', 'The Cameras header shows the count. Refresh rescans devices; it is the only action until an input appears.'),
+    card('', sbw(`<div class="side-h">Output</div>
+      <div class="banner info" style="margin:4px 0 2px"><span class="bi">${ic('camlink')}</span><div><b>Install the Ultracam camera</b><small>Needed before Zoom can see it. macOS asks you to approve it.</small></div></div>
+      <div style="padding:4px 8px"><span class="btn blue">Install Camera</span></div>`),
+      2, 'Camera not installed', 'Signed build, extension not active. One action. Capture, preview and recording already work.'),
+    card('', sbw(`<div class="side-h">Output</div>
+      <div class="banner warn" style="margin:4px 0 2px"><span class="bi">${ic('info')}</span><div><b>Approve Ultracam in System Settings</b><small>General › Login Items &amp; Extensions › Camera Extensions. Install and Remove wait until you do.</small></div></div>
+      <div style="padding:4px 8px;display:flex;gap:6px"><span class="btn">Open System Settings</span><span class="spin" style="margin-top:4px"></span></div>`),
+      3, 'Approval pending', 'The installer\'s pending state. Install/Remove are disabled; the banner clears when macOS reports the result.'),
+    card('', sbw(`<div class="side-h">Output</div>
+      <div class="mini-row">${ic('camlink', 'c3')}<div style="flex:1;line-height:1.25"><span class="c2">Camera output needs a signed build</span><small>Preview and recording still work.</small></div></div>
+      <div style="padding:4px 8px"><span class="btn dimmed">Install Camera</span></div>`),
+      4, 'Unsigned build', 'Explains instead of failing. Install stays disabled with the reason.'),
+    card('', sbw(`<div class="side-h">Recent Takes</div>
+      <div class="take" style="background:rgba(255,159,10,0.10)">${ic('info', 'sm co')}<div style="flex:1"><span class="co">2 interrupted takes</span><small style="white-space:normal;max-width:none">Recover copies complete fragments; originals are kept</small></div></div>
+      <div class="take">${ic('video', 'sm c2')}<div style="flex:1"><span>Oct 19 21:13 · ~41 min</span><small>Camera 1_2026-10-19_21-13-55_003.mov</small></div><span class="btn" style="height:22px;font-size:11px">Recover</span></div>
+      <div class="take">${ic('video', 'sm c2')}<div style="flex:1"><span>Oct 19 21:13 · 40:52</span><small>Camera 2_…_003_Recovered.mov</small></div><span class="btn icon" style="height:22px;width:22px" title="Show in Finder">${ic('search')}</span></div>`),
+      5, 'Interrupted takes', 'Found at launch and when a folder is chosen. One recovery at a time; a recovered take is not offered again. The original is kept.'),
+    card('', sbw(`<div class="side-h">Recording</div>
+      <div style="padding:4px 8px;display:flex;flex-direction:column;gap:5px">
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px">${ic('folder', 'sm co')}8TB${newtag}<span class="co tnum" style="margin-left:auto">12 min left</span></div>
+        <div class="gauge"><i style="width:96%;background:var(--orange)"></i></div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px">${ic('folder', 'sm cr')}Archive<span class="cr tnum" style="margin-left:auto">2 min left</span></div>
+        <div class="gauge"><i style="width:99%;background:var(--red)"></i></div>
+        <small class="cr" style="font-size:10.5px">Recording stops when Archive is full. Takes are saved up to the last fragment.</small></div>`),
+      6, 'Drive running low', 'Time left uses the drive\'s free space and each take\'s real bitrate. Orange at 15 min, red at 3 min; the status bar repeats it.'),
+    card('', sbw(`<div class="side-h">Automation</div>
+      <div class="banner" style="margin:4px 0"><span class="bi cr">●</span><div><b>Backup recording armed${newtag}</b><small>A take starts after 10 s of camera use and stops when the last app closes, only if automation started it.</small></div></div>
+      <div class="mini-row" style="padding:2px 8px"><div style="flex:1;line-height:1.25">Start with camera apps<small>Camera 1, Camera 2</small></div></div>`),
+      7, 'Backup armed (D6)', 'Design only for now. The 10 s debounce ignores Zoom\'s settings preview; a take you started yourself is never auto-stopped.'),
+    card('', sbw(`<div class="side-h">Output</div>
+      <div class="mini-row">${ic('camlink', 'c2')}<div style="flex:1;line-height:1.25"><b style="font-weight:600">Ultracam · Camera 1</b><small>Not in use</small></div></div>
+      <div class="mini-row" style="padding-top:0"><span class="spin"></span><div style="flex:1;line-height:1.25"><span style="font-size:11.5px">Automatic · waiting for a camera app</span><small>Starts when an app opens Ultracam · Camera 1</small></div></div>`),
+      8, 'Automatic mode status', 'The automatic status line now has a home in the window, not only in the menu bar dropdown.'),
+  ].join(''));
+
+  // ---------- 5 · status bars ----------
+  const sbl = (title, text, html) => `<div class="sbline"><div class="lab"><b>${title}</b>${text}</div><div class="sbwrap">${html}</div></div>`;
+  const recNoSig = statusbar({ mode: 'program' }).replace('<div class="sp"></div>', '<div class="div"></div><div class="seg2 warnseg">' + ic('info') + 'Camera 1 · recording, no signal 0:42</div><div class="sp"></div>').replace('CPU 48.6% · GPU (video) 29.8% · Memory 1.71 GB', 'CPU 49% · GPU 30% · 1.71 GB');
+  const diskFull = statusbar({ mode: 'program' }).replace('<span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 · 12:31</span> · ', '<span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 1 · 12:31</span> · ')
+    .replace('<div class="sp"></div>', '<div class="div"></div><div class="seg2 errseg">' + ic('info') + 'Camera 2 · Archive is full · saved up to 12:20</div><div class="sp"></div>').replace('CPU 48.6% · GPU (video) 29.8% · Memory 1.71 GB', 'CPU 49% · GPU 30% · 1.71 GB');
+  mount('sbars', [
+    sbl('Normal', 'Published and live, not recording.', statusbar({ mode: 'program', recording: false })),
+    sbl('Recording', 'Both takes and the time left on each drive.', statusbar({ mode: 'program' })),
+    sbl('Warning', 'Orange segment names the camera and the gap.', recNoSig),
+    sbl('Error', 'Red segment says what was saved.', diskFull),
+    sbl('Nothing published', 'Standalone recording, no app using the cameras.', statusbar({ mode: 'separate', inUse: [], recording: true, programInUse: false })),
+  ].join(''));
+
+  // ---------- 6 · sheets, menus, menu bar ----------
+  const sheet = (inner) => `<div class="sheetwrap"><div class="picture" data-scene="mcu"></div><div class="sheet">${inner}</div></div>`;
+  const icons = [
+    ['video', '', 'Stopped', 'video'], ['video', '', 'Automatic · waiting', 'video, dimmed', 'opacity:0.5'],
+    ['videofill', '', 'Live', 'video.fill'], ['bypass', '', 'Live · bypass', 'arrow.right.square'],
+    ['videofill', 'var(--red)', 'Recording', 'red badge', '', true], ['videofill', 'var(--orange)', 'Needs attention', 'orange badge', '', true],
+  ].map(([i, bdg, l, s, st = '', nw = false]) => `<div><span class="mbicon"${st ? ` style="${st}"` : ''}>${ic(i, 'lg')}${bdg ? `<span class="bdg" style="background:${bdg}"></span>` : ''}</span><small>${l}${nw ? ' ' + newtag : ''}<i>${s}</i></small></div>`).join('');
+  mount('misc', [
+    card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('videofill')}</span><div style="line-height:1.35"><b style="font-size:13px">Stop Camera 1?</b><div class="c2" style="font-size:11.5px;margin-top:3px">This ends Camera 1's recording (12:31, 64.2 GB) and stops its output to Program. The take is saved.</div></div></div>
+      <div class="btnrow"><span class="btn">Cancel</span><span class="btn destr">Stop Camera</span></div>`),
+      1, 'Stop Camera confirmation', 'Asked only when stopping would end a recording or interrupt a camera that is in use (D3). Otherwise Stop Camera acts at once.'),
+    card('', `<div class="ddwrap ddw"><div class="menu glass" style="width:300px;background:rgba(40,40,44,0.86)">
+      <div class="mi"><span class="ck"></span><span class="ico">${ic('inspector')}</span>Show Inspector<span class="key">⌥⌘I</span></div>
+      <div class="mi"><span class="ck"></span><span class="ico">${ic('cube')}</span>Load LUT…<span class="key">⌘O</span></div>
+      <div class="mi"><span class="ck"></span><span class="ico">${ic('detach')}</span>Open Monitor Window</div>
+      <div class="msep"></div>
+      <div class="mi dis"><span class="ck"></span><span class="ico">${ic('sliders')}</span>Rename Camera…<small>stop all cameras first</small></div>
+      <div class="mi"><span class="ck"></span><span class="ico">${ic('info')}</span>Diagnostics…</div>
+      <div class="msep"></div>
+      <div class="mi dis"><span class="ck"></span><span class="ico">${ic('trash')}</span>Remove Camera…<small>stop all cameras first</small></div>
+    </div></div>`,
+      2, 'Topology locked · ⋯ menu', '⋯ is a menu (D5). Rename, Add and Remove are blocked while any camera runs or records, so they are shown disabled with the reason instead of failing.'),
+    card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('power')}</span><div style="line-height:1.35"><b style="font-size:13px">Keep the lid open while recording</b><div class="c2" style="font-size:11.5px;margin-top:3px">Ultracam keeps the Mac awake while cameras run, but closing the lid still sleeps it and stops both takes.</div></div></div>
+      <div class="btnrow"><span class="btn">Don't Show Again</span><span class="btn blue">OK</span></div>`),
+      3, 'Keep awake · lid notice', 'Idle sleep is prevented while any camera runs or records. Shown once when the first take starts on battery power.'),
+    card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('videofill')}</span><div style="line-height:1.35"><b style="font-size:13px">2 recordings are finishing</b><div class="c2" style="font-size:11.5px;margin-top:3px">Ultracam quits when they're saved.</div></div></div>
+      <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Camera 1</span><span class="c2">Writing the final fragment…</span></div><div class="pbar"><i style="width:72%"></i></div>
+      <div style="font-size:11.5px;display:flex;justify-content:space-between"><span>Camera 2</span><span class="cg">Saved</span></div><div class="pbar"><i style="width:100%;background:var(--green)"></i></div>
+      <div class="btnrow"><span class="btn">Cancel Quit</span></div>`),
+      4, 'Quit while recording', 'Quit waits for active takes to finish writing and shows what is still in progress, so the drive isn\'t unplugged early.'),
+    card('w2', `<div class="onb">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><span class="appicon">${ic('videofill')}</span><div><b style="font-size:14px">Welcome to Ultracam</b>${newtag}<div class="c2" style="font-size:11.5px">Four steps before your first meeting. Each one can be done later.</div></div></div>
+      <div class="form">
+        <div class="step"><span class="sn done">✓</span><div class="st">Install the Ultracam camera<small>Approved in System Settings › Login Items &amp; Extensions</small></div></div>
+        <div class="step"><span class="sn">2</span><div class="st">Choose Camera 1's input<small>UltraStudio Mini Recorder 12G found</small></div><span class="popup">Mini Recorder 12G<span class="chev">${ic('chevud')}</span></span></div>
+        <div class="step"><span class="sn">3</span><div class="st">Load a LUT · optional<small>S-Log3 → Rec.709 .cube for the output</small></div><span class="btn">Load LUT…</span></div>
+        <div class="step"><span class="sn">4</span><div class="st">Choose a recording folder<small>For backup or standalone recording</small></div><span class="btn">Choose…</span></div>
+      </div>
+      <div class="c2" style="font-size:11.5px;margin-top:10px">Then choose <b style="color:var(--label)">Ultracam · Camera 1</b> as the camera in Zoom.</div></div>`,
+      5, 'First launch', 'The empty window becomes a checklist. Completed steps tick off; the last line tells you which camera to pick in Zoom.'),
+    card('w2', `<div class="ddwrap ddw">
+      <div class="dd glass" style="width:330px">
+        <div class="ddtop"><div class="picture" style="height:150px;border-radius:11px;background:#0b0b0d"><div class="ph"><b>Camera stopped</b><small>Start the camera to see its HDMI input.</small></div></div>
+          <div class="c2" style="font-size:11px;padding:7px 4px 0">Stopped · Mini Recorder 12G ready</div></div>
+        <div class="msep"></div>
+        <div class="mi hl"><span class="ck"></span><span class="ico">${ic('play')}</span>Start Cameras<span class="key">⌘↩</span></div>
+        <div class="mi"><span class="ck">✓</span><span class="ico">${ic('auto')}</span>Start with Camera Apps</div>
+        <div class="mi dis"><span class="ck"></span><span class="ico">${ic('record')}</span>Record All<small>start a camera first</small><span class="key">⌥⌘R</span></div>
+        <div class="msep"></div>
+        <div class="mi"><span class="ck"></span><span class="ico">${ic('sidebar')}</span>Open Ultracam<span class="key">⌘0</span></div>
+        <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+      </div>
+      <div class="dd glass" style="width:330px">
+        <div class="ddtop"><div class="picture" data-scene="mcu" style="height:150px;border-radius:11px"><div class="overlay" style="right:7px;bottom:7px"><span class="pill sm glass co">${ic('info')}REC · no signal 0:42</span></div></div></div>
+        <div class="banner warn" style="margin:0 6px 4px"><span class="bi">${ic('info')}</span><div><b>Camera 1 · recording, no signal</b><small>Frames are missing from the take since 09:40:21.</small></div></div>
+        <div class="msep"></div>
+        <div class="mi"><span class="ck"></span><span class="ico">${ic('stop')}</span>Stop Recording<small class="tnum">12:31</small><span class="key">⌘R</span></div>
+        <div class="mi"><span class="ck"></span><span class="ico">${ic('video')}</span>Choose Input…</div>
+        <div class="msep"></div>
+        <div class="mi"><span class="ck"></span><span class="ico">${ic('sidebar')}</span>Open Ultracam<span class="key">⌘0</span></div>
+      </div></div>`,
+      6, 'Dropdown · stopped and needs attention', 'Same shape in every state. Stopped: Start Cameras is the default row. Attention: a banner above the rows with one action, and Record All says why it is disabled.'),
+    card('w2', `<div class="mbstrip">${icons}</div>`,
+      7, 'Menu bar icon states', 'Template symbols in every state. The badge dot (recording, attention) is the only color, and the menu and its accessibility label say the full state.'),
+    card('w2', crop(`<div class="notes">
+      <div><b>Honest values.</b> "—", "No signal" and "Not in use" instead of zeros, stale pictures or app names the system doesn't report.</div>
+      <div><b>One action per problem.</b> Retry Preview, Choose Input, Choose Folder, Recover, Install Camera, Open System Settings.</div>
+      <div><b>Color with words.</b> Red only for ON AIR, REC is a red dot with neutral text, warnings orange with an icon.</div>
+      <div><span class="newtag" style="margin:0 4px 0 0">NEW</span>marks designs that need new app work (time left, backup automation, first-launch checklist, icon badges).</div>
+    </div>`, 'padding:16px'),
+      8, 'Conventions', 'Applied to every card on this page and to every round-4 page.'),
+  ].join(''));
+
+  // ---------- 7 · transitions ----------
+  const arrow = '<span class="arrow">→</span>';
+  const tr = (title, text, parts) => `<div class="trow"><div class="tlab"><b>${title}</b>${text}</div>${parts.join(arrow)}</div>`;
+  mount('trans', [
+    tr('Normal take', 'Record → Stop → saved.', [K(idleCam(C1), { state: 'ready' }), K(C1, { state: 'recording' }), K(C1, { state: 'finishing' }), K(idleCam(C1), { state: 'saved' })]),
+    tr('Signal drop', 'HDMI lost, then back. The take continues.', [K(C1, { state: 'recording' }), K(C1, { state: 'recnosignal' }), K(C1, { state: 'recording' })]),
+    tr('Drive failure', 'Drive disconnected or full.', [K(C1, { state: 'recording' }), K(idleCam(C1), { state: 'failed' }), K(idleCam(C1), { state: 'saved' }).replace('>Saved<', '>Saved up to 12:20<')]),
+  ].join(''));
+
+  // Size the board to its content and record it for the renderer.
+  window.addEventListener('load', () => {
+    const d = document.querySelector('.desktop');
+    document.body.dataset.h = d.scrollHeight;
+    const lg = document.getElementById('legend');
+    lg.style.bottom = '30px';
+    const m = location.hash.match(/y=(\d+)/); if (m) d.style.marginTop = '-' + m[1] + 'px';
+  });
+</script>
+</body></html>

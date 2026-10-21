@@ -1,0 +1,225 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · App menus & shortcuts</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .desktop { height: 1700px; }
+  .mcol { position: absolute; z-index: 20; }
+  .mcol .menu { position: relative; left: auto; top: auto; min-width: 0; }
+  .mtitle { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 7px; font-weight: 600; font-size: 13.5px; color: #fff;
+    background: rgba(255,255,255,0.22); margin-bottom: 6px; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  .mtitle small { font-weight: 500; font-size: 11px; color: rgba(255,255,255,0.75); margin-left: 8px; }
+  .menu .mi { height: 25px; }
+  .tbl3 { position: absolute; z-index: 20; left: 40px; width: 1680px; top: 1110px; border-radius: 16px; padding: 14px 16px 10px; background: rgba(28,28,32,0.72); }
+  .tbl3 h3 { margin: 0 0 8px; font-size: 13px; }
+  .tgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  .trow { display: grid; grid-template-columns: 96px 1fr 80px 1.25fr; gap: 10px; align-items: baseline; padding: 5px 2px; font-size: 11.5px; border-top: 0.5px solid var(--sep); }
+  .trow.h { color: var(--label2); font-weight: 600; font-size: 10.5px; border-top: none; }
+  .trow .k { font-family: var(--mono); font-size: 12px; color: var(--label); }
+  .trow .n2 { color: var(--label2); }
+  .st { font-size: 10px; font-weight: 700; }
+  .st.ex { color: var(--green); }
+  .st.pr { color: #e5b8ff; }
+  .st.sd { color: var(--label2); }
+  .warn2 { color: var(--orange); }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · App menus: every command, in its native menu (state: Program meeting, both feeds recording, Feed 1 selected)</div>
+  <div id="sheet"></div>
+
+  <div class="callout" style="left: 316px; top: 96px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 908px; top: 96px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1292px; top: 96px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 14px; top: 686px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 664px; top: 686px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 1652px; top: 96px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>File stays: SwiftUI always provides it for Close ⌘W, and putting Load LUT… there gives ⌘O its usual meaning. Edit stays for the rename field and selectable text (timecode, paths, diagnostics).</span></div>
+    <div><span class="n">2</span><span>Feed acts on the <b>selected</b> feed. Its header says which, and ⌘1–⌘4 change it. Items locked while running say so in place.</span></div>
+    <div><span class="n">3</span><span>Record items flip with state (Record ↔ Stop). Codec and timecode are quick switches; folders and automation defaults live in Settings.</span></div>
+    <div><span class="n">4</span><span>Program: output mode (locked while running), cut items that read like tally ("on air", "next"), Auto, strategy, anchor and emphasis.</span></div>
+    <div><span class="n">5</span><span>View: layouts, sidebar, strips, then commands for the focused picture. The existing ⌃⌥F and ⌃⌥C are kept exactly; scopes move off ⌥⌘W, which macOS uses for Close All.</span></div>
+    <div><span class="n">6</span><span>Window: the main window (⌘0), detached monitors per feed or Program, and Diagnostics (⌥⌘I).</span></div>
+  </div>
+</div>
+<script>
+  const sep = '<div class="msep"></div>';
+  const mh = (t) => `<div class="mh">${t}</div>`;
+  const dotIco = (c) => `<span class="dot ${c}" style="box-shadow:none"></span>`;
+  function row(label, o = {}) {
+    const icon = o.dot ? dotIco(o.dot) : o.icon ? ic(o.icon, 'sm', o.iconStyle || '') : '';
+    const right = o.key ? `<span class="key">${o.key}</span>`
+      : (o.sub !== undefined || o.arrow) ? `<span class="sub" style="font-size:12px">${o.sub || ''}${ic('chevr')}</span>` : '';
+    return `<div class="mi ${o.cls || ''}"><span class="ck">${o.ck || ''}</span><span class="ico">${icon}</span>${label}${o.small ? `<small>${o.small}</small>` : ''}${o.newt ? newtag : ''}${right}</div>`;
+  }
+  const menu = (x, y, w, title, sub, rows, extraStyle = '') =>
+    `<div class="mcol" style="left:${x}px;top:${y}px;width:${w}px">${title ? `<div class="mtitle">${title}${sub ? `<small>${sub}</small>` : ''}</div>` : ''}
+      <div class="menu glass" style="width:${w}px;background:rgba(40,40,44,0.8);${extraStyle}">${rows}</div></div>`;
+
+  let html = '';
+  const R1 = 74, R2 = 656;
+
+  html += menu(40, R1, 270, 'Ultracam', '', [
+    row('About Ultracam'), sep,
+    row('Settings…', { icon: 'gear', key: '⌘,' }),
+    row('Hide from Dock', { small: 'menu bar only' }), sep,
+    row('Services', { arrow: true }), sep,
+    row('Hide Ultracam', { key: '⌘H' }), row('Hide Others', { key: '⌥⌘H' }), row('Show All', { cls: 'dis' }), sep,
+    row('Quit Ultracam', { key: '⌘Q' }),
+    `<div class="stat" style="font-size:10.5px;padding:2px 10px 4px 39px;color:var(--label3);white-space:normal">Waits for active recordings to finish writing, and says so in a sheet.</div>`,
+  ].join(''));
+
+  html += menu(340, R1, 260, 'File', '', [
+    row('Load LUT for Feed 1…', { icon: 'cube', key: '⌘O' }),
+    row('Clear LUT', { small: 'keeps other effects' }), sep,
+    row('Close Window', { key: '⌘W' }),
+  ].join(''));
+
+  html += menu(340, R1 + 172, 260, 'Edit', 'standard', [
+    row('Undo', { key: '⌘Z', cls: 'dis' }), row('Redo', { key: '⇧⌘Z', cls: 'dis' }), sep,
+    row('Cut', { key: '⌘X', cls: 'dis' }), row('Copy', { key: '⌘C' }), row('Paste', { key: '⌘V', cls: 'dis' }), row('Select All', { key: '⌘A' }), sep,
+    row('Copy Timecode', { icon: 'clock', newt: true }), sep,
+    row('AutoFill', { arrow: true }), row('Emoji & Symbols', { key: 'fn E' }),
+  ].join(''));
+
+  html += menu(630, R1, 330, 'Feed', 'acts on Feed 1', [
+    mh('Feed 1 · Live'),
+    row('Stop Feed', { icon: 'stop', key: '⌘↩' }),
+    row('Start When Camera Is in Use', { ck: '✓', icon: 'auto' }),
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }),
+    row('Video Preview', { ck: '✓', icon: 'eye', key: '⇧⌘P' }), sep,
+    row('Effects', { icon: 'sliders', sub: '3 of 4' }),
+    row('LUT Input', { icon: 'cube', sub: 'S-Gamut3.Cine / S-Log3' }),
+    row('Capture Input', { icon: 'video', sub: 'stop to change', cls: 'dis' }),
+    row('Refresh Devices', { icon: 'refresh', cls: 'dis' }), sep,
+    mh('Select Feed'),
+    row('Feed 1', { ck: '●', dot: 'red', key: '⌘1' }),
+    row('Feed 2', { dot: 'green', key: '⌘2' }), sep,
+    row('Add Camera', { icon: 'plus', small: 'stop to change', cls: 'dis' }),
+    row('Rename Feed 1…', { icon: 'sliders' }),
+    row('Remove Feed 1', { icon: 'trash', cls: 'dis' }), sep,
+    row('Publish as Camera', { icon: 'camlink', newt: true, small: 'Separate mode', cls: 'dis' }),
+    row('Open Monitor Window', { icon: 'detach' }),
+  ].join(''));
+
+  html += menu(990, R1, 330, 'Record', '', [
+    mh('Feed 1 · Recording 12:31'),
+    row('Stop Recording', { icon: 'stop', iconStyle: 'color:var(--red)', key: '⌘R', newt: true }),
+    row('Pause Recording', { icon: 'pause' }), sep,
+    mh('All feeds · 2 recording'),
+    row('Stop All Recordings', { icon: 'stop', iconStyle: 'color:var(--red)', key: '⌥⌘R', newt: true }),
+    row('Pause All', { icon: 'pause' }), sep,
+    row('Record with Camera Apps', { ck: '✓', icon: 'auto', newt: true }),
+    row('Codec', { icon: 'video', sub: 'ProRes 422 10-bit' }),
+    row('Timecode', { icon: 'clock', sub: 'PC time' }),
+    row('Choose Default Folder…', { icon: 'folder' }), sep,
+    row('Show Recordings in Finder', { icon: 'folder' }),
+    row('Recover Interrupted Takes…', { icon: 'refresh', small: '1 found' }),
+  ].join(''));
+
+  html += menu(1350, R1, 300, 'Window', '', [
+    row('Minimize', { key: '⌘M' }), row('Zoom'), row('Fill', { key: 'fn ⌃F' }), row('Center', { key: 'fn ⌃C' }),
+    row('Move & Resize', { arrow: true }), sep,
+    row('Ultracam', { ck: '✓', icon: 'sidebar', key: '⌘0', newt: true }),
+    row('Detach Monitor', { icon: 'detach', arrow: true }),
+    row('Diagnostics', { icon: 'info', key: '⌥⌘I', newt: true }), sep,
+    row('Bring All to Front'), sep,
+    row('Ultracam — Meeting', { ck: '✓' }),
+    row('Monitor · Feed 2'),
+  ].join(''));
+
+  html += menu(1350, R1 + 384, 300, 'Help', '', [
+    `<div style="padding:4px 6px 6px"><div style="height:24px;border-radius:7px;background:var(--fill2);display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--label3);font-size:12px">${ic('search')}Search</div></div>`,
+    row('Ultracam Help'),
+    row('Installing the Camera Extension'),
+    row('Recording & Recovering Takes'),
+    row('Keyboard Shortcuts', { newt: true }),
+  ].join(''));
+
+  // Row 2 ---------------------------------------------------------------
+  html += menu(40, R2, 330, 'Program', '', [
+    mh('Output Mode · change while stopped'),
+    row('Separate Cameras', { cls: 'dis' }),
+    row('Program', { ck: '●', cls: 'dis', small: 'Ultracam · Program' }), sep,
+    mh('Cut'),
+    row('Feed 1', { ck: '●', dot: 'red', small: 'on air', key: '⌃1', newt: true }),
+    row('Feed 2', { dot: 'green', small: 'next', key: '⌃2' }), sep,
+    row('Automatic Switching', { ck: '✓', icon: 'auto', key: '⌃⌥A', newt: true }),
+    row('Strategy', { icon: 'program', sub: 'Natural Talking Head', cls: 'hl' }),
+    row('Anchor', { sub: 'Automatic' }),
+    row('Emphasis', { sub: 'Feed 2' }), sep,
+    row('Director Timeline', { ck: '✓', icon: 'scope', newt: true }),
+    row('Switcher Settings…', { icon: 'gear' }),
+  ].join(''));
+  html += menu(366, 880, 270, '', '', [
+    row('Manual'), row('Fixed Interval', { small: 'every 8.0 s' }),
+    row('Natural Talking Head', { ck: '✓' }),
+    row('Dynamic Analysis', { small: 'later', cls: 'dis' }),
+  ].join(''), 'background:rgba(40,40,44,0.88)');
+
+  html += menu(690, R2, 320, 'View', '', [
+    row('Layout', { icon: 'split', sub: 'Side by Side', cls: 'hl' }),
+    row('Hide Sidebar', { icon: 'sidebar', key: '⌃⌘S' }),
+    row('Collapse All Strips', { icon: 'sliders', key: '⌥⌘S', newt: true }), sep,
+    mh('Focused picture · Feed 1'),
+    row('Monitor Tools', { icon: 'guides', sub: 'Guides, Zebra' }),
+    row('Picture Signal', { icon: 'eye', sub: 'Output' }),
+    row('Freeze', { icon: 'freeze', key: '⌃⌥F' }),
+    row('Clean View', { icon: 'clean', key: '⌃⌥C' }),
+    row('Zoom', { icon: 'zoom', sub: 'Fit' }),
+    row('Show Scopes', { ck: '✓', icon: 'scope', key: '⌥⌘K', newt: true }), sep,
+    row('Enter Full Screen', { key: 'fn F' }),
+  ].join(''));
+  html += menu(1006, R2 + 30, 250, '', '', [
+    row('Single', { icon: 'single', key: '⌥⌘1' }),
+    row('Side by Side', { ck: '✓', icon: 'split', key: '⌥⌘2' }),
+    row('Program View', { icon: 'program', key: '⌥⌘3' }),
+    row('Four Up', { icon: 'grid', key: '⌥⌘4' }), sep,
+    row('Swap Pictures'),
+    row('Detach Focused Picture', { icon: 'detach' }),
+  ].join(''), 'background:rgba(40,40,44,0.88)');
+
+  html += menu(1350, R2 + 24, 300, '', '', [
+    row('Feed 1', { dot: 'red' }), row('Feed 2', { dot: 'green', ck: '✓', small: 'open' }), row('Program', { icon: 'program' }),
+  ].join(''), 'background:rgba(40,40,44,0.88)');
+  html += `<div class="cap" style="position:absolute;left:1352px;top:${R2 + 2}px;z-index:21;font-size:11px;color:rgba(255,255,255,0.8)">Window ▸ Detach Monitor</div>`;
+
+  // Shortcut reference --------------------------------------------------
+  const T = [
+    ['⌘↩', 'Start / Stop Feed', 'ex', 'No conflict.'],
+    ['⇧⌘B', 'Processing (bypass)', 'ex', 'No conflict in-app.'],
+    ['⇧⌘P', 'Video Preview', 'ex', 'Page Setup in document apps; Ultracam doesn\'t print.'],
+    ['⌃⌥F', 'Freeze focused picture', 'ex', 'No conflict.'],
+    ['⌃⌥C', 'Clean view', 'ex', 'No conflict.'],
+    ['⌘Q  ⌘,  ⌘H', 'Quit · Settings · Hide', 'sd', 'Standard.'],
+    ['⌘W  ⌘M  ⌃⌘S', 'Close · Minimize · Sidebar', 'sd', 'Standard; ⌃⌘S is the system sidebar toggle.'],
+    ['fn F', 'Enter Full Screen', 'sd', 'Standard (also ⌃⌘F).'],
+    ['⌘O', 'Load LUT for selected feed', 'pr', 'Matches the standard Open.'],
+    ['⌘1–⌘4', 'Select feed', 'pr', 'App-local only; no system conflict.'],
+    ['⌘R', 'Record / Stop selected feed', 'pr', 'No conflict. Stop finalizes; it never deletes.'],
+    ['⌥⌘R', 'Record All / Stop All', 'pr', 'No conflict.'],
+    ['⌃1–⌃4', 'Cut Program to feed', 'pr', '<span class="warn2">Clashes with Mission Control "Switch to Desktop N" when that is enabled.</span> Plain 1–4 also cut while the main window is key and no text field is focused.'],
+    ['⌃⌥A', 'Automatic switching', 'pr', '<span class="warn2">Not ⌃A</span>: that moves to line start in text fields (feed rename).'],
+    ['⌥⌘1–⌥⌘4', 'Layout: Single · Side by Side · Program View · Four Up', 'pr', 'No conflict.'],
+    ['⌥⌘S', 'Collapse all strips', 'pr', '"Save All" in document apps only.'],
+    ['⌥⌘K', 'Show scopes (focused picture)', 'pr', '<span class="warn2">Not ⌥⌘W</span>: that is the standard Close All Windows.'],
+    ['⌥⌘I', 'Diagnostics window', 'pr', 'Matches the Inspector convention.'],
+    ['⌘0', 'Main window', 'pr', 'Common main-window convention.'],
+  ];
+  const half = Math.ceil(T.length / 2);
+  const tcol = (rows) => `<div><div class="trow h"><span>Shortcut</span><span>Command</span><span>Status</span><span>Conflict check</span></div>${rows.map(([k, c, s, n]) =>
+    `<div class="trow"><span class="k">${k}</span><span>${c}</span><span class="st ${s}">${s === 'ex' ? 'EXISTING' : s === 'pr' ? 'PROPOSED' : 'STANDARD'}</span><span class="n2">${n}</span></div>`).join('')}</div>`;
+  html += `<div class="tbl3 glass"><h3>Keyboard shortcuts</h3><div class="tgrid">${tcol(T.slice(0, half))}${tcol(T.slice(half))}</div></div>`;
+
+  mount('sheet', html);
+</script>
+</body></html>

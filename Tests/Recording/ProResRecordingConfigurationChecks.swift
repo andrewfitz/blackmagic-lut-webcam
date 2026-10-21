@@ -92,6 +92,34 @@ final class ProResRecordingConfigurationChecks: XCTestCase {
     XCTAssertTrue(info.supportedPropertyKeys.contains("ExpectedFrameRate"))
   }
 
+  func testEncodeSubmissionAllowsOutputCallbackToAcquireWriterLock() throws {
+    final class WriterReference: @unchecked Sendable {
+      weak var writer: AVAssetSourceRecordingWriter?
+    }
+    let reference = WriterReference()
+    let callbackRead = DispatchSemaphore(value: 0)
+    let configuration = try SourceRecordingConfiguration(feedID: SourceRecordingFeedID("lock-check"),
+      outputURL: FileManager.default.temporaryDirectory.appendingPathComponent("unused-lock-check.mov"),
+      width: 1920, height: 1080, videoCodec: kCMVideoCodecType_AppleProRes422HQ)
+    let writer = try AVAssetSourceRecordingWriter(configuration: configuration, encodeFrame: { _, _, _, _ in
+      DispatchQueue.global().async {
+        _ = reference.writer?.telemetry
+        callbackRead.signal()
+      }
+      // Models a remote encoder waiting for a callback on another thread.
+      // The pre-fix lock inversion fails promptly instead of hanging XCTest.
+      return callbackRead.wait(timeout: .now() + 1) == .success ? noErr : -1
+    })
+    reference.writer = writer
+    var image: CVPixelBuffer?
+    XCTAssertEqual(CVPixelBufferCreate(nil, 1920, 1080, kCVPixelFormatType_422YpCbCr10,
+      [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &image), kCVReturnSuccess)
+    let sample = try VideoContract.sample(try XCTUnwrap(image), at: .zero, duration: VideoContract.fastDuration)
+    try writer.start()
+    XCTAssertNoThrow(try writer.appendVideo(sample))
+    XCTAssertNoThrow(try writer.finish())
+  }
+
   func testSourceRecorderInfersExactHardwareProfiles() throws {
     let hevc = try SourceRecordingConfiguration(
       feedID: SourceRecordingFeedID("hevc"),

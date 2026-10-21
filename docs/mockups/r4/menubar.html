@@ -1,0 +1,303 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Menu bar dropdown system</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .desktop { height: 2100px; }
+  .dd { width: 326px; }
+  .cap { position: absolute; z-index: 25; font-size: 12.5px; font-weight: 700; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+  .cap small { font-weight: 500; font-size: 11.5px; color: rgba(255,255,255,0.75); }
+  .cap .lt { width: 20px; height: 20px; border-radius: 6px; background: rgba(0,0,0,0.45); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; text-shadow: none; }
+  .ddph { height: 178px; border-radius: 11px; background: #0b0b0d; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.12); text-align: center; padding: 0 22px; color: rgba(255,255,255,0.88); }
+  .ddph b { font-weight: 600; font-size: 13px; }
+  .ddph small { font-size: 11px; color: rgba(255,255,255,0.62); line-height: 1.35; }
+  .ddstat { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 7px 4px 0; color: var(--label2); white-space: nowrap; }
+  .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .thumbs .picture { height: 84px; border-radius: 9px; }
+  .mini2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mini2 .picture { height: 90px; border-radius: 9px; }
+  .tp { height: 18px !important; font-size: 10px !important; padding: 0 6px !important; }
+  .dd .banner { margin: 2px 4px 4px; padding: 7px 9px; font-size: 11.5px; }
+  .dd .banner small { font-size: 11px; }
+  .card4 { position: absolute; z-index: 25; border-radius: 16px; padding: 14px 16px; background: rgba(30,30,34,0.66); }
+  .card4 h4 { margin: 0 0 10px; font-size: 12.5px; }
+  .icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .icons > div { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 6px 9px; border-radius: 10px;
+    background: linear-gradient(160deg, rgba(27,35,71,0.9), rgba(122,63,69,0.85)); text-align: center; }
+  .icons b { font-size: 11px; font-weight: 600; color: #fff; }
+  .icons small { font-size: 10px; color: rgba(255,255,255,0.72); line-height: 1.3; }
+  .icons code { font-size: 9.5px; color: rgba(255,255,255,0.6); font-family: var(--mono); }
+  /* Template status icon: monochrome, follows the menu bar appearance. Badges are knock-out shapes, never colored. */
+  .mbi { position: relative; display: inline-flex; align-items: center; justify-content: center; height: 24px; width: 30px; color: #fff; --knock: #2a2340; }
+  .mbi .bdot { position: absolute; right: 2px; top: 3px; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 1.5px var(--knock); }
+  .mbi .btri { position: absolute; right: 0; top: 1px; width: 11px; height: 10px; }
+  .mbi.dim { opacity: 0.45; }
+  .menubar .extra .mbi { --knock: rgba(255,255,255,0.3); }
+  .impl li { color: var(--label2); font-size: 11.5px; margin: 5px 0; line-height: 1.42; }
+  .impl b { color: var(--label); }
+  html.light .cap { color: #111; text-shadow: none; }
+  html.light .cap small { color: rgba(0,0,0,0.6); }
+  html.light .card4 { background: rgba(246,246,248,0.86); }
+  html.light .icons > div { background: linear-gradient(160deg, rgba(201,214,243,0.95), rgba(241,210,198,0.95)); }
+  html.light .icons b { color: #111; } html.light .icons small, html.light .icons code { color: rgba(0,0,0,0.6); }
+  html.light .mbi { color: #111; --knock: #dcd6ea; }
+  html.light .menubar .extra .mbi { color: #111; --knock: rgba(0,0,0,0.12); }
+  html.light .dd .ddstat { color: var(--label2); }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open" id="mbicon"></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Menu bar dropdown system: NSMenu with a live preview item, every state</div>
+  <div id="sheet"></div>
+
+  <div class="callout" style="left: 322px; top: 120px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 322px; top: 312px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 4px; top: 540px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 2px; top: 868px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1394px; top: 120px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 24px; top: 1516px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Every state has the same shape: one custom view item on top (live preview, two mini previews, or a placeholder of the same height), then real menu items. At most about 14 rows before submenus, so it fits a 13" display.</span></div>
+    <div><span class="n">2</span><span>In Program mode the thumbnails only show tally (red ring = on air). Cutting is a menu row, "Cut to Camera 2 ⌃2" (D1), so a stray click on a picture never cuts the meeting. ON AIR shows only while a camera app is connected; the app can't know which one, so rows say "In use".</span></div>
+    <div><span class="n">3</span><span>Each camera's submenu holds that camera's controls: cut, recording, processing, effects, LUT, input, inspector, monitor window. Stop Camera asks first when it would end a recording (D3). Rows that can't run say why in place.</span></div>
+    <div><span class="n">4</span><span>In automatic mode a visible preview counts as demand and would start capture, so the waiting state shows a placeholder until "Show Live Preview". A failed start offers one explicit Retry, never a background retry loop.</span></div>
+    <div><span class="n">5</span><span>Recording problems are loud: signal lost while recording (h) and a full drive that ended the take (i) appear as banners with one action, and the menu bar icon gets a triangle badge.</span></div>
+    <div><span class="n">6</span><span>The status icon is a template image: monochrome, follows the menu bar appearance, and uses knock-out badge shapes (dot = recording, triangle = attention) instead of red/orange dots, which macOS reserves for privacy indicators.</span></div>
+  </div>
+</div>
+<script>
+  const sep = '<div class="msep"></div>';
+  const mh = (t) => `<div class="mh">${t}</div>`;
+  const stat = (t) => `<div class="stat">${t}</div>`;
+  const dotIco = (c) => `<span class="dot ${c}" style="box-shadow:none"></span>`;
+  // Native menu row: label plus checkmark, icon, small detail, key equivalent or submenu value/arrow.
+  function row(label, o = {}) {
+    const icon = o.dot ? dotIco(o.dot) : o.icon ? ic(o.icon, 'sm', o.iconStyle || '') : '';
+    const right = o.key ? `<span class="key">${o.key}</span>`
+      : (o.sub !== undefined || o.arrow) ? `<span class="sub" style="font-size:12px">${o.sub || ''}${ic('chevr')}</span>` : '';
+    return `<div class="mi ${o.cls || ''}"><span class="ck">${o.ck || ''}</span><span class="ico">${icon}</span>${label}${o.small ? `<small class="${o.smallCls || ''}">${o.small}</small>` : ''}${o.newt ? newtag : ''}${right}</div>`;
+  }
+  const appRows = () => sep + row('Open Ultracam', { icon: 'sidebar', key: '⌘0' }) + row('Settings…', { icon: 'gear', key: '⌘,' }) + row('Quit Ultracam', { key: '⌘Q' });
+  const cap = (x, y, letter, title, small) => `<div class="cap" style="left:${x}px;top:${y}px"><span class="lt">${letter}</span>${title}<small>${small}</small></div>`;
+  const dd = (x, y, inner) => `<div class="dd glass" style="left:${x}px;top:${y}px">${inner}</div>`;
+  const pill = (h, cls = '') => `<span class="pill sm glass ${cls}">${h}</span>`;
+  const meterPill = () => `<div class="pill sm glass" style="width:78px; gap:3px; flex-direction:column; justify-content:center; align-items:stretch; padding:0 7px">
+      <div class="meter"><div class="bar" style="height:3px"><i style="width:64%"></i></div></div>
+      <div class="meter"><div class="bar" style="height:3px"><i style="width:60%"></i></div></div></div>`;
+  const preview = (scene, h, tl, tr, bl, ring = '') => `<div class="picture ${ring}" data-scene="${scene}" style="height:${h}px;border-radius:11px">
+      <div class="overlay" style="left:7px;top:7px">${tl}</div><div class="overlay" style="right:7px;top:7px">${tr}</div>
+      <div class="overlay" style="left:7px;right:7px;bottom:7px;justify-content:space-between">${bl}</div></div>`;
+  const onAir = '<span class="role air" style="height:20px;font-size:10.5px;padding:0 8px">ON AIR</span>';
+  const ddph = (icon, title, text, color = '') => `<div class="ddph">${ic(icon, 'lg', `color:${color || 'rgba(255,255,255,0.45)'};width:24px;height:24px`)}<b>${title}</b><small>${text}</small></div>`;
+  const rec = (t) => pill(`<span class="dot red"></span><span class="tnum">REC ${t}</span>`);
+  const fxOf = (c) => `${c.fx.filter(Boolean).length} of 4`;
+  const c1 = CAMS.c1, c2 = CAMS.c2;
+  const tri = '<svg class="btri" viewBox="0 0 11 10"><path d="M5.5 0.6 L10.6 9.4 H0.4 Z" fill="currentColor" stroke="var(--knock)" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 3.6 V6.2" stroke="var(--knock)" stroke-width="1.3" stroke-linecap="round"/><circle cx="5.5" cy="7.8" r="0.7" fill="var(--knock)"/></svg>';
+  const mbi = (icon, badge = '', dim = false) => `<span class="mbi${dim ? ' dim' : ''}">${ic(icon, '')}${badge === 'dot' ? '<span class="bdot"></span>' : badge === 'tri' ? tri : ''}</span>`;
+  document.getElementById('mbicon').innerHTML = mbi('videofill', 'dot');
+
+  let html = '';
+  const R1 = 92;
+  const X = [350, 698, 1046, 1394];
+
+  // (a) Program meeting, Camera 1 submenu open to the left -----------------------------
+  html += cap(X[0], R1 - 26, 'a', 'Program meeting', 'two cameras · both recording');
+  html += dd(X[0], R1, `<div class="ddtop">
+      ${preview('mcu', 172, pill(`${ic('program')}Ultracam · Program`), onAir, pill('14:22:31:12', 'mono') + rec('2 · 12:31'))}
+      <div class="thumbs">
+        <div class="picture tally-air" data-scene="mcu"><div class="overlay" style="left:5px;top:5px"><span class="kk" style="width:18px;height:18px;font-size:10.5px">1</span></div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 1 · on air', 'tp')}</div></div>
+        <div class="picture" data-scene="wide"><div class="overlay" style="left:5px;top:5px"><span class="kk" style="width:18px;height:18px;font-size:10.5px">2</span></div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 2', 'tp')}</div></div>
+      </div>
+      <div class="ddstat"><span>Pictures show tally only · cut from the rows</span><span class="tnum">on air 8.2 s</span></div>
+    </div>` + sep +
+    row('Cut to Camera 1', { ck: '●', small: 'on air', key: '⌃1', cls: 'dis' }) +
+    row('Cut to Camera 2', { icon: 'cut', key: '⌃2' }) + sep +
+    row('Automatic Switching', { ck: '✓', icon: 'auto', key: '⌃⌥A' }) +
+    row('Hold Current Shot', { icon: 'pause' }) + sep +
+    row('Stop All Recordings', { icon: 'stop', iconStyle: 'color:var(--red)', small: '2 · 12:31', key: '⌥⌘R' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) + sep + mh('Cameras') +
+    row('Camera 1', { dot: 'red', small: 'On air · REC', arrow: true, cls: 'hl' }) +
+    row('Camera 2', { dot: 'green', small: 'REC', arrow: true }) + sep +
+    row('Stop All Cameras…', { icon: 'stop', key: '⌘↩' }) +
+    appRows() + stat('CPU 49% · GPU 30% · 1.71 GB · 8TB 1 h 52 m left'));
+  html += `<div class="menu glass" style="left:30px;top:${R1 + 386}px;width:320px;background:rgba(40,40,44,0.86)">` +
+    row('Cut to Camera 1', { ck: '●', small: 'on air', key: '⌃1', cls: 'dis' }) + sep +
+    `<div class="mh" style="padding-left:29px">Recording · 12:31 · 64.2 GB</div>` +
+    row('Pause Recording', { icon: 'pause' }) +
+    row('Stop Recording', { icon: 'stop', iconStyle: 'color:var(--red)', key: '⌘R' }) + sep +
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }) +
+    row('Effects', { icon: 'sliders', sub: fxOf(c1) }) +
+    row('LUT', { icon: 'cube', sub: c1.lut }) +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G', cls: 'dis' }) + sep +
+    row('Show in Inspector', { icon: 'inspector' }) +
+    row('Open Monitor Window', { icon: 'detach' }) + sep +
+    row('Stop Camera 1…', { icon: 'stop', small: 'asks first · ends its recording' }) + `</div>`;
+
+  // (b) Single-camera meeting ---------------------------------------------------------
+  html += cap(X[1], R1 - 26, 'b', 'Single-camera meeting', 'Separate mode · in use');
+  html += dd(X[1], R1, `<div class="ddtop">
+      ${preview('mcu', 178, pill(`Ultracam · Camera 1${ic('chevud')}`), onAir, pill('14:22:31:12', 'mono') + rec('12:31') + meterPill(), 'tally-air')}
+      <div class="ddstat"><span><span class="cg">●</span> In use · effects active</span><span class="mono" style="font-size:10.5px">${c1.out.replace(' ', '')}</span></div>
+    </div>` + sep +
+    row('Stop Camera…', { icon: 'stop', key: '⌘↩', small: 'asks first' }) +
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }) +
+    row('Video Preview', { ck: '✓', icon: 'eye', key: '⇧⌘P' }) + sep + mh('Camera 1') +
+    row('Effects', { icon: 'sliders', sub: fxOf(c1) }) +
+    row('LUT', { icon: 'cube', sub: c1.lut }) +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G', cls: 'dis' }) + sep + mh('Recording · 64.2 GB') +
+    row('Stop Recording', { icon: 'stop', iconStyle: 'color:var(--red)', small: '12:31', key: '⌘R' }) +
+    row('Pause Recording', { icon: 'pause' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) + sep +
+    row('Start with Camera Apps', { ck: '✓', icon: 'auto' }) +
+    row('Backup Recording', { ck: '✓', newt: true, small: 'after 10 s of use' }) +
+    appRows() + stat('CPU 31% · GPU 18% · 1.08 GB · 8TB 1 h 52 m left'));
+
+  // (c) Two-camera standalone recording -------------------------------------------------
+  html += cap(X[2], R1 - 26, 'c', 'Standalone recording', 'two cameras · not in use');
+  html += dd(X[2], R1, `<div class="ddtop">
+      <div class="mini2">
+        <div class="picture" data-scene="mcu"><div class="overlay" style="left:5px;top:5px">${pill('<span class="dot red" style="width:6px;height:6px"></span>12:31', 'tp')}</div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 1', 'tp')}</div></div>
+        <div class="picture" data-scene="wide"><div class="overlay" style="left:5px;top:5px">${pill('<span class="co">❚❚</span> 4:12', 'tp')}</div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 2', 'tp')}</div></div>
+      </div>
+      <div class="ddstat tnum"><span><span class="cr">●</span> 1 recording · 1 paused</span><span>97 GB so far</span></div>
+      <div class="ddstat tnum" style="padding-top:2px"><span>${ic('camlink', 'sm', 'vertical-align:-2px')} Not in use</span><span>8TB 1 h 52 m · Archive 5 h 40 m</span></div>
+    </div>` + sep + mh('Cameras') +
+    row('Camera 1', { dot: 'red', small: 'Recording 12:31', arrow: true }) +
+    row('Camera 2', { icon: 'pause', iconStyle: 'color:var(--orange)', small: 'Paused 4:12', arrow: true }) + sep +
+    row('Stop All Recordings', { icon: 'stop', iconStyle: 'color:var(--red)', key: '⌥⌘R' }) +
+    row('Pause All', { icon: 'pause' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) + sep +
+    row('Stop All Cameras…', { icon: 'stop', key: '⌘↩' }) +
+    row('Video Preview', { ck: '✓', icon: 'eye', key: '⇧⌘P' }) +
+    row('Output Mode', { icon: 'program', sub: 'Separate Cameras' }) +
+    appRows() + stat('CPU 44% · GPU 28% · 1.62 GB'));
+
+  // (h) Recording while signal lost -----------------------------------------------------
+  html += cap(X[3], R1 - 26, 'h', 'Signal lost while recording', 'take stays open');
+  html += dd(X[3], R1, `<div class="ddtop">
+      ${ddph('video', 'Camera 1 · no HDMI signal', 'Check the camera and its HDMI cable. Recording resumes on its own when the signal returns.', 'var(--orange)')}
+    </div>
+    <div class="banner warn"><span class="bi">${ic('info')}</span><div><b>Camera 1 · recording, no signal 0:42</b><small>The take stays open. Nothing is written until the signal returns.</small></div></div>` + sep + mh('Camera 1 · Recording 12:31') +
+    row('Stop Recording', { icon: 'stop', iconStyle: 'color:var(--red)', key: '⌘R' }) +
+    row('Pause Recording', { icon: 'pause' }) +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G', cls: 'dis' }) + sep +
+    row('Show Recordings in Finder', { icon: 'folder' }) + sep +
+    row('Stop Camera…', { icon: 'stop', key: '⌘↩', small: 'asks first' }) +
+    appRows() + stat('CPU 18% · GPU 4% · 0.98 GB · 8TB 1 h 52 m left'));
+
+  // Row 2 ------------------------------------------------------------------------
+  const R2 = 876;
+  const Y = [24, 372, 720, 1068, 1416];
+
+  // (d) Automatic waiting
+  html += cap(Y[0], R2 - 26, 'd', 'Automatic · waiting', 'nothing captured, no GPU work');
+  html += dd(Y[0], R2, `<div class="ddtop">
+      ${ddph('video', 'Waiting for a camera app', 'Starts when an app opens Ultracam · Camera 1. Stops when the last app closes.')}
+      <div class="ddstat"><span>Automatic · idle</span><span class="btn borderless" style="height:16px;font-size:11px">Show Live Preview</span></div>
+    </div>` + sep +
+    row('Start with Camera Apps', { ck: '✓', icon: 'auto' }) +
+    row('Backup Recording', { ck: '✓', newt: true, small: 'after 10 s of use' }) +
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }) + sep + mh('Camera 1') +
+    row('Effects', { icon: 'sliders', sub: fxOf(c1) }) +
+    row('LUT', { icon: 'cube', sub: c1.lut }) +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G' }) + sep +
+    row('Record', { icon: 'record', small: 'starts with the camera', key: '⌘R', cls: 'dis' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) +
+    appRows() + stat('CPU 0.3% · GPU 0.0% · 212 MB'));
+
+  // (e) Automatic start failed
+  html += cap(Y[1], R2 - 26, 'e', 'Automatic · start failed', 'one attempt per session');
+  html += dd(Y[1], R2, `<div class="ddtop">
+      ${ddph('info', "Camera 1 didn't start", 'UltraStudio Mini Recorder 12G is in use by another app. The virtual camera shows black until Camera 1 starts.', '#ff6961')}
+    </div>
+    <div class="banner err"><span class="bi">${ic('info')}</span><div><b>A camera app is waiting for video</b><small>Close the other app, then retry.</small></div><div class="bact"><span class="btn blue" style="height:22px">Retry</span></div></div>` + sep +
+    row('Retry Camera 1', { icon: 'refresh', key: '⌘↩', cls: 'hl' }) +
+    row('Start with Camera Apps', { ck: '✓', icon: 'auto', small: 'off = manual start' }) + sep + mh('Camera 1') +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G' }) +
+    row('Refresh Inputs', { icon: 'refresh' }) +
+    appRows() + stat('CPU 0.4% · GPU 0.0% · 218 MB'));
+
+  // (f) Stopped, manual
+  html += cap(Y[2], R2 - 26, 'f', 'Stopped · manual', 'Start Camera is the default item');
+  html += dd(Y[2], R2, `<div class="ddtop">
+      ${ddph('video', 'Camera stopped', 'Start the camera to see its HDMI input.')}
+      <div class="ddstat"><span>Stopped</span><span>Mini Recorder 12G ready</span></div>
+    </div>` + sep +
+    row('Start Camera', { icon: 'play', key: '⌘↩', cls: 'hl' }) +
+    row('Start with Camera Apps', { icon: 'auto' }) +
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }) +
+    row('Video Preview', { ck: '✓', icon: 'eye', key: '⇧⌘P' }) + sep + mh('Camera 1') +
+    row('Effects', { icon: 'sliders', sub: fxOf(c1) }) +
+    row('LUT', { icon: 'cube', sub: c1.lut }) +
+    row('Input', { icon: 'video', sub: 'Mini Recorder 12G' }) + sep +
+    row('Record', { icon: 'record', small: 'start the camera first', key: '⌘R', cls: 'dis' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) +
+    appRows() + stat('CPU 0.2% · GPU 0.0% · 205 MB'));
+
+  // (g) Needs attention
+  html += cap(Y[3], R2 - 26, 'g', 'Needs attention', 'meeting in progress, two warnings');
+  html += dd(Y[3], R2, `<div class="ddtop">
+      ${preview('mcu', 150, pill(`Ultracam · Camera 1${ic('chevud')}`), onAir, pill('14:22:31:12', 'mono') + rec('12:31'), 'tally-air')}
+    </div>
+    <div class="banner warn"><span class="bi">${ic('info')}</span><div><b>8TB · 12 min left</b><small>At ProRes 422. Recording stops when the drive is full.</small></div><div class="bact"><span class="btn" style="height:22px">Show</span></div></div>
+    <div class="banner warn"><span class="bi">${ic('video')}</span><div><b>Camera 2 · no HDMI signal</b><small>Check HDMI: 2160p, 10-bit 4:2:2, RAW off.</small></div></div>` + sep +
+    row('Stop All Cameras…', { icon: 'stop', key: '⌘↩' }) +
+    row('Processing', { ck: '✓', icon: 'layers', small: 'Camera 1', key: '⇧⌘B' }) + sep + mh('Cameras') +
+    row('Camera 1', { dot: 'red', small: 'In use · REC', arrow: true }) +
+    row('Camera 2', { icon: 'info', iconStyle: 'color:var(--orange)', small: 'No signal', arrow: true }) + sep +
+    row('Stop Recording', { icon: 'stop', iconStyle: 'color:var(--red)', small: 'Camera 1 · 12:31', key: '⌘R' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) +
+    appRows() + stat('CPU 30% · GPU 18% · 1.04 GB'));
+
+  // (i) Drive full, take stopped
+  html += cap(Y[4], R2 - 26, 'i', 'Drive full · take stopped', 'output keeps running');
+  html += dd(Y[4], R2, `<div class="ddtop">
+      ${preview('mcu', 150, pill(`Ultracam · Camera 1${ic('chevud')}`), onAir, pill('14:22:31:12', 'mono') + pill('<span class="cr">■</span> Not recording'), 'tally-air')}
+    </div>
+    <div class="banner err"><span class="bi">${ic('info')}</span><div><b>Recording stopped: 8TB is full</b><small>Saved up to 00:41:12</small></div><div class="bact"><span class="btn" style="height:22px">Show</span></div></div>` + sep + mh('Camera 1 · In use') +
+    row('Record', { icon: 'record', small: 'choose another folder first', key: '⌘R', cls: 'dis' }) +
+    row('Choose Folder…', { icon: 'folder' }) +
+    row('Show Recordings in Finder', { icon: 'folder' }) + sep +
+    row('Stop Camera', { icon: 'stop', key: '⌘↩' }) +
+    row('Processing', { ck: '✓', icon: 'layers', key: '⇧⌘B' }) +
+    appRows() + stat('CPU 27% · GPU 17% · 1.02 GB · 8TB full'));
+
+  // Row 3: icon states + implementation -----------------------------------------
+  const R3 = 1540;
+  html += `<div class="card4 glass" style="left:60px;top:${R3}px;width:820px">
+      <h4>Menu bar icon states · template images</h4>
+      <div class="icons">
+        <div>${mbi('video')}<b>Stopped</b><small>outline</small><code>video</code></div>
+        <div>${mbi('video', '', true)}<b>Waiting</b><small>automatic · dimmed</small><code>video, 45%</code></div>
+        <div>${mbi('videofill')}<b>Live</b><small>effects active</small><code>video.fill</code></div>
+        <div>${mbi('bypass')}<b>Live · bypass</b><small>complete bypass</small><code>arrow.right.square</code></div>
+        <div>${mbi('videofill', 'dot')}<b>Recording</b><small>dot badge ${newtag}</small><code>video.fill + dot</code></div>
+        <div>${mbi('video', 'tri')}<b>Needs attention</b><small>triangle badge ${newtag}</small><code>video + triangle</code></div>
+        <div>${mbi('videofill', 'tri')}<b>Recording · problem</b><small>triangle wins ${newtag}</small><code>video.fill + triangle</code></div>
+        <div style="justify-content:center"><small style="font-size:10.5px">The first four exist today.</small></div>
+      </div>
+      <div class="c2" style="font-size:11px;margin-top:10px;line-height:1.45">Accessibility labels state the full situation, e.g. "Ultracam, live, recording 2 cameras" or "Ultracam needs attention: Camera 1 has no signal while recording". Precedence: attention &gt; recording &gt; live &gt; waiting &gt; stopped.</div>
+    </div>`;
+  html += `<div class="card4 glass impl" style="left:920px;top:${R3}px;width:780px">
+      <h4>Implementation</h4>
+      <ul style="margin:0;padding-left:16px">
+        <li><b>NSStatusItem + NSMenu.</b> The first item uses <code>NSMenuItem.view</code> to host the SwiftUI preview (NSHostingView). Everything else is a real NSMenuItem, so submenus, checkmarks, key equivalents, type-to-select and arrow-key navigation come for free.</li>
+        <li><b>Preview lifecycle.</b> <code>menuWillOpen</code> registers the preview's monitor surface; <code>menuDidClose</code> unregisters it, so a closed menu does no GPU work. Thumbnails are not buttons; cuts are menu rows (D1).</li>
+        <li><b>Spike first.</b> Confirm the native video layer keeps rendering inside the menu view during menu tracking (event-tracking run loop mode). Fallback: <code>MenuBarExtra(.window)</code> with menu-styled rows; video is easy there, but submenus and keyboard navigation become hand-built.</li>
+        <li><b>Automatic mode.</b> The preview counts as demand, so while waiting it stays a placeholder until "Show Live Preview" (d).</li>
+        <li><b>Icon.</b> A template image composited with its badge at render time; <code>isTemplate = true</code>, no tint. Badges come from the same state as the window's status bar.</li>
+      </ul>
+    </div>`;
+
+  mount('sheet', html);
+</script>
+</body></html>

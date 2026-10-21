@@ -1,5 +1,310 @@
 # Validation
 
+## Capture discovery and Source overlay corrections — October 20, 2026
+
+Signed host **14** is installed in `/Applications/Ultracam.app`; extension **4**
+is unchanged (all 33 executable sections match). The host requires
+`com.apple.security.cs.disable-library-validation` to load the installed
+Blackmagic-signed DeckLink framework, following [Apple’s third-party framework
+loading guidance](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation).
+Before this correction, the signed host
+rejected the framework because its signing team differs, then incorrectly
+reported Desktop Video unavailable despite macOS detecting the UltraStudio.
+Bundle validation now rejects a host missing this setting and rejects the same
+exception in the camera extension. Hardware capture was restored in host 13:
+3840×2160 v210 10-bit 59.94 input, 1920×1080 420v 29.97 output, live preview,
+and 595 independently consumed virtual-camera frames in 20 seconds with zero
+nonmonotonic timestamps. No frames were recorded or read back by that check.
+
+Source picture overlays incorrectly reused the source-to-processed-output
+mapping. Downscaling therefore displaced focus/false color and extended clamped
+mask edges into lines. Source and fallback-to-source pictures now keep identity
+mapping; Processed Output retains its declared transform. Three new GPU tests
+first reproduced eight failing image comparisons, then passed. They cover BGRA
+and native packed v210, half-scale and crop offsets, full-raster image equality,
+expected source edge/color positions, and the processed-output control.
+The complete strict-concurrency/warnings-as-errors package suite passes **115
+checks**: 44 Core, 48 Metal and 23 UI. Capture/recording submission code is unchanged.
+The installed host 14 independently delivers **599** physical-input virtual-camera
+frames in 20 seconds, 1920×1080 420v, with zero nonmonotonic timestamps. Optional
+window capture found the app background-occluded; alignment is qualified by the
+GPU image comparisons, not a live visual comparison. No recording was started.
+Temporary build/test copies are in recoverable Trash; evidence and user media
+remain preserved, and the stable app link points to the installed copy.
+
+Installed executable SHA-256:
+`0ca8f6a9353b42f3c5730966cb10f9f64f5d805f29986e8f374023c9774b726f`.
+Evidence: `/Volumes/8TB/cinesomatic-director-work/agent-work/ultracam/camera-fix13`
+and `/Volumes/8TB/cinesomatic-director-work/agent-work/ultracam/source-geometry-fix14`.
+The implementation and sustained results below describe their earlier frozen
+snapshot; they are not new sustained measurements of this coordinate correction.
+
+## Monitor tools implementation — October 20, 2026
+
+The host includes per-feed Monitor Tools, Single/resizable Side by Side/Four Up
+layouts, detached views and an independent tray choice. Guides, IRE zebras,
+source-focus peaking, RGB parade and luma waveform are implemented. ARRI-style
+false color now supports Sony S-Log3 in S-Gamut3.Cine and S-Gamut3 without an
+ARRI camera. It decodes each Sony channel before source-gamut scene luminance
+and LogC3 EI800 reference classification; its highlight/shadow bands do not
+claim Sony sensor clipping or noise limits. Literal ARRI LogC3/LogC4 EI800
+profiles remain available. Freeze/Clean remain local to each surface; source
+and processed signals are independent settings. Recording receives untouched
+source frames before processing admission. Tools-off selected main/tray preview
+keeps its native path. Program source-focus/false color and continuous EL Zone
+remain unavailable; see [color evidence](docs/MONITOR_COLOR_REFERENCES.md).
+
+The pre-correction frozen `bash scripts/test.sh` run passed **316 app tests, zero failures**,
+34.681 seconds, and **112 package tests, zero failures** (44 Core including
+11 color, 45 Metal including 6 Sony, 23 UI). The isolated actual AppModel/hosted-window suite also passes **11 integration
+checks**, with complete strict concurrency and warnings as errors. A separate
+strict-concurrency / warnings-as-errors package run passes without warnings. Regressions cover
+all 1,024 native 10-bit Sony codes against the CPU reference, native/rescaled
+transport, gamut differences, pre-LUT source analysis, existing Sony declarations
+and atomic settings updates through a normalizing coordinator-style binding.
+
+That frozen signed host build **12**, extension **4**, passed metadata,
+host-only shader resources and strict deep code-signature verification.
+Executable SHA-256:
+`6ca14835ece9833f0f2f8783d690ecb83b030e0a08ec46070c0c2b176550992d`.
+Receipt:
+`/Volumes/8TB/cinesomatic-director-work/agent-work/monitor-final-verification/verification-sony-final.json`.
+Earlier critical-feedback and pre-feedback receipts remain historical evidence.
+The owner's disk recovery cleared the Instruments storage hold. Current paired
+and sustained synthetic recording workloads pass. App-only lifecycle regressions
+reproduced and fixed the detached empty chooser, stale removal projections, late
+removed-feed updates and retained sink consumers. The fresh signed build is now
+installed in `/Applications/Ultracam.app`. Native accessibility checks show the
+monitor controls/layouts and idle recording state; opening/cancelling a menu
+confirms responsiveness. No screenshots, physical capture or recording were
+used for this installed-app check.
+
+The production capture integration test paced 90 frames at 29.97 through the real
+nonlinear LUT and 4K-v210-to-1080p-NV12 path, camera submission and recorder core,
+with monitoring off then on. Each run delivered all 90 measured camera/recording
+frames with exact source timing and no source mutation. Camera latency p95 was
+5.437/5.401 ms and p99 6.534/9.176 ms (off/on). This is synthetic in-process camera
+submission, not installed receiver or physical-device qualification. The test also
+covers stalled monitor initialization, hiding, removal, Stop and retired results.
+Blocked-consumer regressions also prove producer release before analysis
+GPU commit or success/fallback/error delivery, bounded pending errors and
+working-set reuse before consumer completion. Actual synthetic
+NSWindow/NSHostingView checks cover resize, minimize, ancestor
+hide, close and dual-window frozen clean/decorated/scope/configuration identity.
+A separate actual 4K-v210-to-1080p-NV12 regression verifies an asymmetric source
+aperture survives on the source while processing removes output aperture/display
+attachments, and source-resolution red focus highlights remain at the expected
+downscaled edge on the full-raster output picture.
+
+Review and expanded tests caught and fixed an exact native-code ARRI boundary
+error, capture-side resource retirement/reconfiguration hazards, and a planar
+allocation bug: aggregate planar bytes-per-row was incorrectly used as alignment.
+Real 4K and awkward/padded-stride copy fixtures now check active bytes and budget.
+Additional fixes release producer storage before consumer callbacks while retaining
+delivery-memory charges, validate frame order at final presentation storage, and
+cancel a pending Freeze even if a background result arrived before UI publication.
+
+Installed: `/Applications/Ultracam.app` (host 12). The external stable app link
+now points there. All 33 camera-extension Mach-O sections match installed
+extension 4, so no activation request was made. The prior app copy, task-owned
+build caches and 103.818 GiB of synthetic test media were moved to recoverable
+Trash; Trash was not emptied. Compact receipts/logs, profiling evidence, project
+source, preferences, bookmarks and user recordings were preserved. Delivery and
+cleanup receipts are `installation-final.json` and `cleanup-final.json` under
+`monitor-final-verification`. Old executable/media paths in historical receipts
+identify tested artifacts that have since been Trashed; their hashes, manifests
+and measured results remain preserved.
+
+`bash scripts/recording-recovery-smoke.sh` passes all four synthetic interrupted
+ProRes/HEVC cases, interrupted at 4 and 14 seconds. Readable recovered durations
+are 1.0017 and 11.0117 seconds, with timecode present after the later fragment and
+original interrupted files unchanged. Receipts are under
+`/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultracam/recording-recovery/20261020T050417-98876`.
+
+The final suite covers fair three-job admission, verified decrease-only lease
+shrinking, pressure/recovery diagnostics, local scope visibility, zoom, soft
+deadlines and budgeted native presentation. The shared reservation ledger caps
+are 256 MiB total and 192 MiB non-clean, including retired resources; clean
+presentation satisfies the 64 MiB reserve. Exact module-owned allocation charges
+and estimated additional compositor allowances share that ledger. These are not
+hard bounds on whole-process, OS or driver memory; borrowed producer storage and
+the existing native preview baseline are separate. Source focus remains full resolution when pressure reduces
+composite height and scope sampling/cadence. Reduced scope requests are now
+12 Hz for the default 15 Hz setting; explicit user 10 Hz remains 10 Hz. The
+previous reduced 10 Hz target measured 9.9859 Hz at 29.97 input in a 30-second
+check, so the target was corrected while retaining the strict 10 Hz acceptance
+minimum and phase-locked scheduling. Native surface tests cover explicit
+no-capacity outcomes and admission recovery after teardown/resize.
+
+Source-only priority feedback adds per-producer metadata handles independent of
+monitor visibility. Queue age plus processing time exceeding one original input
+frame interval pauses new analysis globally, retaining bounded owned clean
+preview. Committed work remains charged. Fresh healthy samples spanning one
+second permit reduced analysis; five further fresh healthy seconds restore
+normal quality. Gaps exceeding two frame intervals restart that health span.
+Stopped/removed producers cease contributing pressure, and stale generations or
+replaced handles cannot revive or remove current state. This enforces the planned
+priority contract; it does not establish the cause of earlier OS/driver tails.
+
+Installed-extension synthetic loopback passes all six paired output profiles:
+1080p NV12, 4K x422 and 4K v210 at 29.97/59.94. Each tools-off and tools-on
+segment runs at least 30 seconds. All 12 segments deliver all **16,194**
+frames with exact active pixels, PTS, duration and order, zero producer retries,
+verified pre/post source policy, valid source cadence and useful monitoring.
+Receiver p95/p99 stay within baseline +2/+5 ms. Both segments share one
+connection and rational source grid; latency is timestamped by the SDK
+queue-insertion callback, with later inspection delay reported separately.
+All latency outliers remain in the histograms/log, including earlier failed
+short-comparison receipts. The extension remains build 4. Final receipt:
+`/Volumes/8TB/cinesomatic-director-work/agent-work/build/ultracam-e2e/cmio-smoke/controlled-source-final-v5-cap12-20261020/receipt-30s.json`.
+This qualifies synthetic IPC, not physical input or Program cuts.
+
+Current Sony short workloads all pass with fixed rate, age, latency and media
+gates. Four native 4K clean targets deliver 29.796–29.829 pictures/s per target,
+13.6/24.8 ms p95/p99 age and zero retained ledger bytes after teardown. Corrected
+single-feed Sony-Cine ProRes and HEVC comparisons preserve all 900 source,
+processed and recording frames per segment, exact audio/timecode/timing, zero
+capacity rejections and useful picture/scope rates. ProRes pipeline p95/p99 is
+5.6/7.3→5.1/5.8 ms and HEVC 5.5/9.8→5.4/6.2 ms (off→on).
+The second Sony gamut's ProRes comparison also passes. Two-feed Sony-Cine ProRes
+passes with Source pictures on both, Source scopes on feed 0 and Processed Output
+scopes on feed 1; picture rates are 29.962/29.397 Hz, scope rates 14.981/13.883 Hz,
+p95 picture ages 7.9/14.9 ms and scope ages 8.0/15.4 ms. Every feed preserves all
+900 processed/recorded frames on each side, with zero capacity rejections.
+
+Current receipts under `monitor-final-verification`:
+- `native-clean-sony-final-30s/receipt.json`
+- `sony-cine-admission-corrected-pair-30s/takes/recording-receipt.json`
+- `sony-sgamut3-secondary-pair-30s/takes/recording-receipt.json`
+- `sony-two-feed-cine-pair-30s/takes/recording-receipt.json`
+
+The first Sony ProRes baseline admitted only 899/900 processed frames while
+preserving all recording media. Helper review found its statistics mutex used
+`try()` for admission, unlike production's blocking metadata-only lock. A focused
+RED/GREEN test proves the mismatch and the corrected helper preserves capacity
+12, reports capacity/wait/high-water values and drains to zero. The particular
+899-frame rejection had no reason telemetry, so its cause is not asserted. Its
+failed receipt remains preserved; the new comparison has a new source manifest.
+
+Thirty-minute native clean and two-feed ProRes sustained checks pass. Native
+clean runs 1800.029 seconds with 215,482 observed 3840×2160 clean frames,
+29.926–29.929 pictures/s per feed, p95/p99 ages 9.6/14.0 ms, source 29.960 Hz,
+peak ledger 221,642,752 bytes and retained ledger zero after teardown. Source
+policy setup/read/end-read/restore succeed and process activity is observed.
+
+Two-feed Sony-Cine ProRes admits, processes and fully decodes all 53,947 frames
+per feed (107,894 total), preserving exact source/timing/audio/timecode references
+with zero recording, encoder or capacity drops. Pipeline p95 is 7.1 ms per feed
+versus matching short-off 5.8/5.7 ms; p99 is 9.1/9.0 ms versus 8.2/7.1 ms. Fixed
++2/+5 ms limits pass. Pictures run 29.293/28.686 Hz, scopes 14.475/13.051 Hz;
+p95 picture ages are 11.5/20.3 ms, scope ages 11.7/20.8 ms. Source is about
+29.961 Hz, maximum pending is four of twelve, pending and ledger both drain to
+zero. Full decoding takes 183.97 and 167.49 seconds.
+
+The final single-feed Sony-Cine HEVC sustained run also passes: all 53,947
+frames are admitted, processed and fully decoded, with exact source/media/audio/
+timecode references and zero recording, encoder or capacity errors. Pipeline
+p95/p99 is 5.9/7.6 ms versus matching short-off 5.5/9.8 ms. Pictures run 29.633 Hz,
+scopes 14.776 Hz, p95 ages 13.3/13.6 ms; source is 29.952 Hz. Maximum pending is
+four of twelve, and pending/ledger both drain to zero. Source policy readback /
+restore succeed; process activity is observed. All three sustained stages pass,
+fully decoding **161,841 recorded video frames**. The sequence lasts 98m39s,
+including 90 minutes of capture plus full decode. Current run root:
+`/Volumes/8TB/cinesomatic-director-work/agent-work/monitor-final-verification/sony-sustained-20261020T214037`.
+Per-stage `sustained-gate-receipt.json` files retain exact baselines and measured
+gates. `sequence-results.json` reports the completed passing sequence. The recording checks are enabled-only runs compared
+to matching short off baselines, not 30-minute paired isolation. Final full-suite
+and installed delivery checks pass after the app-only lifecycle corrections.
+Physical input/receiver qualification remains
+separate. Historical native-Source HEVC p99 failures (13.8→28.1 ms) and command
+timing evidence remain in [the audit](docs/MONITOR_TOOLS_AUDIT.md); their OS/driver
+cause is unresolved and passing current checks does not prove that cause fixed.
+
+## Per-camera recording folders and PC timecode default — October 19, 2026
+
+Each camera's recording row now offers a folder override, persisted by feed ID
+with a read/write sandbox bookmark. Cameras without an override use the shared
+default folder. A camera override also works without a shared default. Changing
+folders affects the next take; active writers retain their directory access.
+Recovery scans the default and camera folders and retains the corresponding
+root for each recovery operation. PC time is the default recording timecode,
+sampled at the first video frame; other timecode modes remain selectable.
+
+`bash scripts/build.sh`: release build and camera bundle metadata validation
+passed. `bash scripts/test.sh`: **292 tests, zero failures**, 27.630 seconds.
+New checks cover per-camera routing, fallback and clearing, next-take changes,
+bookmark restoration after rename/reorder, and recovery across selected folders.
+
+## Recording statistics and app resource summary — October 19, 2026
+
+Signed host build 11 adds independent feed status, elapsed time, actual output
+file bytes, video frame losses, encoded FPS/bitrate and encoder details. Stats
+are sampled off the main actor at 2 Hz during recording/finalization, retained
+after Stop, and reset on a new take. Pause freezes elapsed time. Video losses
+exclude intentional pause/stop callbacks and remain separate from audio packet
+losses. Encoder details include hardware status, smoothed/peak callback latency,
+queue occupancy and errors. A generation guard rejects late snapshots of an
+older take after a new recording starts.
+
+`bash scripts/test.sh`: **289 tests, zero failures**, 27.138 seconds. Added checks
+cover independent per-feed rates/counters, pause/resume clocks, retained/reset
+model statistics, invalid audio accounting and GPU interval union/clipping.
+Six real 4K/59.94 synthetic native recordings (three per codec) each encoded all
+60 frames with no drops or encoder errors. All reported hardware acceleration,
+nonzero encoded byte counts, callback latency and empty queues after stop.
+
+The shared resource summary samples whole-process user/system CPU time and
+physical memory footprint. GPU video busy percentage is the union of completed
+Metal intervals across all video-processing/copy queues over the previous
+second; hardware encoders and the system compositor are excluded. The installed
+app displayed live CPU roughly 17–20% and GPU video roughly 8–9% with the saved
+4K-to-1080p processing pipeline. UI readings were checked through accessibility;
+no camera screenshots or recordings were taken as tests.
+
+The user's existing recording was left running until they stopped it and
+explicitly authorized installation. The signed update is installed at
+`/Applications/Ultracam.app`, with the capture directory and HEVC choice restored.
+Strict signature and bundle checks pass. Camera extension build 4 is unchanged.
+
+## Fragmented MOV and recovery — October 19, 2026
+
+`bash scripts/test.sh`: **284 tests, zero failures**, 27.883 seconds. Recovery
+checks include failed-stop retention, live-session exclusion, failed export
+retry, bookmark restoration, concurrent launch scans, journal filename
+reservations across managers, and cancellation preserving unowned files.
+Strict signature and bundle metadata validation pass for the installed build.
+
+The signed host build 10 adds QuickTime fragmentation for both ProRes 422 HQ
+and HEVC Main10 4:2:2, with initial/regular intervals of 1/10 seconds. Failed
+stops preserve media and a journal rather than publishing an unfinished file
+or deleting it. Recovery re-muxes to a separate readable `_Recovered.mov` and
+leaves the original unchanged. Journals are locked while a recording or
+recovery owns them; directory traversal, symlinks and foreign partial files are
+excluded. Folder access persists with a read/write sandbox bookmark.
+
+`bash scripts/recording-recovery-smoke.sh` passed four synthetic 4K/59.94
+SIGKILL tests: each codec recovered 1.001667 seconds from a take killed after
+4 seconds and 11.011667 seconds from a take killed after 14 seconds. Audio
+survived in all four; generated timecode survived in both longer takes. All
+four recovered movies passed full FFmpeg video/audio decode and retained
+`yuv422p10le`. Originals were compared byte-for-byte and remained unchanged;
+active recordings were excluded and completed recoveries were not offered
+again. The final smoke run repeated these cases after the launch-scan fix.
+
+Six normal synthetic stops also passed (three per codec), with all 60 frames
+encoded, no drops or encoder errors, and finalization between 11 and 26 ms.
+The signed sandboxed app restored its chosen folder after restart, offered an
+interrupted synthetic take on launch, and recovered it through the actual UI
+with video, PCM audio and generated timecode present. Concurrent launch scans
+are serialized to prevent a transient journal lock from hiding a take.
+
+No physical-camera footage was recorded or exported for these tests. The
+recording destination was restored to `/Volumes/8TB/capture`, HEVC was selected,
+and automatic capture/preview were left enabled. The active camera extension
+remains build 4; host-only recording changes require no extension replacement.
+An interrupted unfinished fragment can still be lost. These tests cover
+process interruption, not power loss or drive/filesystem failure.
+
 ## Ultracam fresh identity and flat icon — October 19, 2026
 
 Source is in `/Users/andrew/Projects/ai/ultracam`, with the `Ultracam.xcodeproj`
@@ -535,3 +840,41 @@ logs remain under
 
 Original passing test receipt: `logs/tests-20261014T064354Z.log`.
 Current passing test receipt: `logs/startup-perf-full-20261014T233554Z.log`.
+
+
+## Sony monitoring update — 2026-10-20
+
+Installed signed host build **15** in `/Applications/Ultracam.app`; camera extension
+build **4** retains identical compiled Mach-O sections. Sony S-Log3 false color
+now uses published Sony Pattern 2 native IRE bands. EL Zone is enabled with an
+explicit versioned public-chart mapping, source-gamut scene-linear luminance and
+additive manual stop offset. Exact Sony Monitor & Control EL matching is not
+claimed; the iPhone reference test was skipped at the user's request.
+
+The six quality/performance areas in `docs/MONITOR_SONY_QUALITY_PLAN.md` are
+implemented and tested. Final strict release package checks passed **184 tests**
+(Core 63, Metal 93, UI 28); final application checks passed **317 tests**, zero
+failures. Application integration passed **12 tests** before final shader-only
+tuning. The final tiled focus/scalar scope images match frozen scalar references
+in 432 full-image comparisons across formats, ranges, sizes and threadgroups.
+
+All three fixed actual-pipeline synthetic recording comparisons passed once:
+one-feed ProRes, two-feed ProRes and one-feed HEVC, 30 seconds tools off and
+30 seconds enabled each. All **7,200 decoded frames**, audio/timecode references,
+source integrity, recording equivalence and unchanged latency gates passed;
+no recording losses occurred and tracked monitoring memory returned to zero.
+All six isolated microbenchmark cases passed. Focus GPU p95 was 0.954 ms versus
+1.779 ms in the frozen baseline. Higher-quality preview filtering and scope tail
+costs increased; these are not six independent speedups. Two-feed picture cadence
+passed at 20.90/21.54 Hz, with a narrow margin over the 20 Hz gate and mixed adaptive
+quality. This is a short synthetic qualification, not a sustained guarantee.
+Baseline failures and the rejected scope cache candidate remain in the evidence.
+
+Installed UI mode/legend/layout checks passed with original operational selections
+restored. A 20-second installed virtual-source consumer passed with **593 frames**,
+1080p 420v and zero nonmonotonic timestamps. The capture device currently reports
+**No HDMI video signal**, so this does not qualify a live physical Sony picture.
+No real recording was started, and existing user recordings were not modified.
+
+Detailed measurements, limitations, signing/installation receipts and cleanup:
+`/Volumes/8TB/cinesomatic-build/ultracam-monitor-upgrade-20261021/FINAL_VERIFICATION.md`.

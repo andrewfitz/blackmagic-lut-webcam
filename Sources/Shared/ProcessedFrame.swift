@@ -11,14 +11,16 @@ public struct ProcessedFrameMetadata: @unchecked Sendable, Equatable {
   public let width: Int
   public let height: Int
   public let pixelFormat: UInt32
+  public let processingRevision: UInt64
 
   public init(presentationTime: CMTime, duration: CMTime, width: Int, height: Int,
-              pixelFormat: UInt32) {
+              pixelFormat: UInt32, processingRevision: UInt64 = 0) {
     self.presentationTime = presentationTime
     self.duration = duration
     self.width = width
     self.height = height
     self.pixelFormat = pixelFormat
+    self.processingRevision = processingRevision
   }
 }
 

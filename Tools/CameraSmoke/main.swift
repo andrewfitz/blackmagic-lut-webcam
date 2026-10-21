@@ -3,7 +3,10 @@
 // Neither mode displays/records images or submits an extension request.
 import CoreMediaIO
 import Foundation
+import Darwin
 import Security
+import MonitorToolsCore
+import MonitorToolsMetal
 
 func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
   if !condition() {
@@ -84,7 +87,8 @@ func currentStreamFormat(_ stream: CMIOStreamID) -> StreamFormatSummary? {
 }
 
 // One thread owns all dequeues, including cleanup. The notification callback
-// has no state/refCon and never dequeues, avoiding a concurrent-drain race.
+// never dequeues, avoiding a concurrent-drain race. Paired monitor checks
+// optionally record bounded token arrival metadata in a notification refCon.
 // Apple CMIOHardwareStream.h documents the Copy-owned queue and that a nil
 // callback unregisters notifications (and may return no queue):
 // https://developer.apple.com/documentation/coremediaio/cmiostreamcopybufferqueue(_:_:_:_:)
@@ -92,26 +96,125 @@ func currentStreamFormat(_ stream: CMIOStreamID) -> StreamFormatSummary? {
 // https://developer.apple.com/documentation/coremedia/cmsimplequeue-api
 // A dequeued CMIO sample transfers the producer's payload retain to this
 // consumer; takeRetainedValue releases that retain after inspection.
+/// SDK CMIOHardwareStream.h specifies that input notifications follow insertion
+/// and token is the inserted queue payload. Never retain/dereference payloads
+/// here; only the one ordinary dequeue owner transfers sample ownership.
+final class SourceArrivals: @unchecked Sendable {
+  private let condition = NSCondition()
+  private struct Entry: Equatable { let token: UInt; let time: Double; let ordinal: UInt64 }
+  private var entries = [Entry?](repeating: nil, count: 64)
+  private var ordinal: UInt64 = 0
+  private var matched = 0, overlappingPointerNotifications = 0, peakPending = 0
+  private var pending = 0
+  private var closed = false
+  private var failure: String?
+  private let capacity = 64
+  init() {}
+  func record(_ token: UnsafeMutableRawPointer) {
+    let arrival = now()
+    condition.lock(); defer { condition.unlock() }
+    guard !closed else { return }
+    guard pending < capacity else {
+      failure = "Receiver notification timestamp storage exceeded 64 bounded entries."
+      condition.broadcast(); return
+    }
+    // Preallocated slots avoid callback allocations. A repeated pointer gets
+    // a separate ordinal, so reuse never overwrites a live sample's arrival.
+    guard let index = entries.firstIndex(where: { $0 == nil }) else { return }
+    if entries.contains(where: { $0?.token == UInt(bitPattern: token) }) { overlappingPointerNotifications += 1 }
+    ordinal &+= 1
+    entries[index] = Entry(token: UInt(bitPattern: token), time: arrival, ordinal: ordinal)
+    pending += 1
+    peakPending = max(peakPending, pending)
+    condition.signal()
+  }
+  func take(_ token: UnsafeRawPointer) throws -> Double {
+    let key = UInt(bitPattern: token), deadline = Date(timeIntervalSinceNow: 0.1)
+    condition.lock(); defer { condition.unlock() }
+    func matchingIndex() -> Int? {
+      entries.indices.filter { entries[$0]?.token == key }.min {
+        entries[$0]!.ordinal < entries[$1]!.ordinal
+      }
+    }
+    while matchingIndex() == nil && !closed && failure == nil {
+      // Native insertion can win the notification race. Keep exactly this one
+      // dequeued/retained sample while bounded-waiting for its callback record.
+      if !condition.wait(until: deadline) { break }
+    }
+    if let failure { throw VideoError.message(failure) }
+    guard let index = matchingIndex(), let entry = entries[index] else {
+      throw VideoError.message("Receiver notification deadline: token=\(key) pending=\(pending) closed=\(closed).")
+    }
+    entries[index] = nil
+    pending -= 1
+    matched += 1
+    return entry.time
+  }
+  func report() {
+    condition.lock()
+    let statistics = "callbackRecords=\(ordinal) matchedDequeues=\(matched) overlappingPointerNotifications=\(overlappingPointerNotifications) peakPending=\(peakPending) capacity=\(capacity) failure=\(failure ?? "none")"
+    condition.unlock()
+    log("CMIO_RECEIVER_TIMESTAMPS \(statistics)")
+  }
+  func close() {
+    condition.lock(); closed = true
+    for index in entries.indices { entries[index] = nil }
+    pending = 0
+    condition.broadcast(); condition.unlock()
+  }
+}
+
+/// The SDK documents unregistering, not a synchronous join of in-flight C
+/// callbacks. Keep at most six metadata-only refCons alive until process exit;
+/// closed contexts ignore late callbacks and never own samples or pixel bytes.
+final class SourceArrivalContexts: @unchecked Sendable {
+  static let shared = SourceArrivalContexts()
+  private let lock = NSLock()
+  private var contexts: [SourceArrivals] = []
+  func make() throws -> SourceArrivals {
+    try lock.withLock {
+      try require(contexts.count < 6, "At most six paired receiver arrival contexts are allowed.")
+      let context = SourceArrivals(); contexts.append(context); return context
+    }
+  }
+}
+
+struct SourceCadenceGrid {
+  let anchor: CMTime
+  let duration: CMTime
+  func nextEpoch() -> CMTime {
+    let earliest = CMTimeAdd(CMClockGetTime(CMClockGetHostTimeClock()), CMTime(seconds: 0.25, preferredTimescale: 60_000))
+    let steps = max(0, Int32(ceil(CMTimeSubtract(earliest, anchor).seconds / duration.seconds)))
+    return CMTimeAdd(anchor, CMTimeMultiply(duration, multiplier: steps))
+  }
+}
+
 final class SourceQueue {
   let device: CMIODeviceID
   let stream: CMIOStreamID
   let queue: CMSimpleQueue
   let negotiatedFormat: StreamFormatSummary?
+  private let arrivals: SourceArrivals?
   private var started = false
   private var closed = false
   private var closeStatus: OSStatus = noErr
 
-  init() throws {
+  init(route: CameraSinkRoute = .legacy, arrivals: SourceArrivals? = nil) throws {
+    self.arrivals = arrivals
     guard let device = try ids(CMIOObjectID(kCMIOObjectSystemObject), kCMIOHardwarePropertyDevices)
-      .first(where: { try string($0, kCMIODevicePropertyDeviceUID) == VideoContract.deviceUID }),
+      .first(where: { try string($0, kCMIODevicePropertyDeviceUID) == route.deviceUID }),
       let stream = try ids(device, kCMIODevicePropertyStreams)
-      .first(where: { try string($0, kCMIOObjectPropertyName) == VideoContract.cameraName }) else {
+      .first(where: { try string($0, kCMIOObjectPropertyName) == route.sourceStreamName }) else {
       throw VideoError.message("Installed synthetic target/source was not discovered.")
     }
     self.device = device
     self.stream = stream
     var copied: Unmanaged<CMSimpleQueue>?
-    try check(CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &copied), "Copy source queue")
+    let refCon = arrivals.map { Unmanaged.passUnretained($0).toOpaque() }
+    try check(CMIOStreamCopyBufferQueue(stream, { _, token, refCon in
+      guard let token, let refCon else { return }
+      Unmanaged<SourceArrivals>.fromOpaque(refCon).takeUnretainedValue().record(token)
+    }, refCon, &copied), "Copy source queue")
     guard let copied else { throw VideoError.message("Source queue is unavailable.") }
     queue = copied.takeRetainedValue()
     try check(CMIODeviceStartStream(device, stream), "Start installed camera source")
@@ -124,6 +227,13 @@ final class SourceQueue {
   func next() -> CMSampleBuffer? {
     guard let token = CMSimpleQueueDequeue(queue) else { return nil }
     return Unmanaged<CMSampleBuffer>.fromOpaque(token).takeRetainedValue()
+  }
+
+  func nextArrival() throws -> (sample: CMSampleBuffer, hostTime: Double)? {
+    guard let token = CMSimpleQueueDequeue(queue) else { return nil }
+    let sample = Unmanaged<CMSampleBuffer>.fromOpaque(token).takeRetainedValue()
+    guard let arrivals else { throw VideoError.message("Receiver arrival tracking was not enabled.") }
+    return (sample, try arrivals.take(token))
   }
 
   @discardableResult
@@ -140,6 +250,7 @@ final class SourceQueue {
     let status = CMIOStreamCopyBufferQueue(stream, nil, nil, &copied)
     log("CMIO_SMOKE sourceUnregister=\(status)")
     if closeStatus == noErr { closeStatus = status }
+    arrivals?.close()
     if let copied { _ = copied.takeRetainedValue() }
     // Stopped stream; release each remaining producer-owned sample once.
     for _ in 0..<CMSimpleQueueGetCapacity(queue) {
@@ -261,27 +372,356 @@ func inspect(_ sample: CMSampleBuffer, duration: CMTime, mode: SyntheticMode) th
   return marker
 }
 
+/// Optional read-only subscriber, offered only after the producer has sent the
+/// original sample. Results retain module-owned pixels, never the CMIO payload.
+final class MonitorComparison: @unchecked Sendable {
+  let runtime = MonitorRuntime()
+  let target = MonitorTargetID("cmio-synthetic-comparison")
+  private let lock = NSLock()
+  private var warmReady = false
+  private var pictures = Set<UInt64>(), scopes = Set<UInt64>()
+  private var pictureAges: [Double] = [], scopeAges: [Double] = [], schedulingDelays: [Double] = []
+  private var failure: String?
+  private var offered = 0, admitted = 0, callbacks = 0
+  private var failureMetadata: [String] = []
+  init() {
+    var configuration = MonitorConfiguration()
+    configuration.toolsEnabled = true
+    configuration.pictureStage = .processedOutput
+    configuration.scopeStage = .processedOutput
+    configuration.zebra.enabled = true
+    configuration.focus.enabled = true
+    configuration.scopes.enabled = true
+    configuration.scopes.refreshHz = 15
+    runtime.configure(target: target, generation: 1, configurationRevision: 1,
+      configuration: configuration, processingRevision: 1)
+  }
+  func offer(_ sample: CMSampleBuffer, sequence: UInt64, warmup: Bool = false,
+    sourceHostTime: Double? = nil) {
+    let time = now()
+    // The controlled source is already qualified at 29.97/59.94Hz. Offer every
+    // successfully enqueued original sample; receiver/main scheduling jitter
+    // must not thin the intended single-feed workload (nominally up to 60Hz).
+    guard let image = CMSampleBufferGetImageBuffer(sample) else { return }
+    if !warmup { lock.withLock { offered += 1 } }
+    if let sourceHostTime, !warmup { lock.withLock { schedulingDelays.append(time - sourceHostTime) } }
+    let geometry = MonitorGeometry(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image))
+    let signal = MonitorFrameSignal(range: .legal, matrix: .bt709, transfer: "Rec.709")
+    let stamp = MonitorFrameStamp(target: target, generation: 1, sequence: sequence,
+      sourcePTS: CMSampleBufferGetPresentationTimeStamp(sample).seconds, hostTime: sourceHostTime ?? time,
+      configurationRevision: 1, processingRevision: 1)
+    let bundle = MonitorFrameBundle(stamp: stamp, source: image, output: image,
+      sourceGeometry: geometry, outputGeometry: geometry, correspondence: .identity,
+      sourceSignal: signal, outputSignal: signal)
+    let metadata = "target=\(target.rawValue) generation=1 sequence=\(sequence) sourcePTS=\(stamp.sourcePTS) sourceHost=\(stamp.hostTime) offerHost=\(time) warmup=\(warmup)"
+    let accepted = runtime.offer(bundle) { [self] result in
+      lock.lock(); defer { lock.unlock() }
+      if !warmup { callbacks += 1 }
+      switch result {
+      case .failure(let error):
+        failure = error.localizedDescription
+        failureMetadata.append("callbackError=\(error.localizedDescription) \(metadata)")
+      case .success(let display):
+        guard display.decorated != nil, display.scope != nil, display.availability.isEmpty else {
+          failure = "GPU analysis unavailable: \(display.availability.joined(separator: ", "))"
+          failureMetadata.append("callbackUnavailable=\(display.availability.joined(separator: ",")) decorated=\(display.decorated != nil) scope=\(display.scope != nil) \(metadata)")
+          return
+        }
+        if warmup { warmReady = true; return }
+        if pictures.insert(display.clean.stamp.sequence).inserted {
+          pictureAges.append(now() - display.clean.stamp.hostTime)
+        }
+        if let scope = display.scope, scopes.insert(scope.stamp.sequence).inserted {
+          scopeAges.append(now() - scope.stamp.hostTime)
+        }
+      }
+    }
+    lock.withLock {
+      if accepted { if !warmup { admitted += 1 } }
+      else { failureMetadata.append("offerRejected=true \(metadata)") }
+    }
+  }
+  func prewarm(_ sample: CMSampleBuffer) throws {
+    let deadline = now() + 8
+    while now() < deadline {
+      offer(sample, sequence: 0, warmup: true)
+      let state = lock.withLock { (warmReady, failure) }
+      if let failure = state.1 { throw VideoError.message(failure) }
+      if state.0 { return }
+      Thread.sleep(forTimeInterval: 0.05)
+    }
+    throw VideoError.message("Monitor GPU warmup deadline expired.")
+  }
+  func finish(seconds: Double) throws {
+    Thread.sleep(forTimeInterval: 0.15)
+    let snapshot = lock.withLock { (pictures.count, scopes.count, pictureAges, scopeAges, failure) }
+    let pictureHz = Double(snapshot.0) / seconds, scopeHz = Double(snapshot.1) / seconds
+    let metrics = lock.withLock { (offered, admitted, callbacks, schedulingDelays, failureMetadata) }
+    // Defer diagnostic output until measurement ends; failure reporting must not
+    // add per-frame console I/O to the ordinary receiver/monitor scheduling.
+    log("CMIO_MONITOR sourceAgeOrigin=successfulSenderEnqueue offered=\(metrics.0) admitted=\(metrics.1) callbacks=\(metrics.2) uniquePictures=\(snapshot.0) uniqueScopes=\(snapshot.1) monitorSchedulingP95MS=\(percentile(metrics.3,0.95)*1000) pictureHz=\(pictureHz) scopeHz=\(scopeHz) pictureAgeMS=\(percentile(snapshot.2, 0.95)*1000) scopeAgeMS=\(percentile(snapshot.3, 0.95)*1000) warmupExcluded=true")
+    for metadata in metrics.4 { log("CMIO_MONITOR_DIAGNOSTIC \(metadata)") }
+    defer { runtime.remove(target: target) }
+    if let failure = snapshot.4 { throw VideoError.message(failure) }
+    try require(pictureHz >= 20 && scopeHz >= 10,
+      "Monitor useful-rate gate failed: picture=\(pictureHz)Hz scope=\(scopeHz)Hz.")
+    try require(percentile(snapshot.2, 0.95) <= 0.100 && percentile(snapshot.3, 0.95) <= 0.200,
+      "Monitor age gate failed (picture p95 <=100ms, scope p95 <=200ms).")
+  }
+}
+
+func percentile(_ values: [Double], _ quantile: Double) -> Double {
+  let sorted = values.sorted()
+  guard !sorted.isEmpty else { return .infinity }
+  return sorted[Int(ceil(Double(sorted.count - 1) * quantile))]
+}
+
+func logLatencyDistribution(_ segment: String, values: [Double]) {
+  let bounds = [0.0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100]
+  var counts = [Int](repeating: 0, count: bounds.count + 1)
+  for value in values {
+    let bucket = bounds.firstIndex(where: { value < $0 }) ?? bounds.count
+    counts[bucket] += 1
+  }
+  log("CMIO_LATENCY_DISTRIBUTION segment=\(segment) count=\(values.count) minMS=\(values.min() ?? .infinity) p50MS=\(percentile(values,0.5)) p95MS=\(percentile(values,0.95)) p99MS=\(percentile(values,0.99)) maxMS=\(values.max() ?? .infinity) bucketUpperExclusiveMS=\(bounds) bucketCounts=\(counts) finalBucketUpper=infinity trimming=false")
+}
+
+struct CameraReceipt {
+  let latencyMS: [Double]
+  let retries: Int
+}
+
+/// Eight immutable image fixtures plus bounded timing wrappers. Only the tiny
+/// already-prepared enqueue runs with the controlled hardware-source policy.
+final class ControlledCameraProducer: @unchecked Sendable {
+  let samples: [CMSampleBuffer]
+  let sink: CameraSink
+  let period: Double
+  let lock = NSLock()
+  private var emissions: [Double] = [], cpuMS: [Double] = []
+  private var error: String?
+  private var cancelled = false
+  private var setup: kern_return_t = KERN_FAILURE, restore: kern_return_t = KERN_FAILURE
+  private var active = false
+  private var postReadback: kern_return_t = KERN_FAILURE
+  private var postActive = false
+  let finished = DispatchSemaphore(value: 0)
+  init(samples: [CMSampleBuffer], sink: CameraSink, period: Double) {
+    self.samples = samples; self.sink = sink; self.period = period
+    emissions.reserveCapacity(samples.count); cpuMS.reserveCapacity(samples.count)
+  }
+  func snapshot() -> (times: [Double], cpu: [Double], error: String?, active: Bool, setup: kern_return_t, restore: kern_return_t, postReadback: kern_return_t, postActive: Bool) {
+    lock.withLock { (emissions, cpuMS, error, active, setup, restore, postReadback, postActive) }
+  }
+  func cancel() { lock.withLock { cancelled = true } }
+  func start() {
+    let producer = Thread { [self] in
+      var timebase = mach_timebase_info_data_t()
+      guard mach_timebase_info(&timebase) == KERN_SUCCESS else {
+        lock.withLock { error = "Cannot read Mach timebase." }; finished.signal(); return
+      }
+      func ticks(_ seconds: Double) -> UInt64 {
+        UInt64((seconds * 1_000_000_000 * Double(timebase.denom) / Double(timebase.numer)).rounded())
+      }
+      let thread = pthread_mach_thread_np(pthread_self())
+      let words = mach_msg_type_number_t(MemoryLayout<thread_time_constraint_policy_data_t>.size / MemoryLayout<integer_t>.size)
+      var policy = thread_time_constraint_policy_data_t(period: UInt32(ticks(period)),
+        computation: UInt32(ticks(0.0005)), constraint: UInt32(ticks(0.001)), preemptible: 1)
+      let applied = withUnsafeMutablePointer(to: &policy) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(words)) {
+          thread_policy_set(thread, thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, words)
+        }
+      }
+      defer {
+        var after = thread_time_constraint_policy_data_t()
+        var afterCount = words
+        var afterDefaults: boolean_t = 0
+        let afterStatus = withUnsafeMutablePointer(to: &after) {
+          $0.withMemoryRebound(to: integer_t.self, capacity: Int(words)) {
+            thread_policy_get(thread, thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, &afterCount, &afterDefaults)
+          }
+        }
+        let afterVerified = afterStatus == KERN_SUCCESS && afterDefaults == 0 &&
+          after.period == policy.period && after.computation == policy.computation && after.constraint == policy.constraint
+        var standard: integer_t = 0
+        let result = thread_policy_set(thread, thread_policy_flavor_t(THREAD_STANDARD_POLICY), &standard, 0)
+        lock.withLock { restore = result; postReadback = afterStatus; postActive = afterVerified }
+        finished.signal()
+      }
+      var observed = thread_time_constraint_policy_data_t()
+      var count = words
+      var defaults: boolean_t = 0
+      let read = withUnsafeMutablePointer(to: &observed) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(words)) {
+          thread_policy_get(thread, thread_policy_flavor_t(THREAD_TIME_CONSTRAINT_POLICY), $0, &count, &defaults)
+        }
+      }
+      let verified = applied == KERN_SUCCESS && read == KERN_SUCCESS && defaults == 0 &&
+        observed.period == policy.period && observed.computation == policy.computation && observed.constraint == policy.constraint
+      lock.withLock {
+        setup = applied == KERN_SUCCESS ? read : applied; active = verified
+        if !verified { error = "Controlled source policy setup/readback failed." }
+      }
+      guard verified else { return }
+      let origin = CMClockConvertHostTimeToSystemUnits(CMSampleBufferGetPresentationTimeStamp(samples[0]))
+      var prior: UInt64?
+      for (index, sample) in samples.enumerated() {
+        let deadline = origin + ticks(Double(index) * period)
+        while mach_absolute_time() < deadline { mach_wait_until(deadline) }
+        if lock.withLock({ cancelled }) { return }
+        let wake = mach_absolute_time()
+        // No catchup: an OS scheduling miss invalidates this synthetic source,
+        // rather than emitting an immediate second frame on the old deadline.
+        if wake > deadline + ticks(period * 0.1) || prior.map({ wake - $0 < ticks(period * 0.9) }) == true {
+          lock.withLock { error = "Controlled source missed its hardware-cadence deadline; no catchup emitted." }
+          return
+        }
+        var before = timespec(), after = timespec()
+        let beforeStatus = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &before)
+        do {
+          try lock.withLock {
+            guard try sink.send(sample) else { throw VideoError.message("Controlled producer queue is full; no retry/catchup emitted.") }
+            emissions.append(now())
+          }
+        } catch {
+          lock.withLock { self.error = error.localizedDescription }; return
+        }
+        let afterStatus = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &after)
+        let elapsed = beforeStatus == 0 && afterStatus == 0 ?
+          Double(after.tv_sec - before.tv_sec) * 1000 + Double(after.tv_nsec - before.tv_nsec) / 1_000_000 : .infinity
+        lock.withLock { cpuMS.append(elapsed) }
+        if elapsed > 0.5 { lock.withLock { error = "Prepared source enqueue exceeded its 0.5ms CPU budget." }; return }
+        prior = wake
+      }
+    }
+    producer.qualityOfService = .userInteractive
+    producer.start()
+  }
+}
+
+func controlledComparison(sink: CameraSink, source: SourceQueue, factory: VideoSampleFactory,
+  fixtures: [CVPixelBuffer], mode: SyntheticMode, duration: CMTime, count: Int,
+  monitor: MonitorComparison?, grid: SourceCadenceGrid) throws -> CameraReceipt {
+  let fixtureCount = fixtures.count
+  let epoch = grid.nextEpoch()
+  log("CMIO_SEGMENT monitorEnabled=\(monitor != nil) epochPTS=\(epoch.value)/\(epoch.timescale) gridAnchorPTS=\(grid.anchor.value)/\(grid.anchor.timescale) connectionReused=true receiverArrival=CMIOInsertionCallback")
+  let samples = try (0..<count).map {
+    try factory.sample(fixtures[$0 % fixtureCount],
+      at: CMTimeAdd(epoch, CMTimeMultiply(duration, multiplier: Int32($0))), duration: duration)
+  }
+  let producer = ControlledCameraProducer(samples: samples, sink: sink, period: duration.seconds)
+  producer.start()
+  var joined = false
+  defer {
+    producer.cancel()
+    if !joined, producer.finished.wait(timeout: .now() + 1) != .success {
+      // A blocked sender must never race stream disconnect or fixture release.
+      // The process watchdog is the final boundary for a stuck system call.
+      fputs("CMIO_SMOKE FAIL controlled sender could not join before cleanup.\n", stderr)
+      _exit(124)
+    }
+  }
+  let deadline = now() + Double(count) * duration.seconds + 5
+  var received = 0, monitorOffered = 0, excludedWarm = 0, excludedStandby = 0
+  var previous: CMTime?
+  var latenciesMS: [Double] = [], inspectionDelaysMS: [Double] = []
+  while received < count && now() < deadline {
+    let state = producer.snapshot()
+    if let error = state.error { throw VideoError.message(error) }
+    while monitorOffered < state.times.count {
+      monitor?.offer(samples[monitorOffered], sequence: UInt64(monitorOffered + 1),
+        sourceHostTime: state.times[monitorOffered])
+      monitorOffered += 1
+    }
+    while let delivery = try source.nextArrival() {
+      let sample = delivery.sample, arrival = delivery.hostTime
+      let inspectionStart = now()
+      let marker = try inspect(sample, duration: duration, mode: mode)
+      let time = CMSampleBufferGetPresentationTimeStamp(sample)
+      let sent = producer.snapshot().times
+      let expected = CMTimeAdd(epoch, CMTimeMultiply(duration, multiplier: Int32(received)))
+      let context = "marker=\(marker) index=\(received) sentCount=\(sent.count) actualPTS=\(time.value)/\(time.timescale) expectedPTS=\(expected.value)/\(expected.timescale) epochPTS=\(epoch.value)/\(epoch.timescale) arrivalHost=\(arrival) lastEnqueueHost=\(sent.last ?? -1)"
+      try require(time.isNumeric && time.epoch == 0, "Controlled receiver invalid timestamp: \(context)")
+      // Shader initialization and immutable fixture preparation are excluded
+      // warmup. The installed extension emits black after 0.5s without input;
+      // those already-queued pre-epoch standby samples are not source frames.
+      // Once measurement begins, no black/warm/stale/duplicate is tolerated.
+      if CMTimeCompare(time, epoch) < 0 && (marker == 63 || marker == mode.black) {
+        if marker == 63 { excludedWarm += 1 } else { excludedStandby += 1 }
+        continue
+      }
+      try require(received < sent.count, "Controlled consumer received an unsent/duplicate frame: \(context)")
+      try require(marker == UInt16(64 + received % fixtureCount), "Controlled synthetic marker order mismatch: \(context)")
+      try require(time == expected, "Controlled receiver changed exact original PTS or frame order: \(context)")
+      if let previous { try require(CMTimeSubtract(time, previous) == duration, "Controlled receiver rational cadence changed.") }
+      previous = time
+      latenciesMS.append((arrival - sent[received]) * 1000)
+      inspectionDelaysMS.append((inspectionStart - arrival) * 1000)
+      received += 1
+    }
+    pollPause()
+  }
+  try require(received == count, "Controlled receiver deadline expired after \(received)/\(count) frames.")
+  // Main-thread monitor submission can lag the last receive slightly; it stays
+  // outside the source thread and is always after successful original enqueue.
+  let finalTimes = producer.snapshot().times
+  while monitorOffered < finalTimes.count {
+    monitor?.offer(samples[monitorOffered], sequence: UInt64(monitorOffered + 1),
+      sourceHostTime: finalTimes[monitorOffered]); monitorOffered += 1
+  }
+  try require(producer.finished.wait(timeout: .now() + 1) == .success, "Controlled source teardown deadline.")
+  joined = true
+  let state = producer.snapshot()
+  if let error = state.error { throw VideoError.message(error) }
+  try require(state.setup == KERN_SUCCESS && state.active && state.postReadback == KERN_SUCCESS && state.postActive && state.restore == KERN_SUCCESS,
+    "Controlled source policy pre/post readback and restore must all succeed.")
+  try require(state.times.count == count && state.cpu.count == count && (state.cpu.max() ?? .infinity) <= 0.5,
+    "Controlled source must enqueue every precomputed sample within its bounded CPU budget.")
+  let intervals = zip(state.times.dropFirst(), state.times).map { $0.0 - $0.1 }
+  let span = (state.times.last ?? 0) - (state.times.first ?? 0)
+  let observedHz = Double(count - 1) / span, nominalHz = 1 / duration.seconds
+  log("CMIO_PRODUCER monitorEnabled=\(monitor != nil) nominalHz=\(nominalHz) observedHz=\(observedHz) intervalMinMS=\((intervals.min() ?? 0)*1000) intervalP95MS=\(percentile(intervals,0.95)*1000) intervalP99MS=\(percentile(intervals,0.99)*1000) minimumIntervalMS=\(duration.seconds*0.90*1000) minimumHz=\(nominalHz*0.98) timestampOrigin=successfulSenderEnqueue sourceCallbackCPUMaxMS=\(state.cpu.max() ?? .infinity) sourcePolicySetup=\(state.setup) sourcePolicyActive=\(state.active) sourcePolicyPostReadback=\(state.postReadback) sourcePolicyPostActive=\(state.postActive) sourcePolicyRestore=\(state.restore) fixtureImages=\(fixtureCount) warmupExcluded=true")
+  try require(observedHz >= nominalHz * 0.98, "Controlled source rate below 98% nominal.")
+  try require((intervals.min() ?? 0) >= duration.seconds * 0.90, "Controlled source interval below 90% nominal.")
+  try monitor?.finish(seconds: Double(count) * duration.seconds)
+  log("CMIO_SMOKE PASS sent=\(state.times.count) received=\(received) requested=\(mode.summary(duration:duration)) exactPixels=true exactPTS=true retries=0 monitorEnabled=\(monitor != nil) receiverCallbackP95MS=\(percentile(latenciesMS,0.95)) receiverCallbackP99MS=\(percentile(latenciesMS,0.99)) callbackToInspectionP95MS=\(percentile(inspectionDelaysMS,0.95)) callbackToInspectionP99MS=\(percentile(inspectionDelaysMS,0.99)) controlledSource=true excludedPreEpochWarm=\(excludedWarm) excludedPreEpochStandby=\(excludedStandby)")
+  return CameraReceipt(latencyMS: latenciesMS, retries: 0)
+}
+
 func smoke() throws {
-  let arguments = Array(CommandLine.arguments.dropFirst())
-  try require(arguments == ["--run"] || arguments == ["--run", "--full"],
-    "Pass --run (optionally --full) to perform the synthetic installed-camera check.")
+  var arguments = Array(CommandLine.arguments.dropFirst())
+  var segmentSeconds: Double?
+  if let index = arguments.firstIndex(of: "--segment-seconds") {
+    try require(index + 1 < arguments.count, "--segment-seconds needs a duration.")
+    guard let seconds = Double(arguments[index + 1]), seconds.isFinite, seconds >= 1, seconds <= 60 else {
+      throw VideoError.message("--segment-seconds must be between 1 and 60.")
+    }
+    segmentSeconds = seconds
+    arguments.removeSubrange(index...index + 1)
+  }
+  let monitorComparison = arguments.contains("--monitor")
+  try require(segmentSeconds == nil || monitorComparison, "--segment-seconds is available only with --monitor.")
+  try require(arguments.first == "--run" && Set(arguments).isSubset(of: ["--run", "--full", "--monitor"]),
+    "Pass --run (optionally --full and --monitor) for the synthetic installed-camera check.")
   // CMIO's synchronous IPC APIs have no per-call timeout. Bound even a stalled
   // service call with a process-local watchdog; normal paths stop both streams.
-  DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 60) {
-    fputs("CMIO_SMOKE FAIL 60-second process watchdog expired.\n", stderr)
+  let profileCount = arguments.contains("--full") ? 6.0 : 2.0
+  let watchdog = monitorComparison ? max(180.0, (segmentSeconds ?? 6) * 2 * profileCount + 90) : 60.0
+  DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + watchdog) {
+    fputs("CMIO_SMOKE FAIL process watchdog expired.\n", stderr)
     _exit(124)
   }
   var code: SecCode?
   try check(SecCodeCopySelf([], &code), "Read helper signature")
   var requirement: SecRequirement?
-  try check(SecRequirementCreateWithString("identifier \"org.ultrastudiolut.app\"" as CFString, [], &requirement), "Create helper signing requirement")
+  try check(SecRequirementCreateWithString("identifier \"org.ultracam.app\"" as CFString, [], &requirement), "Create helper signing requirement")
   try check(SecCodeCheckValidity(code!, SecCSFlags(rawValue: kSecCSStrictValidate), requirement), "Validate helper signature and producer identifier")
   var staticCode: SecStaticCode?
   try check(SecCodeCopyStaticCode(code!, [], &staticCode), "Read helper static code")
   var signing: CFDictionary?
   try check(SecCodeCopySigningInformation(staticCode!, SecCSFlags(rawValue: kSecCSSigningInformation), &signing), "Read helper signing identifier")
   let identifier = (signing as? [String: Any])?[kSecCodeInfoIdentifier as String] as? String
-  try require(identifier == "org.ultrastudiolut.app", "Helper must be signed as the authorized synthetic producer.")
+  try require(identifier == "org.ultracam.app", "Helper must be signed as the authorized synthetic producer.")
   log("CMIO_SMOKE begin pid=\(ProcessInfo.processInfo.processIdentifier) signingID=\(identifier!) syntheticOnly=true")
   let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Bounded synthetic camera IPC verification")
   defer { ProcessInfo.processInfo.endActivity(activity) }
@@ -290,17 +730,26 @@ func smoke() throws {
     modes += [SyntheticMode(width: 3840, height: 2160, format: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange),
       SyntheticMode(width: 3840, height: 2160, format: kCVPixelFormatType_422YpCbCr10)]
   }
+  let route = try currentRoute()
   for mode in modes {
     let pool = try makePool(mode)
-    try runCase(fast: false, pool: pool, mode: mode)
-    try runCase(fast: true, pool: pool, mode: mode)
+    for fast in [false, true] {
+      let duration = fast ? VideoContract.fastDuration : VideoContract.slowDuration
+      let count = segmentSeconds.map { Int(ceil($0 / duration.seconds)) } ?? (monitorComparison ? 180 : 60)
+      log("CMIO_WORKLOAD segmentRequestedSeconds=\(segmentSeconds.map { String($0) } ?? "default") framesPerSegment=\(count) effectiveSegmentSeconds=\(Double(count) * duration.seconds) allOutliersRetained=true")
+      try runCase(fast: fast, pool: pool, mode: mode, route: route,
+        frameCount: count, pairedMonitor: monitorComparison)
+    }
   }
 }
 
-func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
+@discardableResult
+func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode,
+  route: CameraSinkRoute = .legacy, monitorEnabled: Bool = false, frameCount: Int = 60,
+  pairedMonitor: Bool = false) throws -> CameraReceipt {
   let duration = fast ? VideoContract.fastDuration : VideoContract.slowDuration
   log("CMIO_SMOKE case requested=\(mode.summary(duration: duration))")
-  let sink = CameraSink()
+  let sink = CameraSink(route: route, registrySnapshot: { nil })
   defer { sink.disconnect(); log("CMIO_SMOKE producerDisconnected") }
   var configuration = PipelineConfiguration()
   configuration.inputFast = fast
@@ -324,7 +773,8 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   } while now() < discoveryDeadline
   try require(connected, "Producer connection deadline: \(lastError)")
   log("CMIO_SMOKE producerConnected")
-  let source = try SourceQueue()
+  let arrivalContext = pairedMonitor ? try SourceArrivalContexts.shared.make() : nil
+  let source = try SourceQueue(route: route, arrivals: arrivalContext)
   defer { source.stop() }
   log("CMIO_SMOKE contract requested=\(mode.summary(duration: duration)) negotiated=\(source.negotiatedFormat.map { $0.description } ?? "unavailable")")
   let factory = VideoSampleFactory()
@@ -335,8 +785,12 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   let warmDeadline = now() + 3
   var warmReceived = false
   var standby = 0
+  func nextWarm() throws -> CMSampleBuffer? {
+    if pairedMonitor { return try source.nextArrival()?.sample }
+    return source.next()
+  }
   repeat {
-    if let sample = source.next() {
+    if let sample = try nextWarm() {
       let marker = try inspect(sample, duration: duration, mode: mode)
       if marker == 63 { warmReceived = true; break }
       try require(marker == mode.black, "Unexpected preflight marker \(marker).")
@@ -345,15 +799,46 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
   } while now() < warmDeadline
   try require(warmReceived, "No synthetic warmup returned through installed extension within 3 seconds.")
   log("CMIO_SMOKE warmupReceived standby=\(standby)")
-  let count = 60
+  if pairedMonitor {
+    let monitor = MonitorComparison()
+    try monitor.prewarm(warm) // compile/warm before BOTH connected measurements
+    let fixtures = try (0..<8).map { try image(marker: UInt16(64 + $0), pool: pool, mode: mode) }
+    let grid = SourceCadenceGrid(anchor: CMTimeConvertScale(CMClockGetTime(hostClock),
+      timescale: 60_000, method: .default), duration: duration)
+    let baseline = try controlledComparison(sink: sink, source: source, factory: factory,
+      fixtures: fixtures, mode: mode, duration: duration, count: frameCount, monitor: nil, grid: grid)
+    let enabled = try controlledComparison(sink: sink, source: source, factory: factory,
+      fixtures: fixtures, mode: mode, duration: duration, count: frameCount, monitor: monitor, grid: grid)
+    let p95 = percentile(enabled.latencyMS, 0.95), p99 = percentile(enabled.latencyMS, 0.99)
+    let baseline95 = percentile(baseline.latencyMS, 0.95), baseline99 = percentile(baseline.latencyMS, 0.99)
+    log("CMIO_MONITOR_COMPARISON receiverArrival=CMIOInsertionCallback sameConnection=true sameCadenceGrid=true baselineP95MS=\(baseline95) enabledP95MS=\(p95) baselineP99MS=\(baseline99) enabledP99MS=\(p99) p95ToleranceMS=2 p99ToleranceMS=5")
+    arrivalContext?.report()
+    logLatencyDistribution("baseline", values: baseline.latencyMS)
+    logLatencyDistribution("enabled", values: enabled.latencyMS)
+    let p95Limit = baseline95 + 2, p99Limit = baseline99 + 5
+    log("CMIO_LATENCY_EXCEEDANCES enabledAboveBaselineP95Plus2MS=\(enabled.latencyMS.filter { $0 > p95Limit }.count) enabledAboveBaselineP99Plus5MS=\(enabled.latencyMS.filter { $0 > p99Limit }.count) enabledCount=\(enabled.latencyMS.count) baselineCount=\(baseline.latencyMS.count) p95LimitMS=\(p95Limit) p99LimitMS=\(p99Limit) trimming=false")
+    for (index, latency) in enabled.latencyMS.enumerated() where latency > p99Limit {
+      log("CMIO_LATENCY_OUTLIER segment=enabled index=\(index) callbackLatencyMS=\(latency) baselineP99Plus5LimitMS=\(p99Limit)")
+    }
+    try require(p95 <= baseline95 + 2 && p99 <= baseline99 + 5,
+      "Receiver callback latency regression: p95=\(p95) baseline=\(baseline95)+2ms p99=\(p99) baseline=\(baseline99)+5ms.")
+    try require(enabled.retries <= baseline.retries, "Monitoring increased producer queue-full retries.")
+    log("CMIO_MONITOR_COMPARISON PASS requested=\(mode.summary(duration: duration)) exactPixelsPTSCountsCadence=true physicalCapture=false")
+    return enabled
+  }
+  let monitor = monitorEnabled ? MonitorComparison() : nil
+  try monitor?.prewarm(warm)
+  let count = frameCount
   let epoch = CMTimeConvertScale(CMClockGetTime(hostClock), timescale: 60_000, method: .default)
   let start = now()
   var received = 0
   var sent = 0
   var retries = 0
   var previous: CMTime?
+  var origins: [Double] = [], emittedAt: [Double] = [], latenciesMS: [Double] = []
   func consume() throws {
     while let sample = source.next() {
+      let arrival = now()
       let marker = try inspect(sample, duration: duration, mode: mode)
       if marker == 63 { continue }
       try require(received < sent, "Received an unsent or duplicate synthetic frame.")
@@ -363,12 +848,14 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
       try require(time.isNumeric && time.epoch == 0 && time == expected, "Installed camera changed producer timestamp for marker \(marker).")
       if let previous { try require(CMTimeSubtract(time, previous) == duration, "Output cadence differs from the negotiated rational duration.") }
       previous = time
+      latenciesMS.append((arrival - origins[received]) * 1000)
       received += 1
     }
   }
   for index in 0..<count {
     let deadline = start + Double(index) * duration.seconds
     while now() < deadline { try consume(); pollPause() }
+    origins.append(now())
     let sample = try factory.sample(image(marker: UInt16(64 + index), pool: pool, mode: mode),
       at: CMTimeAdd(epoch, CMTimeMultiply(duration, multiplier: Int32(index))), duration: duration)
     let sendDeadline = now() + 0.25
@@ -378,14 +865,26 @@ func runCase(fast: Bool, pool: CVPixelBufferPool, mode: SyntheticMode) throws {
       try require(now() < sendDeadline, "Producer queue remained full for 250 milliseconds.")
       pollPause()
     }
+    emittedAt.append(now()) // actual successful CMIO enqueue, after source CPU work
     sent += 1
+    monitor?.offer(sample, sequence: UInt64(index + 1))
     try consume()
   }
   let finalDeadline = now() + 3
   while received < count && now() < finalDeadline { try consume(); pollPause() }
   try require(received == count, "Consumer deadline: received \(received) of \(count) synthetic frames.")
+  try monitor?.finish(seconds: Double(count) * duration.seconds)
   try check(source.stop(), "Stop and unregister synthetic consumer")
-  log("CMIO_SMOKE PASS sent=\(sent) received=\(received) requested=\(mode.summary(duration: duration)) negotiated=\(source.negotiatedFormat.map { $0.description } ?? "unavailable") exactPixels=true exactPTS=true retries=\(retries)")
+  log("CMIO_SMOKE PASS sent=\(sent) received=\(received) requested=\(mode.summary(duration: duration)) negotiated=\(source.negotiatedFormat.map { $0.description } ?? "unavailable") exactPixels=true exactPTS=true retries=\(retries) monitorEnabled=\(monitorEnabled) receiverP95MS=\(percentile(latenciesMS, 0.95)) receiverP99MS=\(percentile(latenciesMS, 0.99))")
+  return CameraReceipt(latencyMS: latenciesMS, retries: retries)
+}
+
+func currentRoute() throws -> CameraSinkRoute {
+  let registry = try VirtualCameraRegistryTransport.read(VirtualCameraRegistryTransport.providerID())
+  guard let descriptor = registry.devices.first(where: \.enabled) else {
+    throw VideoError.message("No enabled Ultracam camera is published.")
+  }
+  return CameraSinkRoute(descriptor: descriptor)
 }
 
 func consumerRequest(seconds: Double) throws {
@@ -395,7 +894,7 @@ func consumerRequest(seconds: Double) throws {
   var allow: UInt32 = 1
   try check(CMIOObjectSetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &visibility,
     0, nil, UInt32(MemoryLayout<UInt32>.size), &allow), "Enumerate virtual cameras")
-  let source = try SourceQueue()
+  let source = try SourceQueue(route: currentRoute())
   defer { source.stop() }
   let deadline = now() + seconds
   var count = 0
@@ -420,9 +919,42 @@ func consumerRequest(seconds: Double) throws {
   log("CMIO_CONSUMER PASS frames=\(count) lastFormat=\(description) nonmonotonicPTS=\(discontinuities) duration=\(seconds) imagesRead=false")
 }
 
+func registryCheck() throws {
+  let provider = try VirtualCameraRegistryTransport.providerID()
+  let original = try VirtualCameraRegistryTransport.read(provider)
+  defer {
+    do { _ = try VirtualCameraRegistryTransport.synchronize(original) }
+    catch { log("CMIO_REGISTRY restore failed: \(error.localizedDescription)") }
+  }
+  let feed = VirtualCameraDescriptor.feed(feedID: FeedID.primary.rawValue, displayName: "Ultracam · Registry Test")
+  let other = VirtualCameraDescriptor.feed(feedID: "registry-second", displayName: "Ultracam · Second Test")
+  let mode = SyntheticMode(width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+  let pool = try makePool(mode)
+  for descriptors in [[feed, other], [.program()], [], [feed]] {
+    let desired = VirtualCameraRegistrySnapshot(generation: 1, devices: descriptors)
+    let applied = try VirtualCameraRegistryTransport.synchronize(desired)
+    try require(applied.devices == descriptors, "Live registry acknowledgement differs from request.")
+    log("CMIO_REGISTRY applied generation=\(applied.generation) devices=\(descriptors.count)")
+    if let descriptor = descriptors.first {
+      // CMIO's topology notification is asynchronous to the synchronous
+      // registry acknowledgement. Allow device discovery to receive it.
+      let deadline = now() + 5
+      while !(try ids(CMIOObjectID(kCMIOObjectSystemObject), kCMIOHardwarePropertyDevices)
+        .contains(where: { try string($0, kCMIODevicePropertyDeviceUID) == descriptor.deviceUID })) && now() < deadline {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
+      }
+      try runCase(fast: false, pool: pool, mode: mode, route: CameraSinkRoute(descriptor: descriptor))
+    }
+  }
+  let restored = try VirtualCameraRegistryTransport.synchronize(original)
+  try require(restored.devices == original.devices, "Original registry was not restored.")
+  log("CMIO_REGISTRY PASS feedToProgram=true emptyRegistryRecovery=true physicalCapture=false")
+}
+
 do {
   let args = Array(CommandLine.arguments.dropFirst())
-  if args.count == 2, args[0] == "--consumer", let seconds = Double(args[1]) {
+  if args == ["--registry-check"] { try registryCheck() }
+  else if args.count == 2, args[0] == "--consumer", let seconds = Double(args[1]) {
     try consumerRequest(seconds: seconds)
   } else { try smoke() }
 }

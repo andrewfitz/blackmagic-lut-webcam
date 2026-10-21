@@ -1,0 +1,149 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Program view (optional layout)</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .pv { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+  .mv { display: grid; grid-template-columns: 1fr 345px; gap: 10px; flex: none; }
+  .mv .prog { border-radius: 14px; aspect-ratio: 16 / 9; }
+  .mv .srcs { display: flex; flex-direction: column; gap: 8px; }
+  .mv .srcs .picture { border-radius: 12px; }
+  .cutbar { border-radius: 12px; background: var(--fill); padding: 9px 12px; display: flex; flex-direction: column; gap: 9px; flex: none; }
+  .bigcut { height: 34px; border-radius: 11px; display: flex; align-items: center; gap: 8px; padding: 0 13px 0 7px; font-weight: 600; font-size: 12.5px; background: var(--fill2); white-space: nowrap; }
+  .bigcut.air { background: rgba(255,69,58,0.9); color: #fff; }
+  .bigcut.air .kk { background: rgba(255,255,255,0.25); }
+  .bigcut.queued { box-shadow: inset 0 0 0 2px var(--green); }
+  .strips2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; flex: none; }
+  .tlcard { flex: 1; border-radius: 12px; background: var(--fill); padding: 8px 12px 9px; display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: hidden; }
+  .tl .lane { height: 24px; }
+  .tl .lane .lt { height: 16px; }
+  .marks { position: relative; height: 13px; margin-left: 54px; font-size: 9.5px; color: var(--label2); }
+  .marks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .vline { position: absolute; top: 15px; bottom: 0; width: 1px; background: rgba(255,255,255,0.22); }
+  .cutlog { display: flex; gap: 16px; font-size: 11px; white-space: nowrap; }
+  .cutlog > div { display: flex; align-items: center; gap: 6px; }
+  .opt { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600;
+    background: rgba(10,132,255,0.18); color: #8cc4ff; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Program view (optional layout): same two-camera meeting, Program picture + sources</div>
+
+  <div class="window win2">
+    <div id="sb"></div>
+    <div id="tb"></div>
+    <div class="content3">
+      <div class="pv">
+        <div class="mv">
+          <div class="picture prog onair" data-scene="mcu" data-fx="">
+            <div class="overlay" style="left:10px; top:10px;"><div class="pill glass"><i data-i="program" class="sm"></i>Ultracam · Program</div><span class="role air">ON AIR · Zoom</span></div>
+            <div class="overlay" style="right:10px; top:10px;"><div class="tb-group glass" style="height:30px">
+              <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="guides" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="zebra" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px;min-width:28px;opacity:0.35" title="Needs a source feed"><i data-i="falsecolor" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px;min-width:28px;opacity:0.35" title="Needs a source feed"><i data-i="focus" class="sm"></i></div>
+              <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="scope" class="sm"></i></div>
+              <div class="tb-sep"></div>
+              <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="detach" class="sm"></i></div></div></div>
+            <div class="overlay" style="left:10px; bottom:10px;"><span class="pill sm glass mono">14:22:31:12</span><span class="pill sm glass">Feed 1 on air · 8.2 s</span><span class="pill sm glass c2">1080p 29.97 · 4:2:0</span></div>
+            <div class="overlay" style="right:10px; bottom:10px;"><span class="pill sm glass"><span class="dot red"></span><span class="tnum">REC 2 · 12:31</span></span></div>
+          </div>
+          <div class="srcs" id="srcs"></div>
+        </div>
+
+        <div class="cutbar">
+          <div style="display:flex; align-items:center; gap:8px">
+            <div class="bigcut air"><span class="kk">1</span>Feed 1<span style="font-weight:500;opacity:0.85;font-size:11px">on air</span></div>
+            <div class="bigcut queued"><span class="kk">2</span>Feed 2<span class="c2" style="font-weight:500;font-size:11px">queued</span></div>
+            <div style="width:0.5px;height:24px;background:var(--sep);margin:0 4px"></div>
+            <span style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px"><i data-i="auto" class="sm"></i>Auto<div class="switch sm on"></div></span>
+            <span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span>
+            <span style="margin-left:auto;font-size:11px" class="c3">Click a source or ⌃1 / ⌃2 to cut · ⌃⌥A Auto</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; font-size:11.5px">
+            <span style="width:118px; white-space:nowrap"><b class="tnum">Shot 8.2 s</b><span class="c2"> · Feed 1</span></span>
+            <div style="flex:1; padding-bottom:12px">
+              <div class="shot"><i style="width:27%"></i>
+                <span class="mk" style="left:33.3%"></span><span class="mk" style="left:66.6%"></span><span class="mk" style="left:100%; background:var(--red)"></span>
+                <span class="mkl" style="left:33.3%">min 10 s</span><span class="mkl" style="left:66.6%">soft max 20 s</span><span class="mkl" style="left:95%">max 30 s</span>
+              </div>
+            </div>
+            <span class="c2" style="width:250px; text-align:right; white-space:nowrap">Cut to Feed 2 at the next speech gap after 10 s</span>
+          </div>
+        </div>
+
+        <div class="strips2" id="strips"></div>
+
+        <div class="tlcard">
+          <div style="display:flex; align-items:center; gap:8px; font-size:12px; white-space:nowrap"><b>Director Timeline</b><span class="c2">last 2 min · on air and speech per camera</span><span class="newtag">NEW</span>
+            <span style="margin-left:auto;font-size:11px" class="c3">Also saved as a sidecar beside the recordings</span></div>
+          <div class="tl" style="position:relative">
+            <div class="marks"><span style="left:22%">speech gap</span><span style="left:41%">emphasis · Feed 2</span><span style="left:63%">speech gap</span><span style="left:82%">max shot</span><span style="left:99%; color:#fff">now</span></div>
+            <div class="lane"><span class="ln">Feed 1</span><div class="lt"><i class="air" style="left:0;width:22%"></i><i class="air" style="left:41%;width:22%"></i><i class="air" style="left:82%;width:18%"></i></div></div>
+            <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp1" viewBox="0 0 400 16" preserveAspectRatio="none"></svg></div></div>
+            <div class="lane"><span class="ln">Feed 2</span><div class="lt"><i class="air" style="left:22%;width:19%"></i><i class="air" style="left:63%;width:19%"></i></div></div>
+            <div class="lane"><span class="ln c3">speech</span><div class="lt" style="background:none"><svg class="sp2" viewBox="0 0 400 16" preserveAspectRatio="none"></svg></div></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.22)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.41)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.63)"></div>
+            <div class="vline" style="left:calc(54px + (100% - 54px) * 0.82)"></div>
+            <div class="vline" style="left:calc(100% - 1px); background:#fff"></div>
+          </div>
+          <div class="cutlog">
+            <div><span class="mono c2">14:22:23</span>Cut to <b>Feed 1</b><span class="badge orange">max shot</span></div>
+            <div><span class="mono c2">14:21:58</span>Cut to <b>Feed 2</b><span class="badge">speech gap</span></div>
+            <div><span class="mono c2">14:21:31</span>Cut to <b>Feed 1</b><span class="badge blue">emphasis ended</span></div>
+            <div style="margin-left:auto" class="c2">5 cuts · average shot 21 s · 0 forced</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <div class="callout" style="left: 836px; top: 60px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 272px; top: 160px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1316px; top: 150px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 272px; top: 526px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 272px; top: 612px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 272px; top: 664px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>Program view is <b>optional</b>: pick it from the layout control. Side by Side with tally on each feed stays the default for Program mode; this view is for when you want to watch exactly what Zoom receives.</span></div>
+    <div><span class="n">2</span><span>The Program picture is the published "Ultracam · Program" camera. Source-only tools (false color, focus) are dimmed here because Program has no source correspondence.</span></div>
+    <div><span class="n">3</span><span>Sources stack beside it with the same red/green tally and ⌃1/⌃2 keys. Click a source to cut. The cut takes effect at the next Program frame boundary.</span></div>
+    <div><span class="n">4</span><span>Cut bar: numbered cuts, the queued cut, Auto and strategy, and a shot timer marking min / soft max / max so you can see when the director will cut.</span></div>
+    <div><span class="n">5</span><span>Channel strips auto-collapse here but stay per feed: recording, effects, audio, record button. The chevron expands one in place; ⋯ opens the rest.</span></div>
+    <div><span class="n">6</span><span><span class="newtag" style="margin:0 4px 0 0">NEW</span>Director timeline: on air and speech per camera, with each cut's reason. It reads from the same data the switcher already writes as a sidecar.</span></div>
+  </div>
+</div>
+<script>
+  mount('sb', sidebar({ mode: 'program' }));
+  mount('tb', toolbar({ title: 'Meeting · Program view', subtitle: 'Optional layout · Side by Side is the default', layout: 'program', collapsedAll: true }));
+  mount('srcs', tile(FEEDS.f1, { role: 'air', compact: true, height: 194 }) + tile(FEEDS.f2, { role: 'next', compact: true, height: 194 }));
+  mount('strips', strip(FEEDS.f1, { expanded: false, role: 'air' }) + strip(FEEDS.f2, { expanded: false, role: 'next' }));
+  mount('st', statusbar({ mode: 'program' }));
+  // Speech activity bars (illustrative director input).
+  function bars(sel, seed, active) {
+    const svg = document.querySelector(sel);
+    let s = seed, out = '';
+    for (let x = 0; x < 400; x += 3) {
+      s = (s * 9301 + 49297) % 233280;
+      const on = active.some(([a, b]) => x / 400 >= a && x / 400 <= b);
+      const h = on ? 4 + (s / 233280) * 12 : (s / 233280) * 2;
+      out += `<rect x="${x}" y="${16 - h}" width="2" height="${h}" fill="rgba(100,176,255,${on ? 0.75 : 0.25})"/>`;
+    }
+    svg.innerHTML = out;
+  }
+  bars('.sp1', 7, [[0, 0.2], [0.43, 0.6], [0.84, 1]]);
+  bars('.sp2', 3, [[0.23, 0.41], [0.64, 0.8]]);
+</script>
+</body></html>

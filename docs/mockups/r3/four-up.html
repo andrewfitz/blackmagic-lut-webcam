@@ -1,0 +1,123 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 3 · Four Up · four cameras</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r3.css">
+<script src="../kit.js"></script><script src="r3.js"></script>
+<style>
+  .g4 { display: grid; grid-template-columns: 574px 574px; justify-content: center; align-content: start; gap: 12px 16px; height: 100%; }
+  .g4 .col3 { gap: 8px; }
+  .hov { outline: 1.5px solid rgba(255,255,255,0.4); outline-offset: -1.5px; }
+  .nosig { background: #060607; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
+  .nosig .ph { color: var(--label3); }
+  .nosig b { font-size: 14px; }
+  .nosig small { font-size: 11.5px; color: var(--label2); max-width: 360px; line-height: 1.4; }
+  .cursor { position: absolute; z-index: 9; width: 14px; height: 20px; }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>Feed</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 3 · Four Up: four cameras in Separate mode, Feed 1 in Zoom, three takes recording</div>
+
+  <div class="window win2">
+    <div id="tb"></div>
+    <div class="content3 nosb">
+      <div class="g4">
+        <div class="col3" id="c1"></div>
+        <div class="col3" id="c2"></div>
+        <div class="col3" id="c3"></div>
+        <div class="col3" id="c4"></div>
+      </div>
+    </div>
+    <div id="st"></div>
+  </div>
+
+  <!-- pointer over Feed 2 (hover state) -->
+  <svg class="cursor" style="left: 1040px; top: 300px;" viewBox="0 0 14 20"><path d="M1 1 L1 16 L5 12 L8 19 L10.5 18 L7.5 11 L13 11 Z" fill="#fff" stroke="#000" stroke-width="1"/></svg>
+
+  <div class="callout" style="left: 178px; top: 70px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 326px; top: 156px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 88px; top: 485px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 300px; top: 614px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 1314px; top: 400px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 784px; top: 914px;"><span class="n">6</span></div>
+  <div class="legend r2">
+    <div><span class="n">1</span><span>The session sidebar is hidden with its toolbar toggle so four pictures get the full width. One click brings it back; nothing in it is lost.</span></div>
+    <div><span class="n">2</span><span>Separate mode: each feed publishes its own camera. Zoom is using "Ultracam · Feed 1", so that picture gets the red ON AIR · Zoom ring. The others only record.</span></div>
+    <div><span class="n">3</span><span>Scaling: 1 camera → Single with an expanded strip, 2 → Side by Side, 3–4 → Four Up with strips <b>auto-collapsed</b> to one line (state, size, effects, audio, record). A chevron expands one.</span></div>
+    <div><span class="n">4</span><span>Honest empty state: Feed 3 says No signal, says what the input needs, and disables Record. The status bar flags it too.</span></div>
+    <div><span class="n">5</span><span>Hovering a picture shows its toolbar: tools, freeze, clean, zoom, detach. At rest only the name, state, timecode and REC stay visible.</span></div>
+    <div><span class="n">6</span><span>Status bar: takes in progress (2 recording, 1 paused), time left on each destination drive, and problems.</span></div>
+  </div>
+</div>
+<script>
+  const f1 = { ...FEEDS.f1, tools: [0, 0, 0, 0, 0], fxview: '' };
+  const f2 = { ...FEEDS.f2, tools: [0, 1, 0, 0, 0] };
+  const f4 = { ...FEEDS.f1, n: 4, name: 'Feed 4', cam: 'FX30 · UltraStudio Recorder 3G', fmt: '2160p 29.97', scene: 'ots', tone: 'slog',
+    rec: { state: 'paused', t: '04:12', size: '6.2 GB' }, fx: [0, 1, 1, 0], audio: [30, 28, '−24.0'], fxview: '', signal: 'Source · S-Log3' };
+
+  mount('tb', toolbar({ title: 'Recording Session', subtitle: '4 cameras · Feed 1 → Zoom · 3 takes', layout: 'grid', mode: 'separate',
+    collapsedAll: true, left: 8, recLabel: '12:31 · 3' }));
+
+  // Feed 1: its own virtual camera is in use by Zoom.
+  mount('c1', tile(f1, { mode: 'separate', consumer: 'Zoom', compact: true }) + strip(f1, { expanded: false, mode: 'separate', consumer: 'Zoom' }));
+
+  // Feed 2: hover state reveals the picture toolbar and view controls.
+  const hoverGroup = `<div class="tb-group glass" style="height:30px">
+      <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="freeze" class="sm"></i></div>
+      <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="clean" class="sm"></i></div>
+      <div class="tb-btn" style="height:24px;font-size:11px">Fit<i data-i="chevd" class="sm"></i></div>
+      <div class="tb-btn" style="height:24px;min-width:28px"><i data-i="detach" class="sm"></i></div></div>`;
+  const t2 = tile(f2, { mode: 'separate' })
+    .replace('class="picture ', 'class="picture hov ')
+    .replace('<div class="overlay" style="right:10px; bottom:10px;">', `<div class="overlay" style="right:10px; bottom:46px;">${hoverGroup}</div><div class="overlay" style="right:10px; bottom:10px;">`);
+  mount('c2', t2 + strip(f2, { expanded: false, mode: 'separate' }));
+
+  // Feed 3: no signal.
+  mount('c3', `<div class="picture nosig">
+      <div class="overlay" style="left:10px; top:10px;"><div class="pill glass">Feed 3<i data-i="chevud" class="sm"></i></div><span class="badge orange" style="height:22px">No signal</span></div>
+      <i data-i="video" class="ph" style="width:34px;height:34px"></i>
+      <b>No HDMI signal</b>
+      <small>Waiting on DeckLink Mini 4K. Set the camera's HDMI output to 2160p 29.97 or 59.94, 10-bit 4:2:2, RAW off.</small>
+    </div>
+    <div class="strip3 collapsed"><div class="r">
+      <span class="chev"><i data-i="chevr" class="sm"></i></span><b class="c2">Feed 3</b><span class="co" style="font-size:11.5px">Waiting for HDMI</span>
+      <span style="flex:1"></span>
+      <div class="fx" style="opacity:0.45"><span style="height:17px;padding:0 5px;font-size:9.5px">LUT</span><span class="on" style="height:17px;padding:0 5px;font-size:9.5px">1080p</span><span class="on" style="height:17px;padding:0 5px;font-size:9.5px">4:2:0</span><span style="height:17px;padding:0 5px;font-size:9.5px">29.97</span></div>
+      <span class="c3 tnum" style="font-size:11px;width:54px;text-align:center">— dB</span>
+      <div class="recbtn sm dis"></div>
+      <span class="btn icon"><i data-i="ellipsis" class="sm"></i></span>
+    </div></div>`);
+
+  // Feed 4: paused take, monitoring the S-Log3 source.
+  const t4 = tile(f4, { mode: 'separate', compact: true })
+    .replace('<div class="overlay" style="right:10px; bottom:10px;">', '<div class="overlay" style="right:10px; bottom:10px;"><span class="pill sm glass co"><i data-i="pause" class="sm"></i><span class="tnum">PAUSED 04:12</span></span>');
+  mount('c4', t4 + `<div class="strip3 collapsed"><div class="r">
+      <span class="chev"><i data-i="chevr" class="sm"></i></span><b>Feed 4</b>
+      <span class="dot orange"></span><span class="tnum co">Paused 04:12</span><span class="c2 tnum" style="font-size:11px">6.2 GB</span>
+      <span style="flex:1"></span>
+      <div class="fx"><span style="height:17px;padding:0 5px;font-size:9.5px">LUT</span><span class="on" style="height:17px;padding:0 5px;font-size:9.5px">1080p</span><span class="on" style="height:17px;padding:0 5px;font-size:9.5px">4:2:0</span><span style="height:17px;padding:0 5px;font-size:9.5px">29.97</span></div>
+      <div class="minimeter"><div class="meter"><div class="bar"><i style="width:30%"></i></div></div><div class="meter"><div class="bar"><i style="width:28%"></i></div></div></div>
+      <div class="recbtn sm"></div>
+      <span class="btn icon"><i data-i="ellipsis" class="sm"></i></span>
+    </div></div>`);
+
+  mount('st', `<div class="sbar tnum">
+    <div class="seg2 hover cg"><i data-i="camlink" class="sm"></i>Ultracam · Feed 1 → Zoom</div>
+    <div class="div"></div>
+    <div class="seg2"><span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2</span><span class="co">· ⏸ 1</span><span>· 12:31</span></div>
+    <div class="div"></div>
+    <div class="seg2">8TB 1 h 05 m left · Archive 5 h 40 m<span class="newtag">NEW</span></div>
+    <div class="div"></div>
+    <div class="seg2 co"><i data-i="info" class="sm"></i>Feed 3: no signal</div>
+    <div class="sp"></div>
+    <div class="seg2">CPU 61.2% · GPU (video) 38.4% · Memory 2.24 GB</div>
+  </div>`);
+</script>
+</body></html>

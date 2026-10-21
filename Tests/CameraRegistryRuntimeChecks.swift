@@ -4,6 +4,84 @@ import CoreVideo
 import XCTest
 
 @objcMembers final class CameraRegistryRuntimeChecks: XCTestCase {
+  private func applyControl(_ snapshot: VirtualCameraRegistrySnapshot, to camera: CameraProvider) throws {
+    let properties = CMIOExtensionProviderProperties(dictionary: [:])
+    properties.setPropertyState(CMIOExtensionPropertyState(
+      value: try VirtualCameraRegistryWire.encode(snapshot) as NSString,
+      attributes: nil), forProperty: VirtualCameraRegistryWire.property)
+    try camera.setProviderProperties(properties)
+  }
+
+  func testLiveRegistryControlReplacesBootstrapWithoutSharedPreferences() throws {
+    // The system service has no access to the host user's defaults. Start it
+    // first, exactly as macOS does on a fresh extension installation.
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false)
+    XCTAssertEqual(camera.descriptors.first?.feedID, "default")
+    let feed = VirtualCameraDescriptor.feed(feedID: FeedID.primary.rawValue, displayName: "Ultracam · Feed 1")
+    let desired = snapshot([feed])
+    try applyControl(desired, to: camera)
+    XCTAssertEqual(camera.descriptors, [feed])
+    XCTAssertEqual(camera.devices.count, 1)
+    XCTAssertEqual(camera.descriptors[0].deviceUID, CameraSinkRoute(feedID: .primary).deviceUID)
+    let properties = try camera.providerProperties(forProperties: [VirtualCameraRegistryWire.property])
+    let text = try XCTUnwrap(properties.propertiesDictionary[VirtualCameraRegistryWire.property]?.value as? String)
+    XCTAssertEqual(try VirtualCameraRegistryWire.decode(text), desired)
+    // A lost acknowledgement must not create a new device on retry.
+    let runtime = camera.runtime(for: feed.id)
+    try applyControl(desired, to: camera)
+    XCTAssertTrue(camera.runtime(for: feed.id) === runtime)
+  }
+
+  func testLiveRegistryControlChangesToProgramWhilePreservingActiveFeedClient() throws {
+    let feed = VirtualCameraDescriptor.feed(feedID: "wide")
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false,
+      registrySnapshot: snapshot([feed]))
+    let runtime = try XCTUnwrap(camera.runtime(for: feed.id))
+    try runtime.source.startStream()
+    let program = VirtualCameraDescriptor.program()
+    try applyControl(snapshot([program], generation: 2), to: camera)
+    XCTAssertNotNil(camera.runtime(for: program.id))
+    XCTAssertTrue(camera.runtime(for: feed.id) === runtime)
+    try runtime.source.stopStream()
+    camera.queue.sync {}
+    XCTAssertNil(camera.runtime(for: feed.id))
+    XCTAssertEqual(camera.descriptors, [program])
+    // The provider property still works with no published camera devices.
+    try applyControl(snapshot([], generation: 3), to: camera)
+    XCTAssertTrue(camera.devices.isEmpty)
+    try applyControl(snapshot([feed], generation: 4), to: camera)
+    XCTAssertEqual(camera.descriptors, [feed])
+  }
+
+  func testRegistryControlRejectsForeignMalformedStaleAndOversizedUpdates() throws {
+    let initial = snapshot([.feed(feedID: "wide")], generation: 5)
+    let camera = CameraProvider(automaticTimers: false, createNativeProvider: false, registrySnapshot: initial)
+    XCTAssertThrowsError(try applyControl(snapshot([.program()], generation: 4), to: camera))
+    var foreign = snapshot([.program()], generation: 6)
+    foreign.appGroupIdentifier = "group.foreign"
+    XCTAssertThrowsError(try applyControl(foreign, to: camera))
+    let properties = CMIOExtensionProviderProperties(dictionary: [:])
+    for text in ["{truncated", String(repeating: "x", count: VirtualCameraRegistryWire.maximumBytes + 1)] {
+      properties.setPropertyState(CMIOExtensionPropertyState(value: text as NSString, attributes: nil),
+        forProperty: VirtualCameraRegistryWire.property)
+      XCTAssertThrowsError(try camera.setProviderProperties(properties))
+    }
+    XCTAssertThrowsError(try VirtualCameraRegistryWire.encode(snapshot((0...32).map { .feed(feedID: "\($0)") })))
+    XCTAssertEqual(camera.snapshot, initial)
+    XCTAssertEqual(camera.descriptors, initial.devices)
+  }
+
+  func testRegistryHandshakeRebasesHostAfterServiceHasNewerGeneration() throws {
+    let desired = snapshot([.program()], generation: 2)
+    let current = snapshot([.feed(feedID: "wide")], generation: 20)
+    let update = try XCTUnwrap(VirtualCameraRegistryWire.update(desired, after: current))
+    XCTAssertEqual(update.generation, 21)
+    XCTAssertEqual(update.devices, desired.devices)
+    XCTAssertNil(try VirtualCameraRegistryWire.update(desired, after: update))
+    XCTAssertThrowsError(try VirtualCameraRegistryWire.update(desired,
+      after: snapshot(current.devices, generation: UInt64.max)))
+  }
+
   private func snapshot(_ devices: [VirtualCameraDescriptor], generation: UInt64 = 1)
     -> VirtualCameraRegistrySnapshot {
     VirtualCameraRegistrySnapshot(generation: generation, devices: devices)

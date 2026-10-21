@@ -364,6 +364,40 @@ private final class PreviewTestCounters: @unchecked Sendable {
     XCTAssertFalse(renderer.isVisible)
   }
 
+  func testNativeVisibilityNotifiesDemandOnceAndIgnoresReplacedHost() {
+    let renderer = VideoPreviewRenderer()
+    var changes: [Bool] = []
+    renderer.onVisibilityChange = { changes.append(renderer.isVisible) }
+    defer { renderer.onVisibilityChange = nil }
+    let first = renderer.makeView()
+    first.publishVisibilityForTesting(true)
+    first.publishVisibilityForTesting(true)
+    let second = renderer.makeView()
+    second.publishVisibilityForTesting(true)
+    first.publishVisibilityForTesting(false)
+    XCTAssertEqual(changes, [true, false, true])
+    second.publishVisibilityForTesting(false)
+    XCTAssertEqual(changes, [true, false, true, false])
+  }
+
+  func testOpenPreviewRequestsCaptureWhenRenderingIsOccludedAndReleasesOnClose() throws {
+    let renderer = VideoPreviewRenderer()
+    let window = attach(renderer)
+    defer { window.close() }
+    let view = try XCTUnwrap(window.contentView as? VideoPreviewView)
+    view.publishVisibilityForTesting(false)
+    XCTAssertFalse(renderer.isVisible, "An occluded preview should suspend rendering")
+    XCTAssertTrue(renderer.isPresented, "An open preview still needs capture")
+    view.isHidden = true
+    view.publishVisibilityForTesting(false)
+    XCTAssertFalse(renderer.isPresented)
+    view.isHidden = false
+    view.publishVisibilityForTesting(false)
+    XCTAssertTrue(renderer.isPresented)
+    window.close()
+    XCTAssertFalse(renderer.isPresented, "Closing the window must release preview demand")
+  }
+
   func testStaleInFlightFailureDoesNotPolluteRestartDiagnostics() throws {
     let renderer = VideoPreviewRenderer(renderWhenUnattached: true)
     let window = attach(renderer)

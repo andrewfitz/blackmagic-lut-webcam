@@ -1,0 +1,810 @@
+[
+ {
+  "id": "L9-01",
+  "lens": "coverage",
+  "pages": [
+   "states",
+   "menubar",
+   "main-expanded"
+  ],
+  "location": "picture overlay / dropdown preview",
+  "issue": "Preview error + 'Retry preview' (camera output keeps running) is not designed on any picture or dropdown",
+  "evidence": "UI_REDESIGN §2/§4 PreviewErrorNotice + Retry preview; r3 only has diagnostics 'Preview: No preview error' row; grep 'Retry Preview' = none",
+  "scenario": "Native preview renderer fails mid-meeting; picture freezes/black with no explanation, user assumes Zoom is broken",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Add a picture error state: orange badge with message, 'Retry Preview', caption 'Camera output continues'; mirror in dropdown preview area",
+  "alternatives": [],
+  "affects": [
+   "states.html §3",
+   "r3.js tile()",
+   "menubar.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-02",
+  "lens": "coverage",
+  "pages": [
+   "states"
+  ],
+  "location": "strip status badge / picture placeholder",
+  "issue": "Starting state (Opening UltraStudio… / Connecting / Ready-before-first-frame) is missing; feeds jump from Stopped/Waiting to Live",
+  "evidence": "FeedStateLabel Connecting/Ready/Waiting for HDMI (inventory §2.1); grep 'Connecting|Opening UltraStudio|Starting' across r3 = none",
+  "scenario": "User presses Start and sees no feedback for ~1–2 s while the device opens",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add 'Starting…' strip/picture state with spinner and the capture message; include in states matrix",
+  "alternatives": [],
+  "affects": [
+   "states.html",
+   "r3.js strip()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-03",
+  "lens": "coverage",
+  "pages": [
+   "main-expanded",
+   "states"
+  ],
+  "location": "strip output row",
+  "issue": "'Applying change…' and selected-vs-applied pipeline states are lost; strips only show chips + switch + 'Effects active'",
+  "evidence": "AppliedPipelineState (inventory §2.1: Effects selected / Complete bypass selected / Applying change… / active); grep 'Applying' = none",
+  "scenario": "Mid-meeting the user toggles Downscale; output renegotiates (S3) but the UI shows the new chip as already active",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Show a transient 'Applying…' state on the strip and picture while format renegotiates; show 'selected' (outlined) chips while stopped",
+  "alternatives": [],
+  "affects": [
+   "r3.js strip()",
+   "states.html",
+   "spec §5"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-04",
+  "lens": "coverage",
+  "pages": [
+   "main-collapsed",
+   "states"
+  ],
+  "location": "",
+  "issue": "LUT loading state is missing ('Loading LUT…', spinner, effects disabled, Start disabled until loaded)",
+  "evidence": "LUTControls loading + canStartFeed requires !loading (inventory §2.9, §6.3); grep 'Loading LUT' in pages = none",
+  "scenario": "At launch the saved LUT restores; Start looks enabled but does nothing",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add loading row to ⋯ popover LUT section and a disabled Start with tooltip 'Waiting for the saved LUT'",
+  "alternatives": [],
+  "affects": [
+   "main-collapsed.html popover",
+   "states.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-05",
+  "lens": "coverage",
+  "pages": [
+   "states",
+   "settings"
+  ],
+  "location": "",
+  "issue": "Camera-extension request pending / awaiting approval state is not designed (Install/Remove disabled while pending, status text, Open System Settings)",
+  "evidence": "ExtensionInstaller.pending + status (inventory §2.3, §6.3); states only shows 'Camera not installed' and 'unsigned build'",
+  "scenario": "First run: user clicks Install, macOS waits for approval; UI gives no 'waiting for approval' guidance",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Add pending state in sidebar Output, Settings Camera and onboarding: spinner, 'Approve Ultracam Camera in System Settings › General › Login Items & Extensions', 'Open System Settings' button; buttons disabled",
+  "alternatives": [],
+  "affects": [
+   "states.html",
+   "settings.html Camera"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-06",
+  "lens": "coverage",
+  "pages": [
+   "monitor-tools",
+   "app-menus",
+   "main-expanded"
+  ],
+  "location": "",
+  "issue": "Expand tile / Restore layout and resizable Side by Side split are lost (only 'Swap Pictures' in the View menu)",
+  "evidence": "MonitorWorkspaceShell Expand tile, Restore layout, draggable split 0.2–0.8 with accessibilityAdjustableAction (inventory §3.1); r3 columns fixed 1fr/1fr, no expand anywhere",
+  "scenario": "User wants Feed 1 large for focus checking during a two-camera session without switching layout",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add 'Expand Picture' to picture context menu/hover (and ⌥-double-click), plus a draggable divider in Side by Side; or justify removal in the index",
+  "alternatives": [],
+  "affects": [
+   "monitor-tools.html",
+   "app-menus View",
+   "r3.css .cols2"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-07",
+  "lens": "coverage",
+  "pages": [
+   "main-expanded",
+   "settings",
+   "app-menus"
+  ],
+  "location": "",
+  "issue": "Anchor and Emphasis pickers are only reachable via the Program menu; removed from the main window and absent from Settings",
+  "evidence": "Current MultiCameraControls shows Anchor/Emphasis; r3 grep: 'Anchor' only in app-menus.html",
+  "scenario": "User sets up a two-camera talking-head session and can't find where to choose the anchor shot",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Add Anchor/Emphasis to the sidebar Output section under Strategy (shown when Natural talking head) or to Settings › Switcher",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()",
+   "settings.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-08",
+  "lens": "coverage",
+  "pages": [
+   "settings"
+  ],
+  "location": "",
+  "issue": "Default recording folder has no Clear action",
+  "evidence": "RecordingControls 'Clear' (inventory §2.6); settings Recording shows Change…/Finder only",
+  "scenario": "User wants per-camera folders only and to remove the default",
+  "severity": "P3",
+  "confidence": "high",
+  "recommendation": "Add Clear/None option to default folder row",
+  "alternatives": [],
+  "affects": [
+   "settings.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-10",
+  "lens": "coverage",
+  "pages": [
+   "main-collapsed"
+  ],
+  "location": "",
+  "issue": "No control for FeedDescriptor.enabled (pre-existing gap), yet cuts/auto/start-all depend on enabled feeds",
+  "evidence": "AppSettingsStore FeedDescriptor.enabled; AppModel startFeed iterates descriptors where enabled; no toggle in r3",
+  "scenario": "User keeps a third camera configured but unplugged; Program start tries it / it appears in cut lists",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Add 'Enabled' (or 'Use in session') switch to ⋯ popover and sidebar row context menu; dim disabled feeds",
+  "alternatives": [],
+  "affects": [
+   "main-collapsed popover",
+   "r3.js sidebar()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-11",
+  "lens": "coverage",
+  "pages": [
+   "diagnostics"
+  ],
+  "location": "",
+  "issue": "Audio gaps diagnostic missing from Diagnostics",
+  "evidence": "README: diagnostics include audio gaps; diagnostics.html audio section lists packets/samples/drops only",
+  "scenario": "Investigating A/V sync issues without the gap counter",
+  "severity": "P3",
+  "confidence": "medium",
+  "recommendation": "Add 'Audio gaps' row to Diagnostics › Embedded audio",
+  "alternatives": [],
+  "affects": [
+   "diagnostics.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-13",
+  "lens": "coverage",
+  "pages": [
+   "spec",
+   "main-expanded"
+  ],
+  "location": "window resize",
+  "issue": "Minimum window size (980×680) is specified but never designed; expanded strips (nowrap rows needing ~520 pt) can't fit two ~340 pt columns, toolbar has ~6 groups",
+  "evidence": "spec.html §1 'Minimum size: 980 × 680 pt (two 16:9 columns at about 340…)'; r3.css .strip3 .r white-space:nowrap; no page at min size",
+  "scenario": "User narrows the window beside Zoom on a laptop; strips overflow/clip, toolbar items collide",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Define responsive rules: below ~1150 pt content width auto-collapse strips, stack sidebar to rail/hidden, move cut group into overflow; mock at min size",
+  "alternatives": [],
+  "affects": [
+   "spec §1",
+   "r3.css",
+   "r3.js toolbar()"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-14",
+  "lens": "coverage",
+  "pages": [
+   "spec"
+  ],
+  "location": "",
+  "issue": "13\" laptop / small-display fit not considered: default window 1320×860 (vs current 1080×700) exceeds 1280×800 'larger text' layouts and leaves no room beside Zoom",
+  "evidence": "spec §1 default 1320×860; UltracamApp current defaultSize 1080×700",
+  "scenario": "User on a MacBook in a Zoom call wants Ultracam beside the Zoom window",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Keep default ≤1080×700 or scale to screen; design a compact side-by-side-with-Zoom arrangement (sidebar hidden, collapsed strips)",
+  "alternatives": [],
+  "affects": [
+   "spec §1"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-15",
+  "lens": "coverage",
+  "pages": [
+   "spec"
+  ],
+  "location": "",
+  "issue": "Long feed names: truncation rules undefined for picture pills, tally badges, toolbar cut buttons, sidebar rows, menu rows (paths are covered)",
+  "evidence": "spec typography 'Paths truncate in the middle'; all mocks use 'Feed 1/Feed 2'",
+  "scenario": "User renames cameras 'Interview A-cam (FX3)'; toolbar cut group and pills overflow",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Specify per-component max widths + tail truncation with full name in tooltip/VoiceOver; mock with a long name",
+  "alternatives": [],
+  "affects": [
+   "spec §3",
+   "r3.js"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-16",
+  "lens": "coverage",
+  "pages": [],
+  "location": "",
+  "issue": "Full screen / external display monitoring not designed (only 'Enter Full Screen' menu item)",
+  "evidence": "app-menus View 'Enter Full Screen fn F'; no full-screen layout",
+  "scenario": "User puts the Ultracam window on a second display as a monitor during a shoot",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "Design full-screen behavior: sidebar/strips auto-hide, toolbar reveals on hover, pictures maximize; or detached monitor to second display",
+  "alternatives": [],
+  "affects": [
+   "app-menus",
+   "monitor-tools"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-17",
+  "lens": "coverage",
+  "pages": [
+   "spec"
+  ],
+  "location": "",
+  "issue": "Light appearance covered by a single sample (one column + dropdown top + status bar)",
+  "evidence": "spec §8 only",
+  "scenario": "User runs macOS in Light; sidebar, popovers, menus, states, settings unverified",
+  "severity": "P2",
+  "confidence": "high",
+  "recommendation": "Render main-expanded, menubar, settings in Light; check contrast of tally/chips/meters",
+  "alternatives": [],
+  "affects": [
+   "spec §8",
+   "all pages"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-18",
+  "lens": "coverage",
+  "pages": [],
+  "location": "",
+  "issue": "Sleep / lid close / display sleep during a meeting or recording is not designed (no prevent-sleep, no warning, no resume behavior)",
+  "evidence": "No r3 page mentions sleep; capture/recording stop on system sleep",
+  "scenario": "User closes laptop lid after the meeting while a backup take is finishing; take interrupted",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "NEW: hold a power assertion while live/recording; status bar/menu note 'Keeping Mac awake while recording'; states for 'Recording interrupted by sleep' → Recover",
+  "alternatives": [],
+  "affects": [
+   "states.html",
+   "settings General"
+  ],
+  "effort": "M"
+ },
+ {
+  "id": "L9-19",
+  "lens": "coverage",
+  "pages": [
+   "states"
+  ],
+  "location": "",
+  "issue": "Capture device unplugged/replugged mid-session (device disappears) not distinguished from HDMI signal loss",
+  "evidence": "states covers No HDMI signal and generic 'Recording stopped after a source error'; no device-missing state; inventory: Start unavailable when device missing",
+  "scenario": "Thunderbolt cable bumped mid-take: device vanishes; user doesn't know whether to replug or check the camera",
+  "severity": "P1",
+  "confidence": "medium",
+  "recommendation": "Add 'UltraStudio disconnected' strip/picture/sidebar state with reconnect guidance and auto-resume on reappearance; take ends safely + Recover",
+  "alternatives": [],
+  "affects": [
+   "states.html",
+   "r3.js strip()"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-20",
+  "lens": "coverage",
+  "pages": [
+   "settings",
+   "states",
+   "main-expanded"
+  ],
+  "location": "",
+  "issue": "Consumer-driven automation edge cases undefined: Zoom's settings preview counts as camera use (README) so NEW 'Record with camera apps' would create takes just from opening Zoom video settings; Zoom switching to another camera mid-meeting stops output/auto-stop",
+  "evidence": "README line 62 'Zoom's camera settings preview also counts as camera use'; sidebar/settings 'Record with camera apps' NEW",
+  "scenario": "User opens Zoom › Settings › Video to check framing; a backup take starts and stops, littering the folder",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Add minimum-duration/confirm rule (e.g. start recording only after N s of continuous use, discard <10 s takes) and document switch-away behavior; show in states",
+  "alternatives": [],
+  "affects": [
+   "settings Recording Automation",
+   "states.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-21",
+  "lens": "coverage",
+  "pages": [
+   "main-expanded",
+   "single",
+   "menubar",
+   "diagnostics"
+  ],
+  "location": "",
+  "issue": "Consumer identity and multiple consumers: UI says 'In use by Zoom' but the extension only counts consumers (Int; property '1'/'0'), and two apps using one camera is undefined",
+  "evidence": "CameraProvider.swift consumers += 1, property value consumers>0 ? '1':'0'; r3 sidebar/strip/status 'In use by Zoom'",
+  "scenario": "Zoom and OBS both open Ultracam · Feed 1; UI claims Zoom (or can't name either)",
+  "severity": "P1",
+  "confidence": "high",
+  "recommendation": "Use 'In use' / 'In use by 2 apps' unless identity becomes available (NEW runtime work); define multi-consumer display",
+  "alternatives": [],
+  "affects": [
+   "r3.js sidebar()/strip()/statusbar()",
+   "menubar",
+   "diagnostics Output popover"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-22",
+  "lens": "coverage",
+  "pages": [
+   "settings",
+   "states"
+  ],
+  "location": "",
+  "issue": "Changing Output mode changes the published camera name (Ultracam · Feed 1 ↔ Ultracam · Program); no guidance that Zoom must re-select the camera",
+  "evidence": "VirtualCameraRegistryPublishing names per mode; settings Camera 'Change while stopped' only",
+  "scenario": "User switches to Program before a meeting; Zoom still shows the old camera/black",
+  "severity": "P2",
+  "confidence": "medium",
+  "recommendation": "After a mode change show 'Select Ultracam · Program in Zoom' banner in sidebar Output and dropdown",
+  "alternatives": [],
+  "affects": [
+   "settings Camera",
+   "r3.js sidebar()",
+   "states.html"
+  ],
+  "effort": "S"
+ },
+ {
+  "id": "L9-S13",
+  "lens": "coverage",
+  "suspect": "S13",
+  "verdict": "CONFIRMED",
+  "pages": [
+   "spec",
+   "main-expanded"
+  ],
+  "issue": "Responsive rules undefined",
+  "evidence": "see L9-13, L9-14, L9-15",
+  "severity": "P1",
+  "confidence": "high"
+ },
+ {
+  "id": "L9-S14",
+  "lens": "coverage",
+  "suspect": "S14",
+  "verdict": "MOSTLY REFUTED",
+  "pages": [
+   "menubar"
+  ],
+  "issue": "Dropdown length vs screen height",
+  "evidence": "menubar.png at 1x: dropdowns a≈675 pt, b≈690 pt, c≈510 pt, d–g≈570–610 pt tall incl. preview; fits 956-pt (13\" Air default) and 800-pt displays below a ~24–37 pt menu bar; NSMenu scrolls automatically if exceeded",
+  "severity": "P3",
+  "confidence": "medium",
+  "recommendation": "Keep row count ≤ ~22; with 3–4 feeds collapse Cameras into one submenu"
+ },
+ {
+  "id": "L9-coverage",
+  "rows": [
+   {
+    "item": "Single window, native preview kept mounted",
+    "status": "present",
+    "page_or_reason": "spec §1/§9"
+   },
+   {
+    "item": "Menu bar extra (window style panel)",
+    "status": "present (redesigned)",
+    "page_or_reason": "menubar.html a–g"
+   },
+   {
+    "item": "Menu bar icon 3 states",
+    "status": "present (+2 NEW)",
+    "page_or_reason": "menubar.html, states §6, settings General"
+   },
+   {
+    "item": "Detached monitor windows",
+    "status": "present",
+    "page_or_reason": "monitor-tools.html detached window; app-menus Window ▸ Detach Monitor"
+   },
+   {
+    "item": "Open panels: LUT, default folder, per-feed folder",
+    "status": "present",
+    "page_or_reason": "app-menus File/Record; settings Recording; main-collapsed popover"
+   },
+   {
+    "item": "Feed state label (Stopped/Automatic idle/Connecting/Waiting for HDMI/Ready/Live)",
+    "status": "partial — Connecting/Ready starting state LOST",
+    "page_or_reason": "states shows Live, Waiting for HDMI, Feed stopped, Automatic idle; no 'Opening UltraStudio…' (L9-02)"
+   },
+   {
+    "item": "Start/Stop feed ⌘↩",
+    "status": "present",
+    "page_or_reason": "toolbar, menubar, app-menus Feed, strip Stop Feed"
+   },
+   {
+    "item": "Retry feed (automatic, after failure)",
+    "status": "present",
+    "page_or_reason": "menubar e, states"
+   },
+   {
+    "item": "Processing master switch ⇧⌘B + applied-state label",
+    "status": "partial — applied/transition label LOST",
+    "page_or_reason": "strip switch + 'Effects active' result line; no 'Applying change…'/'selected vs active' (L9-03)"
+   },
+   {
+    "item": "Start when camera is in use + status",
+    "status": "present",
+    "page_or_reason": "sidebar Automation, menubar, settings Camera, states"
+   },
+   {
+    "item": "Capture input picker, locked while running",
+    "status": "present",
+    "page_or_reason": "main-collapsed ⋯ popover ('Stop the feed to choose another input'), app-menus Feed"
+   },
+   {
+    "item": "Refresh devices",
+    "status": "present",
+    "page_or_reason": "main-collapsed popover, menubar e, states first run"
+   },
+   {
+    "item": "Input / Output format",
+    "status": "present",
+    "page_or_reason": "strip badge, diagnostics Capture, single signal path"
+   },
+   {
+    "item": "Timecode RP188",
+    "status": "present",
+    "page_or_reason": "picture TC pill, diagnostics"
+   },
+   {
+    "item": "Embedded audio meter L/R peak+RMS",
+    "status": "present",
+    "page_or_reason": "strip audio row, diagnostics, status Audio popover"
+   },
+   {
+    "item": "Virtual camera connected badge / camera message",
+    "status": "present (reworded)",
+    "page_or_reason": "strip output row 'In use by…/Not in use', status Output popover"
+   },
+   {
+    "item": "Install / Remove camera + gating",
+    "status": "present",
+    "page_or_reason": "settings Camera, states 'Camera not installed'/'unsigned build'"
+   },
+   {
+    "item": "Installer pending state + status text",
+    "status": "LOST",
+    "page_or_reason": "no pending/awaiting-approval state (L9-05)"
+   },
+   {
+    "item": "Feed diagnostics (fps, ms, bitrate, drops by stage, audio stats, footnote, messages)",
+    "status": "present",
+    "page_or_reason": "diagnostics.html Feed tab"
+   },
+   {
+    "item": "Audio gaps (README diagnostics)",
+    "status": "LOST",
+    "page_or_reason": "not in diagnostics (L9-11)"
+   },
+   {
+    "item": "Ultracam total CPU/GPU/Memory + help caveats",
+    "status": "present",
+    "page_or_reason": "status bar, diagnostics App tab, Resources popover"
+   },
+   {
+    "item": "Recording: codec, timecode mode + help",
+    "status": "present",
+    "page_or_reason": "settings Recording, app-menus Record"
+   },
+   {
+    "item": "Default folder Choose/Change",
+    "status": "present",
+    "page_or_reason": "settings Recording"
+   },
+   {
+    "item": "Default folder Clear",
+    "status": "LOST",
+    "page_or_reason": "no Clear for default folder (L9-08)"
+   },
+   {
+    "item": "Crash-recovery note",
+    "status": "present",
+    "page_or_reason": "settings Recording"
+   },
+   {
+    "item": "Interrupted takes + Recover + recovery message + show recovered",
+    "status": "present",
+    "page_or_reason": "sidebar Recent Takes, states §4 (reveal icon), settings Recover Interrupted Takes…"
+   },
+   {
+    "item": "Record/Pause/Stop all",
+    "status": "present",
+    "page_or_reason": "toolbar, standalone, menubar, app-menus Record"
+   },
+   {
+    "item": "Per-feed record/pause/resume/stop/finishing",
+    "status": "present",
+    "page_or_reason": "strips, states §1–2"
+   },
+   {
+    "item": "Per-feed folder, Use default, 'Default' tag",
+    "status": "present",
+    "page_or_reason": "strip folder row, main-collapsed popover, settings"
+   },
+   {
+    "item": "Per-feed stats (elapsed, size, drops, encoded, fps, bitrate)",
+    "status": "present",
+    "page_or_reason": "strip, states, diagnostics"
+   },
+   {
+    "item": "Encoder details disclosure",
+    "status": "present (moved)",
+    "page_or_reason": "states Dropped frames card, diagnostics Recording · encoder"
+   },
+   {
+    "item": "Per-feed error label",
+    "status": "present",
+    "page_or_reason": "states Failed strip"
+   },
+   {
+    "item": "Final take statistics remain until next take",
+    "status": "present",
+    "page_or_reason": "states (final statistics)"
+   },
+   {
+    "item": "Add feed / Remove feed / rename (canEditFeedTopology)",
+    "status": "present",
+    "page_or_reason": "sidebar +, app-menus Feed, main-collapsed popover footer"
+   },
+   {
+    "item": "Selected feed picker",
+    "status": "replaced",
+    "page_or_reason": "feeds shown as columns; Feed menu ⌘1–⌘4 'Select Feed' (visibility concern = S2, not mine)"
+   },
+   {
+    "item": "Output mode picker, locked while running",
+    "status": "present",
+    "page_or_reason": "settings Camera, app-menus Program, states"
+   },
+   {
+    "item": "Automatic switching toggle",
+    "status": "present",
+    "page_or_reason": "sidebar Output, toolbar Auto, menubar, app-menus"
+   },
+   {
+    "item": "Strategy picker incl. Dynamic analysis (later)",
+    "status": "present",
+    "page_or_reason": "sidebar popup, settings Switcher, app-menus Program ▸ Strategy"
+   },
+   {
+    "item": "Fixed interval slider",
+    "status": "present",
+    "page_or_reason": "settings Switcher (greyed when not selected); app-menus 'every 8.0 s'"
+   },
+   {
+    "item": "Anchor / Emphasis pickers",
+    "status": "present but buried",
+    "page_or_reason": "only app-menus Program menu; not in sidebar/Settings (L9-07)"
+   },
+   {
+    "item": "Director status",
+    "status": "present",
+    "page_or_reason": "sidebar shot timer, program-view cut bar, timeline"
+   },
+   {
+    "item": "Program cut buttons + on-air tint",
+    "status": "present",
+    "page_or_reason": "toolbar cut group, tally, strip Cut button, menubar thumbnails"
+   },
+   {
+    "item": "Queued/pending cut (switcherPendingFeedID)",
+    "status": "present",
+    "page_or_reason": "states 'Cut pending' dashed ring"
+   },
+   {
+    "item": "Effects 1–4 checkboxes, order, disabled until LUT, disabled while loading",
+    "status": "present (except loading)",
+    "page_or_reason": "main-collapsed popover, menubar Effects submenu, strip chips"
+   },
+   {
+    "item": "LUT file name / title / Load·Change / error",
+    "status": "present",
+    "page_or_reason": "main-collapsed popover, states LUT error"
+   },
+   {
+    "item": "LUT loading state ('Loading LUT…', spinner, Start disabled)",
+    "status": "LOST",
+    "page_or_reason": "not drawn anywhere (L9-04)"
+   },
+   {
+    "item": "LUT input gamut picker (2 options)",
+    "status": "present",
+    "page_or_reason": "main-collapsed popover, app-menus Feed ▸ LUT Input"
+   },
+   {
+    "item": "FeedNotice actionable messages",
+    "status": "present",
+    "page_or_reason": "states (LUT restore error, failed start banners)"
+   },
+   {
+    "item": "Workspace layout Single/Side by Side/Four Up",
+    "status": "present (+Program view)",
+    "page_or_reason": "toolbar layout picker, app-menus View ▸ Layout"
+   },
+   {
+    "item": "Swap tiles",
+    "status": "present (menu only)",
+    "page_or_reason": "app-menus View ▸ Layout ▸ Swap Pictures"
+   },
+   {
+    "item": "Expand tile / Restore layout",
+    "status": "LOST",
+    "page_or_reason": "no expand/restore anywhere (L9-06)"
+   },
+   {
+    "item": "Resizable Side by Side split (0.2–0.8, accessible)",
+    "status": "LOST",
+    "page_or_reason": "columns fixed 50/50 (L9-06)"
+   },
+   {
+    "item": "Focus tile (accent ring)",
+    "status": "present",
+    "page_or_reason": "monitor-tools focused tile"
+   },
+   {
+    "item": "Tile target picker incl. Program / Missing feed",
+    "status": "present",
+    "page_or_reason": "monitor-tools target picker menu"
+   },
+   {
+    "item": "Tile status text",
+    "status": "present",
+    "page_or_reason": "picture overlays/badges, states §3"
+   },
+   {
+    "item": "Picture signal Source/Output",
+    "status": "present",
+    "page_or_reason": "picture pill, monitor-tools, popover"
+   },
+   {
+    "item": "Monitor tools: Guides/Zebra/False color/Focus/Scopes settings",
+    "status": "present",
+    "page_or_reason": "monitor-tools five popovers (current-code false color)"
+   },
+   {
+    "item": "Show/Hide preview per target",
+    "status": "present",
+    "page_or_reason": "monitor-tools context menu Hide Preview, states Preview hidden"
+   },
+   {
+    "item": "Freeze ⌃⌥F / Clean ⌃⌥C",
+    "status": "present",
+    "page_or_reason": "monitor-tools, app-menus View"
+   },
+   {
+    "item": "Hold Clean",
+    "status": "present",
+    "page_or_reason": "monitor-tools keyboard card ('hold the Clean button for a moment')"
+   },
+   {
+    "item": "Zoom Fit/150/200/400",
+    "status": "present",
+    "page_or_reason": "monitor-tools zoom menu"
+   },
+   {
+    "item": "Detach",
+    "status": "present",
+    "page_or_reason": "picture hover group, context menu, app-menus"
+   },
+   {
+    "item": "Context menu: Reset monitor tools, Copy settings to",
+    "status": "present",
+    "page_or_reason": "monitor-tools context menu, main-collapsed popover"
+   },
+   {
+    "item": "Monitoring diagnostics disclosure",
+    "status": "present",
+    "page_or_reason": "monitor-tools, diagnostics Monitoring"
+   },
+   {
+    "item": "Scopes pane Dock/Expand, footnotes",
+    "status": "present",
+    "page_or_reason": "monitor-tools scope spec"
+   },
+   {
+    "item": "Hide from Dock",
+    "status": "present",
+    "page_or_reason": "settings General ('Menu bar only'), app-menus Ultracam"
+   },
+   {
+    "item": "Quit waits for recordings",
+    "status": "present",
+    "page_or_reason": "app-menus Ultracam note, states quit sheet"
+   },
+   {
+    "item": "Feed menu: Start/Stop, Start when in use, Processing, Video preview",
+    "status": "present",
+    "page_or_reason": "app-menus Feed"
+   },
+   {
+    "item": "New window removed",
+    "status": "present",
+    "page_or_reason": "single Window scene (spec)"
+   },
+   {
+    "item": "Help strings / accessibility labels as content",
+    "status": "partial",
+    "page_or_reason": "spec §7 rule; help text not itemized per control"
+   },
+   {
+    "item": "Gating rules §6.3",
+    "status": "present",
+    "page_or_reason": "popover/settings/states; except LUT-loading Start gate (L9-04)"
+   },
+   {
+    "item": "FeedDescriptor.enabled control",
+    "status": "LOST (pre-existing gap)",
+    "page_or_reason": "no enable/disable control anywhere (L9-10)"
+   }
+  ]
+ }
+]

@@ -1,0 +1,305 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam round 4 · Settings window</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
+<script src="../kit.js"></script><script src="r4.js"></script>
+<style>
+  .desktop { height: 1900px; }
+  .sw { position: absolute; display: flex; flex-direction: column; width: 560px; }
+  .sw-title { height: 38px; display: flex; align-items: center; padding: 0 16px; position: relative; flex: none; }
+  .sw-title b { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; pointer-events: none; }
+  .panes { display: flex; justify-content: center; gap: 1px; padding: 0 10px 10px; flex: none; border-bottom: 0.5px solid var(--sep); }
+  .pane { width: 70px; height: 50px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; font-size: 10.5px; color: var(--label2); }
+  .pane svg.i { width: 19px; height: 19px; }
+  .pane.on { background: var(--fill3); color: var(--label); }
+  .pane.on svg.i { color: var(--blue); }
+  .sbody { flex: 1; overflow: hidden; padding: 2px 20px 16px; }
+  .sbody .form-h { padding: 13px 6px 6px; font-size: 12px; color: var(--label); }
+  .sbody .row { min-height: 31px; padding: 5px 11px; font-size: 12.5px; }
+  .sbody .row .lbl small { font-size: 10.5px; }
+  .foot { font-size: 10.8px; color: var(--label2); padding: 6px 8px 0; line-height: 1.4; }
+  .sl .lbl { flex: none; width: 128px; }
+  .sl .v { width: 44px; text-align: right; color: var(--label2); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .path { font-size: 12px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .disc { display: flex; align-items: center; gap: 6px; padding: 13px 6px 6px; font-size: 12px; font-weight: 600; }
+  .dimrow { opacity: 0.42; }
+  .shotbox { padding: 12px 14px 26px; }
+  .note2 { font-size: 11px; color: var(--label2); }
+  .legend.side { position: absolute; left: auto; bottom: auto; width: 540px; flex-direction: column; gap: 10px; }
+  .legend.side div { max-width: none; }
+  .redbtn { color: #ff6961; }
+  .rule { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; color: var(--label2); padding: 2px 0; }
+  .rule b { color: var(--label); font-weight: 600; }
+  .statecard { position: absolute; width: 560px; border-radius: 16px; padding: 12px 16px; }
+  .statecard .k2 { margin-bottom: 8px; display: block; }
+  .spin { width: 14px; height: 14px; border-radius: 7px; border: 2px solid var(--fill3); border-top-color: var(--label2); flex: none; }
+  .icons { display:flex;gap:10px;align-items:center;padding:6px 10px;border-radius:8px;background:var(--fill2); }
+
+  html.light .newtag { color: #7a2fa8; background: rgba(175,82,222,0.14); box-shadow: inset 0 0 0 0.5px rgba(175,82,222,0.5); }
+  .statecard { background: rgba(40,40,44,0.7) !important; }
+  html.light .statecard { background: rgba(255,255,255,0.72) !important; }
+  html.light .redbtn { color: #c4271d; }
+  html.light .pane.on svg.i { color: #007aff; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Camera</span><span>Record</span><span>Program</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra" style="position:relative"><i data-i="videofill"></i><span class="dot red" style="position:absolute;right:3px;top:3px;width:6px;height:6px"></span></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Wed Oct 21&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">Round 4 · Settings window (⌘,): all six panes</div>
+
+  <!-- ================= General ================= -->
+  <div class="window sw" id="w-general" style="left: 24px; top: 84px; height: 720px;">
+    <div class="sbody">
+      <div class="form-h">App</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Show Ultracam in<small>Menu bar only hides the Dock icon</small></span>
+          <div class="seg"><div>Dock and menu bar</div><div class="on">Menu bar only</div></div></div>
+        <div class="row"><span class="lbl">Open Ultracam at login<span class="newtag">NEW</span><small>Starts in the menu bar so cameras can start with camera apps</small></span><div class="switch on"></div></div>
+        <div class="row"><span class="lbl">At launch<span class="newtag">NEW</span></span><span class="popup plain">Stay in the menu bar<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+      <div class="foot">Closing the window never stops capture, camera output or recording. Quit waits for recordings to finish saving.</div>
+
+      <div class="form-h">Window</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Default layout<span class="newtag">NEW</span><small>1 camera → Single · 2 → Side by Side · 3–4 → Four Up</small></span><span class="popup plain">Automatic<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Camera strips<span class="newtag">NEW</span><small>Collapse or expand any strip at any time (⌥⌘S)</small></span>
+          <div class="seg"><div class="on">Expanded</div><div>Collapsed</div></div></div>
+        <div class="row"><span class="lbl">Session sidebar<small>⌃⌘S</small></span><span class="popup plain">Show<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Video preview<small>Hidden previews do no rendering work · ⇧⌘P</small></span><div class="switch on"></div></div>
+      </div>
+
+      <div class="form-h">Menu Bar</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Recording badge on the icon<span class="newtag">NEW</span></span><div class="switch on"></div></div>
+        <div class="row"><span class="lbl">Attention badge for problems<span class="newtag">NEW</span><small>No signal, failed start, low disk space</small></span><div class="switch on"></div></div>
+        <div class="row"><span class="lbl">Live preview in the menu<small>Renders only while the menu is open</small></span><div class="switch on"></div></div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center; padding:14px 8px 0">
+        <div class="icons">
+          <i data-i="video" class="sm"></i><i data-i="videofill" class="sm"></i><i data-i="bypass" class="sm"></i>
+          <span style="position:relative;display:flex"><i data-i="videofill" class="sm"></i><span style="position:absolute;right:-4px;bottom:-3px;width:7px;height:7px;border-radius:4px;background:var(--label);box-shadow:0 0 0 1.5px var(--window)"></span></span>
+          <span style="position:relative;display:flex"><i data-i="video" class="sm"></i><span style="position:absolute;right:-5px;bottom:-4px;font-size:9px;font-weight:800;line-height:1">!</span></span>
+        </div>
+        <span class="note2">Stopped · live · bypass · recording badge · needs attention (template icons, no colored dots)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Recording ================= -->
+  <div class="window sw" id="w-recording" style="left: 600px; top: 84px; height: 1010px;">
+    <div class="sbody">
+      <div class="form-h">Destination</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Default folder</span><i data-i="folder" class="sm c2"></i><span class="path">/Volumes/8TB/Takes</span><span class="btn">Change…</span><span class="btn icon" title="Show in Finder"><i data-i="search" class="sm"></i></span><span class="btn borderless">Clear</span></div>
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:6px; padding:9px 11px">
+          <div style="display:flex; align-items:center; gap:6px"><span>8TB</span><span class="newtag">NEW</span><span class="c2 tnum" style="margin-left:auto; font-size:11.5px">595 GB free · about 1 h 52 m for Camera 1</span></div>
+          <div class="gauge"><i style="width:93%"></i></div>
+        </div>
+      </div>
+      <div class="foot">Time left uses each camera's codec and frame rate (ProRes 422 2160p 59.94 ≈ 707 Mb/s). Folder changes apply to the next take; access is remembered between launches.</div>
+
+      <div class="form-h">Per-Camera Folders</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Camera 1</span><span class="path">Uses default</span><span class="btn">Choose…</span></div>
+        <div class="row"><span class="lbl">Camera 2</span><i data-i="folder" class="sm c2"></i><span class="path">/Volumes/Archive/B-cam</span><span class="btn">Change…</span><span class="btn borderless">Use Default</span></div>
+      </div>
+
+      <div class="form-h">Format</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Codec</span><span class="popup">ProRes 422 10-bit<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Timecode</span><span class="popup">Mac Clock<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">File names</span><span class="mono c2" style="font-size:11px">Camera 1/Camera 1_2026-10-21_09-41-03_001.mov</span></div>
+      </div>
+      <div class="foot">Records the camera original: 2160p 10-bit 4:2:2 with embedded audio, no LUT or effects. Also available: HEVC Main10 4:2:2.<br>
+        <b>Mac Clock</b> writes the Mac's clock into the file, aligned to the first frame. <b>Record Start</b> writes a timecode track starting at 00:00:00:00. <b>No Timecode Track</b> writes none; camera timecode still shows in the window when the signal has it.</div>
+
+      <div class="form-h"><span>Backup Recording <span class="newtag">NEW</span></span></div>
+      <div class="form">
+        <div class="row"><span class="lbl">Record a backup when a camera app uses Ultracam<small>Per camera: Camera 1, Camera 2 · change in each camera's inspector</small></span><div class="switch on"></div></div>
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:3px; padding:9px 11px">
+          <div class="rule">1<span><b>Starts after 10 s of continuous camera use.</b> A quick look in a meeting app's settings preview doesn't start a take.</span></div>
+          <div class="rule">2<span><b>Stops automatically only takes it started</b>, a few seconds after the last camera app closes.</span></div>
+          <div class="rule">3<span><b>Takes you started keep recording.</b> When the meeting ends you're asked: "Meeting ended · still recording" — Stop Recording or Keep Recording.</span></div>
+        </div>
+        <div class="row"><span class="lbl">Warn when recording time is low<span class="newtag">NEW</span></span><span class="popup plain">30 min left<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+
+      <div class="form-h">Crash Recovery</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Fragmented QuickTime movies<small>First fragment after 1 s, then every 10 s</small></span><span class="badge green">Always on</span></div>
+        <div class="row"><span class="lbl">Interrupted takes<small>1 found in saved folders</small></span><span class="btn">Recover Interrupted Takes…</span></div>
+      </div>
+      <div class="foot">Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original. Auto-switcher sessions also write a timeline sidecar to the recording folder.</div>
+    </div>
+  </div>
+
+  <!-- ================= Camera ================= -->
+  <div class="window sw" id="w-camera" style="left: 1176px; top: 84px; height: 636px;">
+    <div class="sbody">
+      <div class="form-h">Camera Extension</div>
+      <div class="form">
+        <div class="row"><i data-i="check" class="sm cg"></i><span class="lbl">Ultracam camera installed<small>Enabled in System Settings › General › Login Items &amp; Extensions</small></span></div>
+        <div class="row"><span class="btn" style="opacity:0.45">Install Camera</span><span class="btn">Remove Camera…</span><span class="note2" style="margin-left:auto">Stop all cameras to change</span></div>
+      </div>
+      <div class="foot">Install and Remove need a signed build and go through System Settings. They're unavailable while a request is pending or a camera is running. Capture, preview and recording work without the camera.</div>
+
+      <div class="form-h">Output</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Output mode<small>Change while all cameras are stopped</small></span><div class="seg"><div class="on">Separate cameras</div><div>Program</div></div></div>
+        <div class="row"><span class="lbl">Start with camera apps<small>Default for new cameras · each camera can override</small></span><div class="switch on"></div></div>
+      </div>
+      <div class="foot">After changing the mode, choose the new camera in your meeting app: <b>Ultracam · Camera 1</b> (Separate) or <b>Ultracam · Program</b> (Program).</div>
+
+      <div class="form-h">Published Cameras</div>
+      <div class="form">
+        <div class="row"><i data-i="camlink" class="sm cg"></i><span class="lbl">Ultracam · Camera 1</span><span class="val cg" style="font-size:11.5px">In use</span></div>
+        <div class="row"><i data-i="camlink" class="sm c2"></i><span class="lbl">Ultracam · Camera 2</span><span class="val" style="font-size:11.5px">Not in use</span></div>
+        <div class="row dimrow"><i data-i="program" class="sm"></i><span class="lbl">Ultracam · Program</span><span class="val" style="font-size:11.5px">Program mode only</span></div>
+      </div>
+      <div class="foot">Separate cameras publishes one camera per Ultracam camera. Program publishes a single "Ultracam · Program" fed by the switcher. Names follow camera names. Without a frame for 0.5 s, the camera sends black.</div>
+    </div>
+  </div>
+
+  <!-- Camera pane: approval-pending state -->
+  <div class="statecard glass" style="left: 1176px; top: 740px;">
+    <span class="k2">Camera pane · while the extension is waiting for approval</span>
+    <div class="form">
+      <div class="row"><span class="spin"></span><span class="lbl">Waiting for approval<small>Approve "Ultracam Camera" in System Settings › General › Login Items &amp; Extensions › Camera Extensions</small></span><span class="btn blue">Open System Settings</span></div>
+      <div class="row"><span class="btn" style="opacity:0.45">Install Camera</span><span class="btn" style="opacity:0.45">Remove Camera…</span><span class="note2" style="margin-left:auto">Unavailable while a request is pending</span></div>
+    </div>
+    <div class="foot" style="padding-left:2px">Unsigned builds show "Camera output needs a signed build" instead, with Install disabled; preview and recording still work.</div>
+  </div>
+
+  <!-- ================= Switcher ================= -->
+  <div class="window sw" id="w-switcher" style="left: 24px; top: 828px; height: 860px;">
+    <div class="sbody">
+      <div class="form-h">Strategy</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Automatic strategy</span><span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row dimrow sl"><span class="lbl">Fixed interval</span><div class="slider"><i style="width:26%"></i><b style="left:26%"></b></div><span class="v">8.0 s</span></div>
+        <div class="row"><span class="lbl">Director mode</span><span class="popup plain">Transcript assisted<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+      <div class="foot">Strategies: Manual, Fixed interval (1–30 s), Natural talking head, Dynamic analysis (later). <b>Transcript assisted</b> uses transcript cues from an external adapter; Ultracam has no built-in speech recognition, so without one cuts rely on audio cues alone. <b>Low latency</b> always cuts on audio cues alone. The director hears the selected camera's embedded audio.</div>
+
+      <div class="form-h">Shot Timing</div>
+      <div class="form">
+        <div class="shotbox">
+          <div class="shot"><i style="width:31%"></i>
+            <span class="mk" style="left:31.25%"></span><span class="mk" style="left:62.5%"></span><span class="mk" style="left:93.75%;background:var(--red)"></span>
+            <span class="mkl" style="left:31.25%">min 10 s</span><span class="mkl" style="left:62.5%">soft max 20 s</span><span class="mkl" style="left:88%">max 30 s +2 s grace</span>
+          </div>
+        </div>
+        <div class="row sl"><span class="lbl">Minimum shot</span><div class="slider"><i style="width:30%"></i><b style="left:30%"></b></div><span class="v">10 s</span></div>
+        <div class="row sl"><span class="lbl">Soft maximum</span><div class="slider"><i style="width:55%"></i><b style="left:55%"></b></div><span class="v">20 s</span></div>
+        <div class="row sl"><span class="lbl">Maximum shot</span><div class="slider"><i style="width:82%"></i><b style="left:82%"></b></div><span class="v">30 s</span></div>
+        <div class="row sl"><span class="lbl">Cooldown</span><div class="slider"><i style="width:15%"></i><b style="left:15%"></b></div><span class="v">1.5 s</span></div>
+        <div class="row sl"><span class="lbl">Emphasis hold</span><div class="slider"><i style="width:33%"></i><b style="left:33%"></b></div><span class="v">5 s</span></div>
+        <div class="row sl"><span class="lbl">Forced-cut grace</span><div class="slider"><i style="width:20%"></i><b style="left:20%"></b></div><span class="v">2 s</span></div>
+      </div>
+
+      <div class="disc"><i data-i="chevd" class="sm c2"></i>Advanced Cut Decisions</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Cut threshold</span><span class="val tnum">0.68</span></div>
+        <div class="row"><span class="lbl">Hysteresis margin</span><span class="val tnum">0.12</span></div>
+        <div class="row"><span class="lbl">Transcript confidence</span><span class="val tnum">0.72</span></div>
+        <div class="row"><span class="lbl">Pause boundary</span><span class="val tnum">0.22 s</span></div>
+        <div class="row"><span class="lbl">Boundary window · candidate dwell</span><span class="val tnum">0.24 s · 0.30 s</span></div>
+        <div class="row"><span class="lbl">Forced boundary lookback · transcript delay</span><span class="val tnum">1.0 s · 0.35 s</span></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 6px 0">
+        <span class="foot" style="padding:0; flex:1">Decisions apply at Program frame boundaries and are acknowledged only after the target frame is shown.</span>
+        <span class="btn">Restore Defaults</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Monitor ================= -->
+  <div class="window sw" id="w-monitor" style="left: 600px; top: 1118px; height: 730px;">
+    <div class="sbody">
+      <div class="form-h">Defaults for New Cameras</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Monitor tools<small>Each camera keeps its own tool settings</small></span><span class="popup plain">Off<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Scope</span><div class="seg"><div class="on">RGB parade</div><div>Luma waveform</div></div></div>
+        <div class="row"><span class="lbl">Scope refresh</span><div class="seg"><div>10 Hz</div><div class="on">15 Hz</div><div>30 Hz</div></div></div>
+        <div class="row sl"><span class="lbl">Zebra threshold</span><div class="slider"><i style="width:87%"></i><b style="left:87%"></b></div><span class="v">95 IRE</span></div>
+        <div class="row"><span class="lbl">Focus highlight</span>
+          <div style="display:flex;gap:6px">
+            <span style="width:16px;height:16px;border-radius:8px;background:#ff453a;box-shadow:0 0 0 2px var(--label)"></span><span style="width:16px;height:16px;border-radius:8px;background:#30d158"></span><span style="width:16px;height:16px;border-radius:8px;background:#0a84ff"></span><span style="width:16px;height:16px;border-radius:8px;background:#ffd60a"></span><span style="width:16px;height:16px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px var(--fill3)"></span>
+          </div></div>
+        <div class="row"><span class="lbl">Picture signal</span><div class="seg"><div>Source</div><div class="on">Output</div></div></div>
+      </div>
+      <div class="foot">"Copy Settings To" in a picture's context menu copies one camera's tools to another.</div>
+
+      <div class="form-h">False Color</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Mode<small>Available when a Sony S-Log3 input is declared</small></span><div class="seg"><div class="on">Off</div><div>Sony S-Log3</div><div>EL Zone</div></div></div>
+        <div class="row"><span class="lbl">Camera / Log</span><span class="popup plain">Sony S-Gamut3.Cine / S-Log3<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Input code range</span><span class="popup plain">Format native / unspecified<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+        <div class="row"><span class="lbl">Log transport mapping</span><span class="popup plain">Declared native 10-bit codes<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+      </div>
+      <div class="foot">Match the actual camera output. These declarations don't calibrate the capture device or change camera output. Older ARRI selections show as an unsupported saved mode.</div>
+
+      <div class="form-h">Under Load</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Reduce monitoring quality automatically<small>Lowers picture size and scope sampling, never camera or recording output</small></span><span class="badge green">Always on</span></div>
+      </div>
+      <div class="foot">If processing misses a frame deadline, new monitor analysis pauses while the clean preview continues; full quality returns after a few healthy seconds. Hidden or covered monitors do no GPU work.</div>
+    </div>
+  </div>
+
+  <!-- ================= Advanced ================= -->
+  <div class="window sw" id="w-advanced" style="left: 1176px; top: 950px; height: 524px;">
+    <div class="sbody">
+      <div class="form-h">Diagnostics</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Diagnostics window<small>Drops per stage, audio, encoder, Program and monitoring details</small></span><span class="btn">Open</span></div>
+        <div class="row"><span class="lbl">Copy diagnostics<span class="newtag">NEW</span><small>Plain-text summary for support, no image data</small></span><span class="btn">Copy</span></div>
+      </div>
+
+      <div class="form-h">LUTs</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Saved LUT access<small>Read-only bookmarks for each camera's .cube file</small></span><span class="btn">Forget Saved LUTs…</span></div>
+      </div>
+      <div class="foot">A missing LUT never blocks capture. The camera keeps its choice so it can be located again.</div>
+
+      <div class="form-h">Recording</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Recovery journals<small>Hidden .partial files and journals sit beside each take until it's saved</small></span></div>
+      </div>
+
+      <div class="form-h">Reset</div>
+      <div class="form">
+        <div class="row"><span class="lbl">Reset all settings<small>Cameras, effects, folders, monitor tools and layouts. Recordings are not touched.</small></span><span class="btn redbtn">Reset…</span></div>
+      </div>
+      <div class="foot">Reset asks for confirmation and is unavailable while cameras are running or recordings are saving.</div>
+    </div>
+  </div>
+
+  <div class="legend side" style="left: 1188px; top: 1500px;">
+    <div><span class="n">1</span><span>Settings holds setup you change rarely. Per-camera, per-take controls stay in the camera strips, the inspector (⌥⌘I) and the menu bar dropdown.</span></div>
+    <div><span class="n">2</span><span>Recording: default folder now has Clear, time left uses each camera's real bit rate, timecode options say what they write (Mac Clock / Record Start / No Timecode Track), and the <span class="newtag" style="margin:0">NEW</span> backup rules are written out: 10 s debounce, auto-stop only its own takes, ask for the rest.</span></div>
+    <div><span class="n">3</span><span>Camera: install, approval-pending and unsigned states; output mode with a reminder to pick the new camera in your meeting app; camera names follow "Ultracam · Camera N". No format lock — format changes are allowed while in use.</span></div>
+    <div><span class="n">4</span><span>Switcher keeps every director tunable at its real default, with an honest note that Transcript assisted needs an external transcript source.</span></div>
+    <div><span class="n">5</span><span>Monitor uses the current false color modes (Off · Sony S-Log3 · EL Zone). Advanced: diagnostics, LUT bookmarks and a guarded reset.</span></div>
+  </div>
+  <div class="callout" style="left: 12px; top: 72px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 588px; top: 72px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 1164px; top: 72px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 12px; top: 816px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 588px; top: 1106px;"><span class="n">5</span></div>
+</div>
+<script>
+  const PANES = [['gear', 'General'], ['recordring', 'Recording'], ['video', 'Camera'], ['program', 'Switcher'], ['scope', 'Monitor'], ['sliders', 'Advanced']];
+  for (const [id, active] of [['w-general', 'General'], ['w-recording', 'Recording'], ['w-camera', 'Camera'], ['w-switcher', 'Switcher'], ['w-monitor', 'Monitor'], ['w-advanced', 'Advanced']]) {
+    document.getElementById(id).insertAdjacentHTML('afterbegin',
+      `<div class="sw-title"><div class="traffic"><span></span><span></span><span></span></div><b>${active}</b></div>
+       <div class="panes">${PANES.map(([icon, name]) => `<div class="pane${name === active ? ' on' : ''}"><i data-i="${icon}"></i>${name}</div>`).join('')}</div>`);
+  }
+</script>
+</body></html>

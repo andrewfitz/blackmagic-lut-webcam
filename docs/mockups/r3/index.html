@@ -1,0 +1,88 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam UI · round 3 · full design</title>
+<link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css">
+<style>
+  body { background: #111214; padding: 32px 40px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 44px 0 10px; }
+  p, li { color: var(--label2); max-width: 1080px; }
+  li { margin: 3px 0; }
+  b { color: var(--label); }
+  a { color: #64b0ff; }
+  img { width: 100%; max-width: 1760px; border-radius: 10px; display: block; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+  .toc { display: grid; grid-template-columns: repeat(3, minmax(0, 360px)); gap: 6px 30px; margin-top: 10px; }
+  .toc a { display: block; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,0.05); }
+</style></head>
+<body>
+<h1>Ultracam UI: round 3, full design</h1>
+<p>Decisions carried in: the <b>session sidebar</b> from V1 on the left; <b>channel strips</b> from V2 under each picture, each
+collapsible to one line; no inspector (deeper settings in each strip's ⋯ popover); <b>Program as tally</b> on the feed pictures
+(red on air, green next) with an optional Program view; C's <b>status bar</b>; and the <b>hybrid dropdown</b> (live preview + compact
+native rows). Proposals the app doesn't have yet are marked <span class="newtag">NEW</span>. Earlier rounds: <a href="../index.html">1</a> ·
+<a href="../r2/index.html">2</a>.</p>
+
+<div class="toc">
+  <a href="#main-expanded">Main window · strips expanded</a>
+  <a href="#main-collapsed">Main window · strips collapsed + feed settings</a>
+  <a href="#program-view">Program view (optional layout)</a>
+  <a href="#single">One camera · meeting</a>
+  <a href="#standalone">Two cameras · standalone recording</a>
+  <a href="#four-up">Four cameras · Four Up</a>
+  <a href="#monitor-tools">Monitor tools &amp; detached monitor</a>
+  <a href="#menubar">Menu bar dropdowns</a>
+  <a href="#app-menus">App menus &amp; shortcuts</a>
+  <a href="#diagnostics">Diagnostics &amp; status popovers</a>
+  <a href="#settings">Settings (all panes)</a>
+  <a href="#states">States &amp; edge cases</a>
+  <a href="#spec">Design system &amp; build spec</a>
+</div>
+
+<h2>Decisions made during this round</h2>
+<ul>
+  <li><b>Shortcuts:</b> existing ⌘↩, ⇧⌘B, ⇧⌘P, ⌃⌥F, ⌃⌥C and ⌘Q are unchanged. New proposals: ⌃1–⌃4 cut, ⌃⌥A Auto (not ⌃A, which moves the cursor in text fields), ⌘R / ⌥⌘R record selected / all, ⌘1–⌘4 select feed, ⌥⌘1–⌥⌘4 layout, ⌥⌘S collapse strips, ⌥⌘K scopes (not ⌥⌘W, which is Close All Windows), ⌥⌘I diagnostics, ⌘0 main window, ⌘O Load LUT. ⌃1–⌃4 clash with Mission Control's desktop switching when that's enabled; plain 1–4 in the focused window is the fallback.</li>
+  <li><b>Tally colors:</b> red = on air (Program, or a consumer using that feed's camera), green = next, dashed red = manual cut waiting for the next frame, orange = paused or skipped by Auto (unhealthy source). Never color alone; every ring has a text badge.</li>
+  <li><b>Automatic mode:</b> opening the dropdown doesn't show a live preview while waiting, because a visible preview counts as demand and would start capture. "Show Live Preview" is explicit.</li>
+  <li><b>Menus:</b> File (Load LUT ⌘O, Close ⌘W) and Edit (rename, copy values) stay in the app's menu bar.</li>
+  <li><b>Code drift found:</b> false color in the working tree is now Off / Sony S-Log3 / EL Zone, with Sony profiles only. The mockups follow the code; the README still describes ARRI.</li>
+</ul>
+<h2 id="main-expanded">Main window · strips expanded · <a href="main-expanded.html">HTML</a></h2>
+<p>Two-camera Program meeting, both backing up. Session sidebar, tally on the feed pictures (no separate Program picture), channel strips with each feed's own recording and output, scopes, status bar.</p>
+<img src="png/main-expanded.png" alt="Main window · strips expanded" loading="lazy">
+<h2 id="main-collapsed">Main window · strips collapsed + feed settings · <a href="main-collapsed.html">HTML</a></h2>
+<p>Same meeting with every strip collapsed to one line (⌥⌘S). The freed space goes to scopes and the director timeline. Feed 2's ⋯ popover holds the deeper settings that used to need an inspector.</p>
+<img src="png/main-collapsed.png" alt="Main window · strips collapsed + feed settings" loading="lazy">
+<h2 id="program-view">Program view (optional layout) · <a href="program-view.html">HTML</a></h2>
+<p>For when you want to watch exactly what Zoom gets: Program large, sources with tally, cut bar with shot timer, director timeline. Side by Side with tally stays the default.</p>
+<img src="png/program-view.png" alt="Program view (optional layout)" loading="lazy">
+<h2 id="single">One camera · everyday meeting · <a href="single.html">HTML</a></h2>
+<p>Single layout with an expanded strip, signal path (source → effects → Zoom), scopes in the right column, and the dropdown open.</p>
+<img src="png/single.png" alt="One camera · everyday meeting" loading="lazy">
+<h2 id="standalone">Two cameras · standalone recording · <a href="standalone.html">HTML</a></h2>
+<p>No meeting. Each feed records on its own (Feed 2 paused), with its own folder and time left, its own virtual camera (not in use), monitor tools and scope.</p>
+<img src="png/standalone.png" alt="Two cameras · standalone recording" loading="lazy">
+<h2 id="four-up">Four cameras · Four Up · <a href="four-up.html">HTML</a></h2>
+<p>Sidebar hidden, strips auto-collapse, one feed on air in Zoom, a No signal feed, a paused feed, and a hover toolbar.</p>
+<img src="png/four-up.png" alt="Four cameras · Four Up" loading="lazy">
+<h2 id="monitor-tools">Monitor tools & detached monitor · <a href="monitor-tools.html">HTML</a></h2>
+<p>Overlay anatomy, all five tool popovers (matching the current code: false color is Off / Sony S-Log3 / EL Zone), view-only states, context menu, detached window, scope spec.</p>
+<img src="png/monitor-tools.png" alt="Monitor tools & detached monitor" loading="lazy">
+<h2 id="menubar">Menu bar dropdowns · <a href="menubar.html">HTML</a></h2>
+<p>One shape for every state: Program meeting with cut thumbnails and submenu, single meeting, two-feed recording, automatic waiting, failed start, stopped, needs attention. Plus icon states and implementation notes.</p>
+<img src="png/menubar.png" alt="Menu bar dropdowns" loading="lazy">
+<h2 id="app-menus">App menus & shortcuts · <a href="app-menus.html">HTML</a></h2>
+<p>Every command in its native menu, plus a shortcut table with conflict checks.</p>
+<img src="png/app-menus.png" alt="App menus & shortcuts" loading="lazy">
+<h2 id="diagnostics">Diagnostics & status popovers · <a href="diagnostics.html">HTML</a></h2>
+<p>The engineering detail moved out of the everyday window: per-feed capture, drops by stage, audio, encoder and monitoring, the App resources tab, and the four status bar popovers.</p>
+<img src="png/diagnostics.png" alt="Diagnostics & status popovers" loading="lazy">
+<h2 id="settings">Settings (all panes) · <a href="settings.html">HTML</a></h2>
+<p>General, Recording, Camera, Switcher (every director tunable with its real default), Monitor defaults, Advanced.</p>
+<img src="png/settings.png" alt="Settings (all panes)" loading="lazy">
+<h2 id="states">States & edge cases · <a href="states.html">HTML</a></h2>
+<p>12 strip states expanded and collapsed, picture/Program states, sidebar, status bar, first launch, dropdown, icon states, layout scaling, quit sheet, LUT error.</p>
+<img src="png/states.png" alt="States & edge cases" loading="lazy">
+<h2 id="spec">Design system & build spec · <a href="spec.html">HTML</a></h2>
+<p>Measurements, system color semantics, type scale, component → native API table (and which current Swift views each replaces), state matrices, shortcuts, accessibility, a light appearance sample, performance rules.</p>
+<img src="png/spec.png" alt="Design system & build spec" loading="lazy">
+
+</body></html>

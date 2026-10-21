@@ -1,0 +1,217 @@
+#include <metal_stdlib>
+using namespace metal;
+// ABI: nine aligned16-byte rows; mirrored by KernelParameters.swift.
+struct Params {
+ uint width,height,stride,format;
+ uint outWidth,outHeight,flags,scopeMode;
+ float threshold,widthIRE,opacity,focusThreshold;
+ float noise,focusOpacity,gain,sourceLogRescaled;
+ uint scopeWidth,scopeHeight,scopeSamplingStride,scopeSamplingPhase;
+ float referenceOffsetStops,reserved0,reserved1,reserved2;
+ float4 coefficients,mapping,peak;
+};
+enum MonitorFlags : uint { Zebra=1u, ZebraBand=2u, Focus=4u, LogC3=8u, LogC4=16u,
+ ScopeGraticule=1u, SonyARRIReference=128u, SonySGamut3=256u, SonySLog3=512u, ELZone=1024u };
+// Read native packed v210, BGRA, NV12 and high-aligned P010. Buffer storage is owned staging.
+float3 readRGB(device const uchar* raw, uint x,uint y,constant Params& p) {
+ float Y,Cb,Cr;
+ if(p.format==0) { device const uint* row=(device const uint*)(raw+y*p.stride); uint b=(x/6)*4; uint a=row[b],c=row[b+1],d=row[b+2],e=row[b+3]; uint n=x%6;
+ uint ys[6]={(a>>10)&1023,c&1023,(c>>20)&1023,(d>>10)&1023,e&1023,(e>>20)&1023};
+ uint us[3]={a&1023,(c>>10)&1023,(d>>20)&1023}; uint vs[3]={(a>>20)&1023,d&1023,(e>>10)&1023};
+ bool full=p.coefficients.w>0; Y=(float(ys[n])-(full?0:64))/(full?1023:876); Cb=(float(us[n/2])-512)/(full?1023:896); Cr=(float(vs[n/2])-512)/(full?1023:896);
+ } else if(p.format==1) { device const uchar* a=raw+y*p.stride+x*4; return float3(a[2],a[1],a[0])/255; }
+ else { bool ten=p.format>=4; bool full=p.coefficients.w>0; uint uvBase=p.stride*p.height;
+ if(ten) { Y=float(((device const ushort*)(raw+y*p.stride))[x]>>6); device const ushort* uv=(device const ushort*)(raw+uvBase+(p.format>=6?y:y/2)*p.stride); Cb=float(uv[(x/2)*2]>>6); Cr=float(uv[(x/2)*2+1]>>6); Y=(Y-(full?0:64))/(full?1023:876); Cb=(Cb-512)/(full?1023:896); Cr=(Cr-512)/(full?1023:896); }
+ else { Y=raw[y*p.stride+x]; Cb=raw[uvBase+(p.format>=6?y:y/2)*p.stride+(x/2)*2]; Cr=raw[uvBase+(p.format>=6?y:y/2)*p.stride+(x/2)*2+1]; Y=(Y-(full?0:16))/(full?255:219); Cb=(Cb-128)/(full?255:224); Cr=(Cr-128)/(full?255:224); }
+ }
+ if(Cb==0&&Cr==0)return float3(Y);
+ float r=Y+2*(1-p.coefficients.x)*Cr; float b=Y+2*(1-p.coefficients.z)*Cb; return float3(r,(Y-p.coefficients.x*r-p.coefficients.z*b)/p.coefficients.y,b);
+}
+float luma(float3 rgb){return rgb.g+.2126*(rgb.r-rgb.g)+.0722*(rgb.b-rgb.g); }
+float signalLuma(float3 rgb,constant Params& p){return dot(rgb,p.coefficients.xyz);}
+float sonySLog3Decode(float value){float code=value*1023;return code>=171.2102946929f?pow(10.0f,(code-420)/261.5f)*.19f-.01f:(code-95)*.01125f/(171.2102946929f-95);}
+float sonyLogC3ReferenceCode(float value){return (value>.010591f?.247190f*log10(5.555556f*value+.052272f)+.385537f:5.367655f*value+.092809f)*1023;}
+
+// Encoded transport Y equals declared matrix-weighted decoded RGB without
+// reconstructing chroma. Peaking never uses a scene-linear/gamma transform.
+float readSignalY(device const uchar* raw,uint x,uint y,constant Params& p) {
+ if(p.format==1)return signalLuma(readRGB(raw,x,y,p),p);
+ bool full=p.coefficients.w>0;
+ if(p.format==0){
+  device const uint* row=(device const uint*)(raw+y*p.stride);
+  uint base=(x/6)*4,n=x%6,code;
+  switch(n){case 0:code=(row[base]>>10)&1023;break;
+   case 1:code=row[base+1]&1023;break;case 2:code=(row[base+1]>>20)&1023;break;
+   case 3:code=(row[base+2]>>10)&1023;break;case 4:code=row[base+3]&1023;break;
+   default:code=(row[base+3]>>20)&1023;break;}
+  return (float(code)-(full?0:64))/(full?1023:876);
+ }
+ if(p.format>=4){float code=float(((device const ushort*)(raw+y*p.stride))[x]>>6);return (code-(full?0:64))/(full?1023:876);}
+ return (float(raw[y*p.stride+x])-(full?0:16))/(full?255:219);
+}
+float directionalMedian(float a,float b,float c){return max(min(a,b),min(max(a,b),c));}
+float3 nativeSLog3(float3 rgb,constant Params& p){
+ if(p.format==1)return p.sourceLogRescaled>0?(rgb*1023-64)/876:rgb;
+ return p.coefficients.w>0||p.sourceLogRescaled>0?rgb:(rgb*876+64)/1023;
+}
+float3 sonyPattern2(float signal){
+ float ire=(signal*1023-64)/876*100;
+ float2 bounds[10]={float2(93.4,96.1),float2(87.7,90.6),float2(91.3,93.4),float2(43.8,46.5),float2(54.3,58),float2(47.8,50.8),float2(38.9,42.2),float2(24.6,34.4),float2(3.5,5.6),float2(-7,3.5)};
+ // Sony names the color families; numerical RGB are Ultracam display choices.
+ float3 colors[10]={float3(1,0,0),float3(1,.5,0),float3(1,1,0),float3(0,1,1),float3(1,.4,.7),float3(1,.7,.8),float3(0,1,0),float3(.3,.65,1),float3(0,0,1),float3(.6,0,1)};
+ for(uint i=0;i<10;i++)if(ire>=bounds[i].x&&ire<bounds[i].y)return colors[i];
+ return float3(signal);
+}
+// Public PanasonicFW9 chart palette plus Ultracam's explicitly versioned
+// midpoint interval convention. This does not assert Sony M&C bit-exactness.
+float3 elZonePublicChart(float3 native,constant Params& p){
+ float3 linear=float3(sonySLog3Decode(native.r),sonySLog3Decode(native.g),sonySLog3Decode(native.b));
+ float3 weights=(p.flags&SonySGamut3)?float3(.258685550974646f,.724718154617408f,.016596294407946f):float3(.215075820115587f,.885068501743727f,-.100144321859314f);
+ float Y=dot(linear,weights);
+ if(Y<=0)return float3(0);
+ if(!isfinite(Y))return float3(luma(native));
+ float stops=log2(Y)-log2(.18f)+p.referenceOffsetStops;
+ if(stops<=-6)return float3(0);
+ float upper[13]={-4.5,-3.5,-2.5,-1.5,-.75,-.25,.25,.75,1.5,2.5,3.5,4.5,6};
+ float3 colors[15]={float3(0),float3(.439,.188,.627),float3(0,.439,.753),float3(0,.69,.941),float3(.0824,.651,.0549),float3(.192,.878,.141),float3(0,1,0),float3(.533,.537,.506),float3(.973,.949,0),float3(1,.992,.463),float3(1,.565,0),float3(1,.694,.357),float3(1,0,0),float3(1,.412,.412),float3(1)};
+ for(uint i=0;i<13;i++)if(stops<upper[i])return colors[i+1];
+ return colors[14];
+}
+float3 bilinearRGB(device const uchar* raw,float2 point,constant Params& p){
+ float2 pt=clamp(point,float2(0),float2(p.width-1,p.height-1));
+ uint2 lo=uint2(floor(pt)),hi=min(lo+1,uint2(p.width-1,p.height-1));float2 f=fract(pt);
+ return mix(mix(readRGB(raw,lo.x,lo.y,p),readRGB(raw,hi.x,lo.y,p),f.x),
+  mix(readRGB(raw,lo.x,hi.y,p),readRGB(raw,hi.x,hi.y,p),f.x),f.y);
+}
+// Identity is exact. Integer minification <=8 is box averaged; fractional
+// ratios use bounded stratified bilinear quadrature (max8x8 taps). This is not
+// a calibrated chroma-siting transform; identity chroma decoding is unchanged.
+float3 filteredPicture(device const uchar* raw,uint2 xy,constant Params& p){
+ float2 scale=float2(p.width,p.height)/float2(p.outWidth,p.outHeight);
+ if(all(scale==float2(1)))return readRGB(raw,xy.x,xy.y,p);
+ uint2 count=uint2(clamp(ceil(scale),float2(1),float2(8)));
+ float3 sum=0;bool integral=all(scale==floor(scale))&&all(scale<=8);
+ for(uint y=0;y<count.y;y++)for(uint x=0;x<count.x;x++){
+  float2 pos=(float2(xy)+(float2(x,y)+.5)/float2(count))*scale-.5;
+  sum+=integral?readRGB(raw,uint(round(pos.x)),uint(round(pos.y)),p):bilinearRGB(raw,pos,p);
+ }
+ return sum/float(count.x*count.y);
+}
+float focusFootprint(texture2d<float,access::read> mask,uint2 xy,constant Params& p){
+ float2 pictureScale=float2(p.width,p.height)/float2(p.outWidth,p.outHeight);
+ float2 a=(float2(xy)*pictureScale-p.mapping.zw)/p.mapping.xy;
+ float2 b=((float2(xy)+1)*pictureScale-p.mapping.zw)/p.mapping.xy;
+ float2 low=min(a,b),high=max(a,b);
+ float2 extent=ceil(high)-floor(low);
+ uint2 count=uint2(clamp(extent,float2(1),float2(8)));
+ bool subsampled=any(extent>8);
+ float confidence=0;
+ for(uint y=0;y<count.y;y++)for(uint x=0;x<count.x;x++){
+  float2 pos=subsampled?floor(low+(float2(x,y)+.5)/float2(count)*(high-low)):floor(low)+float2(x,y);
+  uint2 at=uint2(clamp(pos,float2(0),float2(mask.get_width()-1,mask.get_height()-1)));
+  confidence=max(confidence,mask.read(at).r);
+ }
+ return confidence;
+}
+// All threads participate in the clamped halo load, including padded threads.
+// Actual tail dimensions may differ from dispatch dimensions; xy-localID is origin.
+kernel void sourceFocus(device const uchar* raw [[buffer(0)]],constant Params& p [[buffer(1)]],texture2d<float,access::write> mask [[texture(0)]],uint2 xy [[thread_position_in_grid]],uint2 localID [[thread_position_in_threadgroup]],uint2 groupSize [[threads_per_threadgroup]]) {
+ threadgroup float tile[18*18];
+ float tl,tc,tr,ml,mr,bl,bc,br;
+ if(groupSize.x<=16&&groupSize.y<=16){
+  uint pitch=groupSize.x+2,tileCount=pitch*(groupSize.y+2),threads=groupSize.x*groupSize.y;
+  uint lane=localID.y*groupSize.x+localID.x;
+  int2 origin=int2(xy)-int2(localID);
+  for(uint i=lane;i<tileCount;i+=threads){
+   int2 position=clamp(origin+int2(i%pitch,i/pitch)-1,int2(0),int2(p.width-1,p.height-1));
+   tile[i]=readSignalY(raw,uint(position.x),uint(position.y),p);
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if(xy.x>=p.width||xy.y>=p.height)return;
+  uint center=(localID.y+1)*pitch+localID.x+1;
+  tl=tile[center-pitch-1];tc=tile[center-pitch];tr=tile[center-pitch+1];
+  ml=tile[center-1];mr=tile[center+1];
+  bl=tile[center+pitch-1];bc=tile[center+pitch];br=tile[center+pitch+1];
+ }else{
+  // Keep other legal dispatch sizes supported without an undersized tile.
+  if(xy.x>=p.width||xy.y>=p.height)return;
+  uint l=xy.x?xy.x-1:0,r=min(xy.x+1,p.width-1),u=xy.y?xy.y-1:0,d=min(xy.y+1,p.height-1);
+  tl=readSignalY(raw,l,u,p);tc=readSignalY(raw,xy.x,u,p);tr=readSignalY(raw,r,u,p);
+  ml=readSignalY(raw,l,xy.y,p);mr=readSignalY(raw,r,xy.y,p);
+  bl=readSignalY(raw,l,d,p);bc=readSignalY(raw,xy.x,d,p);br=readSignalY(raw,r,d,p);
+ }
+ float3 dx=float3(tr-tl,mr-ml,br-bl),dy=float3(bl-tl,bc-tc,br-tr);
+ float gx=dot(dx,float3(3,10,3))/16,gy=dot(dy,float3(3,10,3))/16;
+ float support=max(abs(directionalMedian(dx.x,dx.y,dx.z)),abs(directionalMedian(dy.x,dy.y,dy.z)));
+ float confidence=support>p.noise?clamp((max(abs(gx),abs(gy))-p.focusThreshold)/max(.0001f,p.focusThreshold*.5f),0.0f,1.0f):0;
+ mask.write(float4(confidence),xy);
+}
+kernel void compose(device const uchar* raw [[buffer(0)]],constant Params& p [[buffer(1)]],device const uchar* source [[buffer(3)]],constant Params& sp [[buffer(4)]],texture2d<float,access::read> focus [[texture(0)]],texture2d<float,access::write> output [[texture(1)]],uint2 xy [[thread_position_in_grid]]) {
+ if(xy.x>=p.outWidth||xy.y>=p.outHeight)return;
+ float2 center=(float2(xy)+.5)*float2(p.width,p.height)/float2(p.outWidth,p.outHeight)-.5;
+ bool falseColor=(p.flags&(LogC3|LogC4|SonySLog3|ELZone))!=0;
+ // Source classification replaces the picture: do not minify a look we discard.
+ float3 c=falseColor?float3(0):filteredPicture(raw,xy,p);
+ if(falseColor){
+  uint2 sourceXY=uint2(clamp((center+.5-p.mapping.zw)/p.mapping.xy-.5,float2(0),float2(sp.width-1,sp.height-1)));
+  if(p.flags&ELZone){c=elZonePublicChart(nativeSLog3(readRGB(source,sourceXY.x,sourceXY.y,sp),sp),p);}
+  else if(p.flags&SonySLog3){float3 native=nativeSLog3(readRGB(source,sourceXY.x,sourceXY.y,sp),sp);c=sonyPattern2(signalLuma(native,sp));}
+  else {
+ float3 nativeRGB=readRGB(source,sourceXY.x,sourceXY.y,sp);float a=luma(nativeRGB);bool full=sp.coefficients.w>0||sp.sourceLogRescaled>0;float code=a*(full?1023:876)+(full?0:64);
+ // Neutral native10bit samples have integral native code. Restore that exact
+ // integer after float normalization; never quantize colored or rescaled input.
+ if((sp.format==0||sp.format>=4)&&sp.sourceLogRescaled==0&&nativeRGB.r==nativeRGB.g&&nativeRGB.g==nativeRGB.b)code=round(code);
+ if(p.flags&SonyARRIReference){
+ // YUV has already been range-expanded by readRGB; BGRA has not. Undo only
+ // that container interpretation to recover original normalized native S-Log3.
+ float3 slog3=sp.format==1?(sp.sourceLogRescaled>0?(nativeRGB*1023-64)/876:nativeRGB):(full?nativeRGB:(nativeRGB*876+64)/1023);
+ float3 linear=float3(sonySLog3Decode(slog3.r),sonySLog3Decode(slog3.g),sonySLog3Decode(slog3.b));
+ float3 weights=(p.flags&SonySGamut3)?float3(.258685550974646f,.724718154617408f,.016596294407946f):float3(.215075820115587f,.885068501743727f,-.100144321859314f);
+ code=sonyLogC3ReferenceCode(dot(linear,weights));a=luma(slog3);full=true;
+ }
+ float2 z3legal[6]={float2(878,940),float2(857,878),float2(461,480),float2(397,415),float2(152,172),float2(64,152)};
+ float2 z3full[6]={float2(951,1023),float2(926,951),float2(464,486),float2(389,410),float2(103,127),float2(0,103)};
+ float2 z4legal[6]={float2(808,940),float2(789,808),float2(351,366),float2(300,315),float2(149,159),float2(64,149)};
+ float2 z4full[6]={float2(868,1023),float2(846,868),float2(335,353),float2(276,293),float2(99,111),float2(0,99)};
+ float3 colors[6]={float3(1,0,0),float3(1,1,0),float3(1,.7,.7),float3(0,1,0),float3(0,0,1),float3(.7,0,1)};c=float3(a);
+ for(uint i=0;i<6;i++){float2 z=(p.flags&LogC3)?(full?z3full[i]:z3legal[i]):(full?z4full[i]:z4legal[i]);if(code>=z.x&&code<z.y){c=colors[i];break;}}
+  }
+ }
+ float ire=signalLuma(c,p)*100;
+ bool zebra=(p.flags&Zebra)&&((p.flags&ZebraBand)?(ire>=p.threshold-p.widthIRE*.5&&ire<p.threshold+p.widthIRE*.5):(ire>=p.threshold));
+ if(zebra&&((xy.x+xy.y)%16<8))c=mix(c,float3(1),p.opacity);
+ if(p.flags&Focus)c=mix(c,p.peak.rgb,p.focusOpacity*focusFootprint(focus,xy,p));
+ output.write(float4(clamp(c,0.0f,1.0f),1),xy);
+}
+// Exact population of a sampled lattice inside a half-open source interval.
+uint latticeCount(uint low,uint high,uint offset,uint step){
+ uint begin=low>offset?(low-offset+step-1)/step:0;
+ uint end=high>offset?(high-offset+step-1)/step:0;
+ return end>begin?end-begin:0;
+}
+kernel void scopes(device const uchar* raw [[buffer(0)]],constant Params& p [[buffer(1)]],device atomic_uint* bins [[buffer(2)]],uint2 grid [[thread_position_in_grid]]) {
+ uint step=max(1u,p.scopeSamplingStride),phase=p.scopeSamplingPhase%(step*step);
+ uint2 xy=grid*step+uint2(phase%step,phase/step);
+ if(xy.x>=p.width||xy.y>=p.height)return;
+ float3 rgb=readRGB(raw,xy.x,xy.y,p);uint channelWidth=p.scopeWidth/3;
+ if(p.scopeMode==1){uint y=uint(clamp((signalLuma(rgb,p)+.1f)/1.2f,0.0f,1.0f)*float(p.scopeHeight-1));atomic_fetch_add_explicit(bins+y*p.scopeWidth+xy.x*p.scopeWidth/p.width,1,memory_order_relaxed);}
+ else for(uint c=0;c<3;c++){uint y=uint(clamp((rgb[c]+.1f)/1.2f,0.0f,1.0f)*float(p.scopeHeight-1));atomic_fetch_add_explicit(bins+y*p.scopeWidth+c*channelWidth+xy.x*channelWidth/p.width,1,memory_order_relaxed);}
+}
+// Density population depends on x and uniform sampling metadata, never y.
+uint scopeColumnPopulation(uint x,constant Params& p){
+ uint step=max(1u,p.scopeSamplingStride),phase=p.scopeSamplingPhase%(step*step);
+ uint columns=p.scopeMode==1?p.scopeWidth:p.scopeWidth/3,column=x%columns;
+ uint low=(column*p.width+columns-1)/columns,high=((column+1)*p.width+columns-1)/columns;
+ return latticeCount(low,high,phase%step,step)*latticeCount(0,p.height,phase/step,step);
+}
+kernel void scopeImage(device const atomic_uint* bins [[buffer(0)]],constant Params& p [[buffer(1)]],texture2d<float,access::write> output [[texture(0)]],uint2 xy [[thread_position_in_grid]]){
+ if(xy.x>=p.scopeWidth||xy.y>=p.scopeHeight)return;
+ uint population=scopeColumnPopulation(xy.x,p);
+ uint columns=p.scopeMode==1?p.scopeWidth:p.scopeWidth/3;
+ float n=float(atomic_load_explicit(bins+(p.scopeHeight-1-xy.y)*p.scopeWidth+xy.x,memory_order_relaxed));
+ float v=population?1-exp(-n*p.gain*30.72f/float(population)):0;
+ float3 color=p.scopeMode==1?float3(1):xy.x<columns?float3(1,.1,.1):xy.x<2*columns?float3(.1,1,.1):float3(.1,.3,1);
+ float3 rendered=color*v;
+ if(p.flags&ScopeGraticule){bool horizontal=xy.y==0||xy.y==21||xy.y==128||xy.y==234||xy.y==255;bool vertical=p.scopeMode==1?xy.x%192==0:xy.x%64==0;if(horizontal||vertical)rendered=max(rendered,float3(.16));}
+ output.write(float4(rendered,1),xy);
+}

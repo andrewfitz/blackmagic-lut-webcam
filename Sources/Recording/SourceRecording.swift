@@ -188,6 +188,16 @@ struct SourceRecordingTelemetry: Equatable, Sendable {
   fileprivate(set) var encodedVideo: UInt64 = 0
   fileprivate(set) var droppedEncodedVideo: UInt64 = 0
   fileprivate(set) var encoderErrors: UInt64 = 0
+  fileprivate(set) var droppedVideo: UInt64 = 0
+  fileprivate(set) var droppedAudio: UInt64 = 0
+  fileprivate(set) var queueSamples = 0
+  fileprivate(set) var queueCapacity = 0
+  fileprivate(set) var encodedVideoBytes: UInt64 = 0
+  fileprivate(set) var encoderLatencyMS: Double?
+  fileprivate(set) var maxEncoderLatencyMS: Double?
+  fileprivate(set) var hardwareEncoder: Bool?
+  fileprivate(set) var encoderID: String?
+  fileprivate(set) var encoderPendingFrames = 0
   fileprivate(set) var lastError: String?
 
   var totalDrops: UInt64 {
@@ -217,6 +227,13 @@ enum SourceRecordingError: Error, Equatable, LocalizedError, Sendable {
 /// A testable boundary around AVAssetWriter. Implementations must preserve the
 /// source sample timing and must not mutate or replace the source buffers.
 struct SourceRecordingWriterTelemetry: Equatable, Sendable {
+  var failed = false
+  var encodedVideoBytes: UInt64 = 0
+  var encoderLatencyMS: Double?
+  var maxEncoderLatencyMS: Double?
+  var hardwareEncoder: Bool?
+  var encoderID: String?
+  var encoderPendingFrames = 0
   var encodedVideo: UInt64 = 0
   var droppedEncodedVideo: UInt64 = 0
   var encoderErrors: UInt64 = 0
@@ -281,6 +298,15 @@ final class SourceRecorderCore: @unchecked Sendable {
       snapshot.encodedVideo = writerSnapshot.encodedVideo
       snapshot.droppedEncodedVideo = writerSnapshot.droppedEncodedVideo
       snapshot.encoderErrors = writerSnapshot.encoderErrors
+      if writerSnapshot.failed { snapshot.state = .failed }
+      snapshot.encodedVideoBytes = writerSnapshot.encodedVideoBytes
+      snapshot.encoderLatencyMS = writerSnapshot.encoderLatencyMS
+      snapshot.maxEncoderLatencyMS = writerSnapshot.maxEncoderLatencyMS
+      snapshot.hardwareEncoder = writerSnapshot.hardwareEncoder
+      snapshot.encoderID = writerSnapshot.encoderID
+      snapshot.encoderPendingFrames = writerSnapshot.encoderPendingFrames
+      snapshot.queueSamples = pending
+      snapshot.queueCapacity = configuration.queueCapacity
       if snapshot.lastError == nil { snapshot.lastError = writerSnapshot.lastError }
       return snapshot
     }
@@ -376,7 +402,7 @@ final class SourceRecorderCore: @unchecked Sendable {
 
   private func enqueue(_ sample: CMSampleBuffer, kind: SampleKind) -> Bool {
     guard Self.isReady(sample, kind: kind) else {
-      recordDrop(.invalidSample)
+      recordDrop(.invalidSample, video: kind == .video)
       return false
     }
     let admitted = stateLock.withLock { () -> Bool in
@@ -390,6 +416,7 @@ final class SourceRecorderCore: @unchecked Sendable {
       }
       guard pending < configuration.queueCapacity else {
         telemetryValue.droppedQueueFull &+= 1
+        if kind == .video { telemetryValue.droppedVideo &+= 1 } else { telemetryValue.droppedAudio &+= 1 }
         return false
       }
       pending += 1
@@ -405,7 +432,7 @@ final class SourceRecorderCore: @unchecked Sendable {
       guard let self else { return }
       defer { self.stateLock.withLock { self.pending -= 1 } }
       guard self.stateLock.withLock({ self.telemetryValue.state != .failed }) else {
-        self.recordDrop(.notRecording)
+        self.recordDrop(.appendFailure, video: kind == .video)
         return
       }
       do {
@@ -420,6 +447,7 @@ final class SourceRecorderCore: @unchecked Sendable {
       } catch {
         let failure = Self.recordingError(error)
         self.stateLock.withLock {
+          if kind == .video { self.telemetryValue.droppedVideo &+= 1 } else { self.telemetryValue.droppedAudio &+= 1 }
           if case .writerNotReady = failure {
             self.telemetryValue.droppedWriterNotReady &+= 1
             self.telemetryValue.lastError = failure.localizedDescription
@@ -437,8 +465,12 @@ final class SourceRecorderCore: @unchecked Sendable {
 
   /// Records a rejection made before a CMSampleBuffer exists, such as an invalid
   /// Blackmagic signal flag or packet metadata.
-  func recordDrop(_ reason: SourceRecordingDropReason) {
+  func recordDrop(_ reason: SourceRecordingDropReason, video: Bool = true) {
     stateLock.withLock {
+      // Paused/stopped callbacks are intentionally ignored, not lost frames.
+      if reason != .paused && reason != .notRecording {
+        if video { telemetryValue.droppedVideo &+= 1 } else { telemetryValue.droppedAudio &+= 1 }
+      }
       switch reason {
       case .invalidSample: telemetryValue.droppedInvalidSample &+= 1
       case .queueFull: telemetryValue.droppedQueueFull &+= 1

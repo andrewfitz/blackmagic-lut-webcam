@@ -8,8 +8,14 @@ import VideoToolbox
 /// pixel buffers are handed directly to VideoToolbox; this type does not lock,
 /// copy, convert, or otherwise process image pixels.
 final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
+  typealias EncodeFrame = (VTCompressionSession, CVImageBuffer, CMTime, CMTime) -> OSStatus
   private let configuration: SourceRecordingConfiguration
+  private let encodeFrame: EncodeFrame
   private let lock = NSRecursiveLock()
+  private var pendingFrameStarts: [Int64: UInt64] = [:]
+  private static func frameKey(_ pts: CMTime) -> Int64 {
+    CMTimeConvertScale(pts, timescale: 60000, method: .default).value
+  }
   private var writer: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
   private var audioInput: AVAssetWriterInput?
@@ -34,8 +40,15 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
   private var adoptedFrameRate: RecordingFrameRate?
   private var adoptedSourceStart: CMTime?
 
-  init(configuration: SourceRecordingConfiguration) throws {
+  init(configuration: SourceRecordingConfiguration,
+    encodeFrame: @escaping EncodeFrame = { session, image, pts, duration in
+      var flags = VTEncodeInfoFlags()
+      return VTCompressionSessionEncodeFrame(session, imageBuffer: image,
+        presentationTimeStamp: pts, duration: duration, frameProperties: nil,
+        sourceFrameRefcon: nil, infoFlagsOut: &flags)
+    }) throws {
     self.configuration = configuration
+    self.encodeFrame = encodeFrame
   }
 
   /// Returns the generated track description for modes that do not depend on
@@ -69,7 +82,15 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     return nil
   }
 
-  var telemetry: SourceRecordingWriterTelemetry { lock.withLock { telemetryValue } }
+  var telemetry: SourceRecordingWriterTelemetry {
+    let result = lock.withLock { () -> SourceRecordingWriterTelemetry in
+      var result = telemetryValue
+      result.encoderPendingFrames = pendingFrameStarts.count
+      result.failed = terminalError != nil
+      return result
+    }
+    return result
+  }
 
   deinit {
     if let compressionSession {
@@ -104,7 +125,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     guard pts.isNumeric else {
       throw SourceRecordingError.unsupportedSample("A video sample has no numeric presentation time.")
     }
-    try lock.withLock {
+    let session = try lock.withLock { () -> VTCompressionSession in
       try ensureCanAppend()
       if let lastVideoPTS, CMTimeCompare(pts, lastVideoPTS) < 0 {
         throw SourceRecordingError.unsupportedSample("Video timestamps moved backwards.")
@@ -113,14 +134,21 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       guard let compressionSession else {
         throw SourceRecordingError.writerFailure("VideoToolbox compression session is unavailable.")
       }
-      var flags = VTEncodeInfoFlags()
-      let status = VTCompressionSessionEncodeFrame(compressionSession, imageBuffer: imageBuffer,
-        presentationTimeStamp: pts, duration: CMSampleBufferGetDuration(sample), frameProperties: nil,
-        sourceFrameRefcon: nil, infoFlagsOut: &flags)
-      guard status == noErr else {
-        throw SourceRecordingError.writerFailure("VideoToolbox encode failed (OSStatus \(status)).")
-      }
       lastVideoPTS = pts
+      if pendingFrameStarts.count >= 256, let oldest = pendingFrameStarts.min(by: { $0.value < $1.value })?.key {
+        pendingFrameStarts.removeValue(forKey: oldest)
+      }
+      pendingFrameStarts[Self.frameKey(pts)] = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+      return compressionSession
+    }
+    // Submission can wait for an output callback on another thread (notably
+    // remote ProRes encoders). That callback takes `lock`; holding it across
+    // EncodeFrame deadlocks both workers and every stop queued behind them.
+    // SourceRecorderCore serializes submission and finish on its writer queue.
+    let status = encodeFrame(session, imageBuffer, pts, CMSampleBufferGetDuration(sample))
+    guard status == noErr else {
+      _ = lock.withLock { pendingFrameStarts.removeValue(forKey: Self.frameKey(pts)) }
+      throw SourceRecordingError.writerFailure("VideoToolbox encode failed (OSStatus \(status)).")
     }
   }
 
@@ -236,6 +264,10 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
     } catch {
       throw SourceRecordingError.writerFailure(error.localizedDescription)
     }
+    // Commit an early playable checkpoint, then use larger fragments for
+    // sustained external-drive throughput. Set both before startWriting.
+    writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
+    writer.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
     let video = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: videoFormat)
     // Declare the exact packed 48 kHz / 24-bit source format. Passing nil
     // leaves AVAssetWriter free to choose a converter and can silently reject
@@ -346,6 +378,16 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
       VTCompressionSessionInvalidate(session)
       throw SourceRecordingError.writerFailure("VideoToolbox could not prepare the encoder (OSStatus \(prepareStatus)).")
     }
+    var hardware: Unmanaged<CFTypeRef>?
+    if VTSessionCopyProperty(session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
+      allocator: nil, valueOut: &hardware) == noErr {
+      telemetryValue.hardwareEncoder = (hardware?.takeRetainedValue() as? NSNumber)?.boolValue
+    }
+    var encoderID: Unmanaged<CFTypeRef>?
+    if VTSessionCopyProperty(session, key: kVTCompressionPropertyKey_EncoderID,
+      allocator: nil, valueOut: &encoderID) == noErr {
+      telemetryValue.encoderID = encoderID?.takeRetainedValue() as? String
+    }
     compressionSession = session
   }
 
@@ -388,6 +430,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
 
   fileprivate func recordEncoderFailure(status: OSStatus) {
     lock.withLock {
+      pendingFrameStarts.removeAll(keepingCapacity: true)
       telemetryValue.droppedEncodedVideo &+= 1
       telemetryValue.encoderErrors &+= 1
       let message = status == noErr
@@ -409,6 +452,11 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           throw SourceRecordingError.unsupportedSample("VideoToolbox returned a sample without a format description.")
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        if let submitted = pendingFrameStarts.removeValue(forKey: Self.frameKey(pts)) {
+          let latency = Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - submitted) / 1_000_000
+          telemetryValue.encoderLatencyMS = telemetryValue.encoderLatencyMS.map { $0 * 0.9 + latency * 0.1 } ?? latency
+          telemetryValue.maxEncoderLatencyMS = max(telemetryValue.maxEncoderLatencyMS ?? 0, latency)
+        }
         if adoptedFrameRate == nil {
           adoptedFrameRate = Self.matchingFrameRate(CMSampleBufferGetDuration(sample))
         }
@@ -437,6 +485,7 @@ final class AVAssetSourceRecordingWriter: SourceRecordingWriter {
           throw Self.writerError(writer, fallback: "Video sample append failed.")
         }
         telemetryValue.encodedVideo &+= 1
+        telemetryValue.encodedVideoBytes &+= UInt64(CMSampleBufferGetTotalSampleSize(sample))
         try appendTimecode(for: pts)
         if let audioInput {
           while let pendingAudio = self.pendingAudio.first {

@@ -8,20 +8,15 @@ import XCTest
     })
   }
 
-  func testMissingIdentifiersRequireLocalCompilationAndVerifiedProcess() {
+  func testMissingIdentifiersRequireVerifiedProcess() {
     for identifier: String? in [nil, "unknown"] {
       var checkedPID: pid_t?
       let allowed = CameraProducerAuthorization.allows(signingID: identifier, pid: 123) { pid in
         checkedPID = pid
         return true
       }
-#if ULTRACAM_LOCAL_DEVELOPMENT
       XCTAssertTrue(allowed)
       XCTAssertEqual(checkedPID, 123)
-#else
-      XCTAssertFalse(allowed)
-      XCTAssertNil(checkedPID, "Production never consults a local-process override")
-#endif
     }
   }
 

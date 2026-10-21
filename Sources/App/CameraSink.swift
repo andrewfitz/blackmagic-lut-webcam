@@ -319,11 +319,14 @@ final class CameraSink {
   private var negotiatedFormat: CMVideoFormatDescription?
   private var negotiatedDuration: CMTime?
   private var stager = CameraFrameStager()
+  private let registrySnapshot: () -> VirtualCameraRegistrySnapshot?
   let route: CameraSinkRoute
 
-  init(bufferQueue: CameraBufferQueue? = nil, route: CameraSinkRoute = .legacy) {
+  init(bufferQueue: CameraBufferQueue? = nil, route: CameraSinkRoute = .legacy,
+    registrySnapshot: @escaping () -> VirtualCameraRegistrySnapshot? = { VirtualCameraRegistryStore().load() }) {
     queue = bufferQueue
     self.route = route
+    self.registrySnapshot = registrySnapshot
   }
 
   convenience init(bufferQueue: CameraBufferQueue? = nil, feedID: FeedID?) {
@@ -338,6 +341,9 @@ final class CameraSink {
 
   func connect(configuration: PipelineConfiguration, passthroughFormat: OSType) throws {
     disconnect()
+    if let desired = registrySnapshot() {
+      try VirtualCameraRegistryTransport.synchronize(desired)
+    }
     // Software camera devices are hidden from legacy CMIO clients by default.
     var address = CMIOObjectPropertyAddress(
       mSelector: UInt32(kCMIOHardwarePropertyAllowScreenCaptureDevices),
@@ -345,7 +351,7 @@ final class CameraSink {
     var allow: UInt32 = 1
     try check(CMIOObjectSetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &address,
       0, nil, UInt32(MemoryLayout.size(ofValue: allow)), &allow), "Enable software camera discovery")
-    for id in try ids(CMIOObjectID(kCMIOObjectSystemObject), selector: kCMIOHardwarePropertyDevices) {
+    for id in try discoverDevices() {
       guard try string(id, selector: kCMIODevicePropertyDeviceUID) == route.deviceUID else { continue }
       let streams = try ids(id, selector: kCMIODevicePropertyStreams)
       let format = try VideoContract.formatDescription(width: configuration.width, height: configuration.height,
@@ -400,6 +406,29 @@ final class CameraSink {
       return
     }
     throw VideoError.message("Install and approve the Ultracam camera extension, then reconnect.")
+  }
+
+  private func discoverDevices() throws -> [CMIOObjectID] {
+    // The registry acknowledgement precedes CMIO's topology notification.
+    // Wait only during connection, waking when the new device is published.
+    let system = CMIOObjectID(kCMIOObjectSystemObject)
+    let changed = DispatchSemaphore(value: 0)
+    var property = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIOHardwarePropertyDevices),
+      mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
+    let listener: CMIOObjectPropertyListenerBlock = { _, _ in changed.signal() }
+    let status = CMIOObjectAddPropertyListenerBlock(system, &property, .global(), listener)
+    defer {
+      if status == noErr { _ = CMIOObjectRemovePropertyListenerBlock(system, &property, .global(), listener) }
+    }
+    let deadline = DispatchTime.now() + .seconds(3)
+    repeat {
+      let devices = try ids(system, selector: kCMIOHardwarePropertyDevices)
+      if try devices.contains(where: { try string($0, selector: kCMIODevicePropertyDeviceUID) == route.deviceUID }) {
+        return devices
+      }
+      guard status == noErr, changed.wait(timeout: deadline) == .success else { return [] }
+    } while DispatchTime.now() < deadline
+    return []
   }
 
   func send(_ sample: CMSampleBuffer) throws -> Bool {

@@ -4,30 +4,47 @@ import CoreVideo
 import IOKit.audio
 import Foundation
 import os
-#if ULTRACAM_LOCAL_DEVELOPMENT
 import Security
-#endif
 
 enum CameraProducerAuthorization {
   static let identifier = "org.ultracam.app"
 
   static func allows(signingID: String?, pid: pid_t, verifyLocalProcess: (pid_t) -> Bool) -> Bool {
     if signingID == identifier { return true }
-#if ULTRACAM_LOCAL_DEVELOPMENT
-    // CMIO reports the literal "unknown" for an ad-hoc producer on macOS 27.
-    // Verify that particular running process instead of trusting the placeholder.
+    // CMIO can report "unknown" even for an Apple-signed host. Verify the
+    // running process rather than trusting this placeholder.
     guard signingID == nil || signingID == "unknown", pid > 0 else { return false }
     return verifyLocalProcess(pid)
-#else
-    return false
-#endif
   }
 
-#if ULTRACAM_LOCAL_DEVELOPMENT
   static func verifyRunningProcess(pid: pid_t, reportPhase: (String) -> Void = { _ in }) -> OSStatus {
     guard pid > 0 else { return errSecParam }
     var requirement: SecRequirement?
-    let creation = SecRequirementCreateWithString("identifier \"\(identifier)\"" as CFString, [], &requirement)
+    let expression: String
+#if ULTRACAM_LOCAL_DEVELOPMENT
+    expression = "identifier \"\(identifier)\""
+#else
+    // Bind the fallback to our own Apple signing team. An unrelated app using
+    // the same bundle identifier must not acquire a producer lease.
+    var ownCode: SecCode?
+    var ownStaticCode: SecStaticCode?
+    var signingInfo: CFDictionary?
+    reportPhase("extension signing team")
+    let ownStatus = SecCodeCopySelf([], &ownCode)
+    guard ownStatus == errSecSuccess, let ownCode else { return ownStatus }
+    let staticStatus = SecCodeCopyStaticCode(ownCode, [], &ownStaticCode)
+    guard staticStatus == errSecSuccess, let ownStaticCode else { return staticStatus }
+    let infoStatus = SecCodeCopySigningInformation(ownStaticCode,
+      SecCSFlags(rawValue: kSecCSSigningInformation), &signingInfo)
+    guard infoStatus == errSecSuccess,
+      let info = signingInfo as? [String: Any],
+      let team = info[kSecCodeInfoTeamIdentifier as String] as? String,
+      !team.isEmpty, team.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
+      return infoStatus == errSecSuccess ? errSecCSReqFailed : infoStatus
+    }
+    expression = "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(team)\""
+#endif
+    let creation = SecRequirementCreateWithString(expression as CFString, [], &requirement)
     reportPhase("identifier requirement")
     guard creation == errSecSuccess, let requirement else { return creation == errSecSuccess ? errSecParam : creation }
     var code: SecCode?
@@ -45,7 +62,6 @@ enum CameraProducerAuthorization {
     reportPhase("running signature verification")
     return SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement)
   }
-#endif
 }
 
 typealias CameraSampleCompletion = @Sendable (CMSampleBuffer?, UInt64,
@@ -504,6 +520,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     pendingRemoval.remove(runtime.descriptor.id)
     if let provider { try? provider.removeDevice(runtime.device) }
     runtimes.removeValue(forKey: runtime.descriptor.id)
+    descriptors.removeAll { $0.id == runtime.descriptor.id }
   }
 
   /// Reconcile one complete, validated registry snapshot. Existing runtimes
@@ -519,6 +536,8 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
 
   @discardableResult
   private func reconcileOnQueue(_ candidate: VirtualCameraRegistrySnapshot) throws -> VirtualCameraRegistrySnapshot {
+    // A property retry may arrive after the acknowledgement was lost.
+    if candidate == snapshot { return snapshot }
     let next = try snapshot.applying(candidate)
     let nextDescriptors = next.devices.filter(\.enabled)
     let nextIDs = Set(nextDescriptors.map(\.id))
@@ -541,6 +560,9 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     descriptors = nextDescriptors + descriptors.filter { descriptor in
       pendingRemoval.contains(descriptor.id) && !nextIDs.contains(descriptor.id)
     }
+    provider?.notifyPropertiesChanged([VirtualCameraRegistryWire.property:
+      CMIOExtensionPropertyState(value: try VirtualCameraRegistryWire.encode(next) as NSString,
+        attributes: nil)])
     return next
   }
 
@@ -548,7 +570,7 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
     _ = try reconcile(candidate)
   }
 
-  var availableProperties: Set<CMIOExtensionProperty> { [.providerManufacturer] }
+  var availableProperties: Set<CMIOExtensionProperty> { [.providerManufacturer, VirtualCameraRegistryWire.property] }
   func connect(to client: CMIOExtensionClient) throws {}
   func disconnect(from client: CMIOExtensionClient) {
     for runtime in runtimes.values { runtime.disconnect(from: client) }
@@ -556,9 +578,22 @@ final class CameraProvider: NSObject, CMIOExtensionProviderSource, @unchecked Se
   func providerProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionProviderProperties {
     let result = CMIOExtensionProviderProperties(dictionary: [:])
     result.manufacturer = "Ultracam"
+    result.setPropertyState(CMIOExtensionPropertyState(
+      value: try VirtualCameraRegistryWire.encode(snapshot) as NSString,
+      attributes: CMIOExtensionPropertyAttributes(minValue: nil, maxValue: nil, validValues: nil, readOnly: false)),
+      forProperty: VirtualCameraRegistryWire.property)
     return result
   }
-  func setProviderProperties(_ properties: CMIOExtensionProviderProperties) throws {}
+  func setProviderProperties(_ properties: CMIOExtensionProviderProperties) throws {
+    guard let state = properties.propertiesDictionary[VirtualCameraRegistryWire.property] else { return }
+    guard let text = state.value as? String else {
+      throw VideoError.message("The virtual-camera registry must be a JSON string.")
+    }
+    let candidate = try VirtualCameraRegistryWire.decode(text)
+    // Reconciliation validates schema, deterministic identities, app group
+    // and monotonic generation before changing any published device.
+    _ = try reconcile(candidate)
+  }
 
   func setProperties(index: Int?, frameDuration: CMTime?, fromProducer: Bool = false) throws {
     try legacyRuntime.setProperties(index: index, frameDuration: frameDuration, fromProducer: fromProducer)
@@ -657,16 +692,12 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource, @unchecked Sendab
       var verificationStatus: Int32?
       var verificationPhase = "unavailable"
       let allowed = CameraProducerAuthorization.allows(signingID: client.signingID, pid: client.pid) { pid in
-#if ULTRACAM_LOCAL_DEVELOPMENT
         let status = CameraProducerAuthorization.verifyRunningProcess(pid: pid) { verificationPhase = $0 }
         verificationStatus = status
         return status == errSecSuccess
-#else
-        return false
-#endif
       }
       guard allowed else {
-        let detail = verificationStatus.map { "; local signature verification status=\($0), phase=\(verificationPhase)" } ?? ""
+        let detail = verificationStatus.map { "; signature verification status=\($0), phase=\(verificationPhase)" } ?? ""
         logAuthorizationRejection(client, reason: "producer signing identifier does not match\(detail)")
         return false
       }

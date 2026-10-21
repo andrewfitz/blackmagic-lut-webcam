@@ -1,0 +1,202 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ultracam mockup · C · Utility</title>
+<link rel="stylesheet" href="kit.css"><script src="kit.js"></script>
+<style>
+  .win { left: 40px; top: 80px; width: 1090px; height: 804px; }
+  .tbl { position: absolute; left: 16px; right: 16px; top: 64px; border-radius: 12px; background: var(--fill); overflow: hidden; }
+  .tr { display: grid; grid-template-columns: 26px 1.25fr 1.15fr 1.25fr 1.1fr 1.15fr 52px 150px; align-items: center; gap: 10px;
+    padding: 0 12px; height: 46px; font-size: 12.5px; position: relative; }
+  .tr + .tr::before { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 0.5px; background: var(--sep); }
+  .tr.head { height: 30px; font-size: 11px; font-weight: 600; color: var(--label2); background: rgba(255,255,255,0.03); }
+  .tr.sel { background: rgba(10,132,255,0.28); }
+  .tr.sel::before, .tr.sel + .tr::before { display: none; }
+  .tr small { display: block; font-size: 11px; color: var(--label2); }
+  .chips { display: flex; gap: 3px; }
+  .chips span { width: 20px; height: 18px; border-radius: 5px; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    background: var(--fill2); color: var(--label3); }
+  .chips span.on { background: rgba(10,132,255,0.35); color: #9ccbff; }
+  .detail { position: absolute; left: 16px; right: 16px; top: 266px; bottom: 44px; display: grid; grid-template-columns: 1fr 470px; gap: 16px; }
+  .statusbar { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; display: flex; align-items: center; gap: 16px; padding: 0 18px;
+    font-size: 11.5px; color: var(--label2); border-top: 0.5px solid var(--sep); background: rgba(255,255,255,0.02); }
+  .effects-h { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px 11px; }
+  .effects-h > div { display: flex; flex-direction: column; gap: 4px; }
+  .effects-h b { font-weight: 500; display: flex; gap: 7px; align-items: center; }
+  .effects-h small { font-size: 11px; color: var(--label2); padding-left: 22px; }
+</style></head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <div class="left"><span class="apple"></span><b>Ultracam</b><span>File</span><span>Edit</span><span>Feed</span><span>Record</span><span>View</span><span>Window</span><span>Help</span></div>
+    <div class="right">
+      <div class="extra open"><i data-i="videofill"></i></div>
+      <i data-i="wifi"></i><i data-i="battery" class="lg"></i><i data-i="search"></i><i data-i="cc"></i>
+      <span>Tue Oct 20&nbsp;&nbsp;9:41 AM</span>
+    </div>
+  </div>
+  <div class="tag">C · Utility: native menu first, control-room table window</div>
+
+  <div class="window win">
+    <div class="toolbar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="title" style="margin-left:14px"><b>Ultracam</b><small>3 cameras · Program</small></div>
+      <div class="flex"></div>
+      <div class="tabs glass" style="width:410px; background: rgba(255,255,255,0.06)">
+        <div class="on"><i data-i="video" class="sm"></i>Cameras</div>
+        <div><i data-i="program" class="sm"></i>Program</div>
+        <div><i data-i="recordring" class="sm"></i>Recording</div>
+        <div><i data-i="scope" class="sm"></i>Monitor</div>
+      </div>
+      <div class="flex"></div>
+      <div class="tb-group glass"><div class="tb-btn"><i data-i="plus"></i></div></div>
+      <div class="tb-prominent red" style="height:34px"><i data-i="record" class="sm"></i>Record All</div>
+    </div>
+
+    <div class="tbl">
+      <div class="tr head"><span></span><span>Camera</span><span>Status</span><span>Input → Output</span><span>Effects</span><span>LUT</span><span>Auto</span><span>Recording</span></div>
+      <div class="tr sel">
+        <span class="dot green"></span>
+        <span><b style="font-weight:600">Feed 1</b><small>Mini Recorder 12G</small></span>
+        <span>Live<small class="cr">On air · Program</small></span>
+        <span class="mono" style="font-size:11px">2160p59.94<small class="mono" style="font-size:11px">→ 1080p29.97 NV12</small></span>
+        <span class="chips"><span class="on">1</span><span class="on">2</span><span class="on">3</span><span>4</span></span>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">FX3_SLog3_to_709<small>S-Gamut3.Cine</small></span>
+        <span><div class="switch sm on"></div></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="btn icon red"><i data-i="stop" class="sm"></i></span><span class="tnum">12:31<small>18.4 GB · 0 drops</small></span></span>
+      </div>
+      <div class="tr">
+        <span class="dot green"></span>
+        <span><b style="font-weight:600">Feed 2</b><small>UltraStudio 4K Mini</small></span>
+        <span>Live<small class="cg">Next cut</small></span>
+        <span class="mono" style="font-size:11px">2160p29.97<small class="mono" style="font-size:11px">→ 1080p29.97 NV12</small></span>
+        <span class="chips"><span>1</span><span class="on">2</span><span class="on">3</span><span>4</span></span>
+        <span class="c2">None<small>Optional</small></span>
+        <span><div class="switch sm on"></div></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="btn icon cr"><i data-i="record" class="sm"></i></span><span class="c2">Not recording</span></span>
+      </div>
+      <div class="tr">
+        <span class="dot"></span>
+        <span><b style="font-weight:600" class="c2">Feed 3</b><small>DeckLink Mini 4K</small></span>
+        <span class="c2">Waiting for HDMI<small>No supported signal</small></span>
+        <span class="c3">—</span>
+        <span class="chips"><span>1</span><span class="on">2</span><span class="on">3</span><span>4</span></span>
+        <span class="c2">None</span>
+        <span><div class="switch sm"></div></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="btn icon c3"><i data-i="record" class="sm"></i></span><span class="c3">—</span></span>
+      </div>
+    </div>
+
+    <div class="detail">
+      <div style="overflow:hidden">
+        <div class="form-h" style="padding-top:2px"><span style="font-size:13px;color:var(--label);font-weight:700">Feed 1</span><span style="display:flex;gap:8px;align-items:center;font-weight:500">Processing<div class="switch sm on"></div></span></div>
+        <div class="form">
+          <div class="effects-h">
+            <div><b><div class="check on"></div>1 · LUT</b><small>Loaded .cube</small></div>
+            <div><b><div class="check on"></div>2 · Downscale</b><small>1080p Lanczos-3</small></div>
+            <div><b><div class="check on"></div>3 · Color</b><small>4:2:0 8-bit</small></div>
+            <div><b><div class="check"></div>4 · Frame rate</b><small>Limit 29.97</small></div>
+          </div>
+        </div>
+        <div class="note cg" style="display:flex;gap:5px;align-items:center;padding-bottom:4px"><i data-i="check" class="sm"></i>Effects active</div>
+        <div class="form-h">Source</div>
+        <div class="form">
+          <div class="row"><span class="lbl">Capture input</span><span class="popup">UltraStudio Mini Recorder 12G<span class="chev"><i data-i="chevud" class="sm"></i></span></span><span class="btn icon"><i data-i="refresh" class="sm"></i></span></div>
+          <div class="row"><span class="lbl">LUT</span><i data-i="cube" class="c2"></i><span class="c2" style="font-size:12px">FX3_SLog3_to_709.cube</span><span class="btn">Change…</span></div>
+          <div class="row"><span class="lbl">LUT input</span><span class="popup plain">S-Gamut3.Cine / S-Log3<span class="chev"><i data-i="chevud" class="sm"></i></span></span></div>
+          <div class="row"><span class="lbl">Start when camera is in use<small>Zoom started this feed</small></span><div class="switch on"></div></div>
+        </div>
+        <div class="form-h">Recording folder</div>
+        <div class="form">
+          <div class="row"><i data-i="folder" class="c2"></i><span class="lbl" style="font-size:12px">/Volumes/8TB/Takes/Feed 1<small>Default folder · ProRes 422 10-bit · PC time</small></span><span class="btn">Change…</span></div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <div class="picture" data-scene="mcu" style="height:264px; border-radius:12px">
+          <div class="overlay" style="left:10px; top:10px;"><div class="pill sm glass">Feed 1 · Processed Output<i data-i="chevud" class="sm"></i></div></div>
+          <div class="overlay" style="right:10px; top:10px;"><div class="pill sm glass"><span class="dot red"></span>REC 12:31</div></div>
+          <div class="overlay" style="right:10px; bottom:10px;"><div class="pill sm glass"><i data-i="detach" class="sm"></i>Open Monitor</div></div>
+        </div>
+        <div class="form">
+          <div class="row"><span class="lbl">Timecode</span><span class="val mono">14:22:31:12</span></div>
+          <div class="row"><span class="lbl">Audio · 2 ch 48 kHz</span>
+            <div style="width:180px; display:flex; flex-direction:column; gap:3px">
+              <div class="meter">L<div class="bar"><i style="width:64%"></i><b style="left:78%"></b></div><span class="tnum">−9.8</span></div>
+              <div class="meter">R<div class="bar"><i style="width:60%"></i><b style="left:74%"></b></div><span class="tnum">−11.2</span></div>
+            </div></div>
+          <div class="row"><span class="lbl">Delivered</span><span class="val mono">29.97 fps · 4.1 ms · 0 drops</span></div>
+          <div class="row"><span class="lbl c2" style="display:flex;gap:6px;align-items:center"><i data-i="chevr" class="sm"></i>Diagnostics</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="statusbar tnum">
+      <span style="display:flex;gap:6px;align-items:center" class="cg"><i data-i="camlink" class="sm"></i>Virtual camera in use by Zoom</span>
+      <span>Program: Feed 1 · Auto (natural talking head)</span>
+      <span style="margin-left:auto">CPU 38.2% · GPU (video) 21.5% · Memory 1.24 GB</span>
+    </div>
+  </div>
+
+  <!-- ================= Native menu ================= -->
+  <div class="menu glass" style="left: 1430px; top: 36px; width: 314px; background: rgba(40,40,44,0.72);">
+    <div class="mi dis" style="height:40px"><span class="ck"></span><span class="dot green" style="margin:0 5px"></span>
+      <span style="display:flex;flex-direction:column;line-height:1.2"><b style="color:var(--label);font-weight:600">Live · Program</b><small style="margin:0">Feed 1 on air · Zoom connected</small></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Feed<span class="key">⌘↩</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Start When Camera Is in Use</div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="layers" class="sm"></i></span>Processing<span class="key">⇧⌘B</span></div>
+    <div class="msep"></div>
+    <div class="mh">Cameras</div>
+    <div class="mi hl"><span class="ck"></span><span class="ico"><span class="dot red" style="box-shadow:none"></span></span>Feed 1<small>Recording 12:31</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot green" style="box-shadow:none"></span></span>Feed 2<small>Live</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><span class="dot"></span></span>Feed 3<small>Waiting for HDMI</small><span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mh">Program</div>
+    <div class="mi"><span class="ck">●</span><span class="ico"><i data-i="program" class="sm"></i></span>Feed 1<span class="key">⌃1</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Feed 2<small class="cg">next</small><span class="key">⌃2</span></div>
+    <div class="mi dis"><span class="ck"></span><span class="ico"></span>Feed 3<span class="key">⌃3</span></div>
+    <div class="mi"><span class="ck">✓</span><span class="ico"><i data-i="auto" class="sm"></i></span>Automatic Switching<span class="sub"><i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="record" class="sm" style="color:var(--red)"></i></span>Record All<span class="key">⌥⌘R</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop All Recordings<span class="key">⌥⌘.</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="eye" class="sm"></i></span>Show Preview…</div>
+    <div class="msep"></div>
+    <div class="mi dis tnum" style="font-size:12px"><span class="ck"></span><span class="ico"><i data-i="cpu" class="sm"></i></span>CPU 38% · GPU 22% · 1.24 GB</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="sidebar" class="sm"></i></span>Open Ultracam</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="gear" class="sm"></i></span>Settings…<span class="key">⌘,</span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>Quit Ultracam<span class="key">⌘Q</span></div>
+  </div>
+
+  <!-- submenu for Feed 1, opening to the left near the screen edge -->
+  <div class="menu glass" style="left: 1138px; top: 196px; width: 284px; background: rgba(40,40,44,0.8);">
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="pause" class="sm"></i></span>Pause Recording</div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="stop" class="sm"></i></span>Stop Recording</div>
+    <div class="msep"></div>
+    <div class="mh">Effects</div>
+    <div class="mi"><span class="ck">✓</span>1 · LUT<small>FX3_SLog3_to_709</small></div>
+    <div class="mi"><span class="ck">✓</span>2 · Downscale to 1080p</div>
+    <div class="mi"><span class="ck">✓</span>3 · Color 4:2:0 8-bit</div>
+    <div class="mi"><span class="ck"></span>4 · Limit to 29.97 fps</div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="cube" class="sm"></i></span>Load LUT…</div>
+    <div class="mi"><span class="ck"></span><span class="ico"></span>LUT Input<span class="sub" style="font-size:12px">S-Gamut3.Cine<i data-i="chevr" class="sm"></i></span></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="video" class="sm"></i></span>Capture Input<span class="sub" style="font-size:12px">Mini Recorder 12G<i data-i="chevr" class="sm"></i></span></div>
+    <div class="msep"></div>
+    <div class="mi"><span class="ck"></span><span class="ico"><i data-i="detach" class="sm"></i></span>Open Monitor Window</div>
+  </div>
+
+  <div class="callout" style="left: 1408px; top: 548px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 1112px; top: 210px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 404px; top: 64px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 30px; top: 196px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 662px; top: 396px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 46px; top: 838px;"><span class="n">6</span></div>
+  <div class="legend">
+    <div><span class="n">1</span>The menu bar item is a real native menu (MenuBarExtra .menu style): standard keyboard navigation, checkmarks and shortcuts, and no custom panel to maintain.</div>
+    <div><span class="n">2</span>Each camera gets a submenu: recording, the ordered effects as checkable items, LUT, input, and a monitor window.</div>
+    <div><span class="n">3</span>The window uses macOS 27 tabs: Cameras · Program · Recording · Monitor. Each tab is a focused page instead of one long scroll.</div>
+    <div><span class="n">4</span>A Table shows every camera at a glance: status, formats, effect chips, LUT, auto start and recording. No thumbnails, so no extra renderers.</div>
+    <div><span class="n">5</span>Detail for the selected row: grouped Form on the left, and the one native preview on the right with its own feed picker. Monitor tools move to Monitor windows.</div>
+    <div><span class="n">6</span>The status bar carries virtual camera, Program and app resource totals.</div>
+  </div>
+</div>
+</body></html>

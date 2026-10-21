@@ -1,0 +1,42 @@
+/* Round 3: session sidebar (V1) + collapsible channel strips (V2), Program as tally. */
+
+.desktop { height: 1170px; }
+.content3 { position: absolute; left: 252px; right: 8px; top: 64px; bottom: 46px; }
+.content3.nosb { left: 8px; }
+.cols2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; height: 100%; }
+.col3 { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.col3 > .picture { border-radius: 14px; flex: none; aspect-ratio: 16 / 9; }
+
+/* Program tally on the picture itself */
+.onair::after, .next::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 3; pointer-events: none; }
+.onair::after { box-shadow: inset 0 0 0 4px var(--red), inset 0 0 24px rgba(255,69,58,0.35); }
+.next::after { box-shadow: inset 0 0 0 3px rgba(48,209,88,0.9); }
+.role { height: 24px; padding: 0 10px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; }
+.role.air { background: rgba(255,69,58,0.92); color: #fff; }
+.role.nxt { background: rgba(48,209,88,0.9); color: #05230e; }
+.kk { width: 20px; height: 20px; border-radius: 6px; background: rgba(0,0,0,0.45); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; }
+
+/* Channel strip */
+.strip3 { border-radius: 14px; background: var(--fill); padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 8px; flex: none; }
+.strip3 .r { display: flex; align-items: center; gap: 10px; min-height: 22px; font-size: 12px; white-space: nowrap; }
+.strip3 .sep3 { height: 0.5px; background: var(--sep); }
+.strip3 .chev { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; color: var(--label2); flex: none; }
+.strip3 .elapsed { font: 600 20px/1 var(--mono); }
+.strip3.collapsed { padding: 7px 10px; }
+.strip3.collapsed .r { gap: 9px; }
+.minimeter { width: 54px; display: flex; flex-direction: column; gap: 2px; }
+.minimeter .bar { height: 3px; }
+.scope3 { flex: 1; border-radius: 12px; background: var(--fill); padding: 7px 10px 9px; display: flex; flex-direction: column; gap: 5px; min-height: 0; }
+.scope3 canvas { flex: 1; width: 100%; border-radius: 6px; min-height: 0; }
+
+/* Session sidebar */
+.sb3 { width: 236px; bottom: 38px !important; background: rgba(48,48,52,0.6) !important; padding-top: 50px !important; overflow: hidden; }
+.sb3 .mini-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+.sb3 .mini-row small { font-size: 10.5px; color: var(--label2); display: block; }
+.sb3 .side-h { padding-top: 10px; }
+.sb3 .take { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 9px; font-size: 11.5px; }
+.sb3 .take small { font-size: 10px; color: var(--label2); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+
+.popover3 { position: absolute; z-index: 12; width: 300px; border-radius: 18px; padding: 12px; background: rgba(38,38,42,0.86); }
+.popover3::before { content: ""; position: absolute; bottom: -8px; right: 22px; width: 16px; height: 16px; transform: rotate(45deg);
+  background: rgba(44,44,48,0.95); border-right: 0.5px solid var(--glass-edge); border-bottom: 0.5px solid var(--glass-edge); }
