@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="../kit.css"><link rel="stylesheet" href="../r2/r2.css"><link rel="stylesheet" href="r4.css">
 <script src="../kit.js"></script><script src="r4.js"></script>
 <style>
-  .desktop { height: 1420px; }
+  .desktop { height: 1480px; }
   .frame { position: absolute; overflow: visible; }
   .frame .scaler { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   .frame .window { left: 0 !important; top: 0 !important; }
@@ -13,11 +13,11 @@
   .content3.flexcol .cols2 { height: auto; flex: none; }
   .cuts { border-radius: 12px; background: var(--fill); padding: 9px 12px; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
   .cuts .row { min-height: 28px; font-size: 11.5px; }
-  .trunc-board { position: absolute; left: 40px; top: 790px; width: 940px; border-radius: 18px; padding: 16px 18px 18px; background: rgba(20,20,22,0.72);
+  .trunc-board { position: absolute; left: 744px; top: 794px; width: 976px; border-radius: 18px; padding: 16px 18px 18px; background: rgba(20,20,22,0.72);
     box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14), 0 20px 50px rgba(0,0,0,0.4); backdrop-filter: blur(20px); }
   .trunc-board h3 { margin: 0 0 10px; font-size: 13px; }
-  .trunc-grid { display: grid; grid-template-columns: 560px 1fr; gap: 22px; align-items: start; }
-  .tt { display: inline-block; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .trunc-grid { display: grid; grid-template-columns: 640px 1fr; gap: 22px; align-items: start; }
+  .tt { display: inline-block; max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
   .ovmenu { position: absolute; width: 230px; z-index: 30; }
   html.light .flabel { color: #111; text-shadow: none; }
   html.light .flabel small { color: rgba(0,0,0,0.6); }
@@ -37,34 +37,34 @@
   <div class="flabel" style="left:1040px; top:94px">13" default · 1280 × 800<small>collapsed strips · drawn at 53.5%</small></div>
   <div class="frame" id="fB" style="left:1040px; top:118px"></div>
 
-  <div class="flabel" style="left:1040px; top:582px">Minimum · 980 × 680<small>sidebar hidden · overflow » · drawn at 69%</small></div>
-  <div class="frame" id="fA" style="left:1040px; top:606px"></div>
+  <div class="flabel" style="left:40px; top:770px">Minimum · 980 × 680<small>sidebar hidden · overflow » · drawn at 69%</small></div>
+  <div class="frame" id="fA" style="left:40px; top:794px"></div>
 
-  <div class="trunc-board glass" style="top:810px">
+  <div class="trunc-board glass">
     <h3>Long camera names at 1:1 · "Interview A-cam — Sony FX3 with very long name"</h3>
     <div class="trunc-grid">
       <div style="display:flex; flex-direction:column; gap:10px" id="truncL"></div>
       <div style="display:flex; flex-direction:column; gap:10px">
         <div class="col3" style="width:100%" id="truncPic"></div>
         <ul class="l" style="margin:0; padding-left:18px; font-size:12px; line-height:1.45">
-          <li>Strip header and collapsed row: <b>middle</b> truncation keeps the start and the end ("Interview A-cam…ery long name"); the full name is in the tooltip and the ⋯ menu's Rename.</li>
-          <li>Picture pill: <b>tail</b> truncation at 168 pt so the tally badge never moves.</li>
+          <li>Strip header and collapsed row: <b>middle</b> truncation keeps the start and the end ("Interview A-cam…ery long name", tighter in the collapsed row); the full name is in the tooltip and the ⋯ menu's Rename.</li>
+          <li>Picture pill: <b>tail</b> truncation so the tally badge never moves (104 pt at this width).</li>
           <li>Menus and Settings show the full name; the virtual camera is published as "Ultracam · " + full name.</li>
         </ul>
       </div>
     </div>
   </div>
 
-  <div class="callout" style="left: 60px; top: 160px;"><span class="n">1</span></div>
-  <div class="callout" style="left: 1060px; top: 230px;"><span class="n">2</span></div>
-  <div class="callout" style="left: 1620px; top: 616px;"><span class="n">3</span></div>
-  <div class="callout" style="left: 1060px; top: 730px;"><span class="n">4</span></div>
-  <div class="callout" style="left: 24px; top: 852px;"><span class="n">5</span></div>
+  <div class="callout" style="left: 14px; top: 170px;"><span class="n">1</span></div>
+  <div class="callout" style="left: 1014px; top: 230px;"><span class="n">2</span></div>
+  <div class="callout" style="left: 600px; top: 784px;"><span class="n">3</span></div>
+  <div class="callout" style="left: 60px; top: 1150px;"><span class="n">4</span></div>
+  <div class="callout" style="left: 730px; top: 784px;"><span class="n">5</span></div>
   <div class="legend r2">
     <div><span class="n">1</span><span>Full screen: sidebar, expanded strips and scopes all fit. Pictures grow with the column (728 pt), and the inspector (⌥⌘I) can open without collapsing anything.</span></div>
     <div><span class="n">2</span><span>13" default (1280 × 800): sidebar stays, strips open collapsed so both 16:9 pictures and their scopes fit without scrolling. Expanding one strip pushes only its own scope down.</span></div>
     <div><span class="n">3</span><span>Minimum 980 × 680: below 1100 pt the sidebar hides behind its toggle; toolbar labels never wrap, cut buttons shrink to numbers and low-priority items move to the » overflow menu (layout, collapse, Stop Cameras, inspector).</span></div>
-    <div><span class="n">4</span><span>At minimum size strips are collapsed and the status bar drops the resources segment; Recent Cuts fills the space instead of scopes, so the window stays calm.</span></div>
+    <div><span class="n">4</span><span>At minimum size strips are collapsed, their effect chips move into the ⋯ menu (below ~500 pt), and the status bar drops the resources segment; Recent Cuts fills the space instead of scopes, so the window stays calm.</span></div>
     <div><span class="n">5</span><span>Long names truncate in the middle in strips and at the tail in picture pills. Full names appear in tooltips, menus, Settings and the published camera name.</span></div>
   </div>
 </div>
@@ -101,6 +101,7 @@
       <div class="col3">${tile(CAMS.c2, {})}${strip(CAMS.c2, { expanded: false })}${scope('parade', 'wide', 'Output')}</div>
     </div></div>` + statusbar({ mode: 'program' }));
 
+  const noChips = (html) => html.replace(/<div class="fx4 sm[^"]*">[\s\S]*?<\/div>/, '');
   // A · Minimum 980 × 680: sidebar hidden, compact toolbar with overflow, compact status bar.
   const kk = (n, air) => `<span class="kk" style="width:16px;height:16px;font-size:10px;${air ? 'background:rgba(255,255,255,0.25)' : ''}">${n}</span>`;
   const tbMin = `<div class="toolbar" style="left:8px; right:8px; padding-left:18px;">
@@ -126,18 +127,18 @@
   frame('fA', 980, 680, 0.69,
     tbMin +
     `<div class="content3 nosb flexcol"><div class="cols2">
-      <div class="col3">${tile(CAMS.c1, { role: 'air', selected: true })}${strip(CAMS.c1, { expanded: false, role: 'air', selected: true })}</div>
-      <div class="col3">${tile(CAMS.c2, {})}${strip(CAMS.c2, { expanded: false })}</div>
+      <div class="col3">${tile(CAMS.c1, { role: 'air', selected: true })}${noChips(strip(CAMS.c1, { expanded: false, role: 'air', selected: true }))}</div>
+      <div class="col3">${tile(CAMS.c2, {})}${noChips(strip(CAMS.c2, { expanded: false }))}</div>
     </div>${cutsCard}</div>` + sbMin);
 
   // Long names
   const full = 'Interview A-cam — Sony FX3 with very long name';
   const mid = 'Interview A-cam…ery long name';
-  const longCam = Object.assign({}, CAMS.c1, { name: full });
+  const longCam = Object.assign({}, CAMS.c1, { name: full, tools: [0, 0, 0, 0, 0] });
   const midCam = Object.assign({}, CAMS.c1, { name: mid });
   const fixTitle = (html) => html.replace(`title="${CAMS.c1.input}">${mid}</b>`, `title="${full}">${mid}</b>`);
   document.getElementById('truncL').innerHTML =
-    fixTitle(strip(midCam, { role: 'air' })) + strip(midCam, { expanded: false, role: 'air' });
+    fixTitle(strip(midCam, { role: 'air' })) + strip(Object.assign({}, CAMS.c1, { name: 'Interview A…long name' }), { expanded: false, role: 'air' });
   document.getElementById('truncPic').innerHTML =
     tile(longCam, { role: 'air' }).replace(`<div class="pill glass">${full}`, `<div class="pill glass" title="${full}"><span class="tt">${full}</span>`);
 </script>
