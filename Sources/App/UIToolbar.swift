@@ -45,15 +45,18 @@ struct UIToolbarContent: ToolbarContent {
       }
     }
 
-    ToolbarItem(placement: .primaryAction) {
-      Picker("Layout", selection: layoutBinding) {
-        ForEach(presentation.layouts, id: \.self) { layout in
-          Label(layout.title, systemImage: layout.symbol).tag(layout)
+    // One camera has only the single layout, so the picker appears with a second camera.
+    if presentation.layouts.count > 1 {
+      ToolbarItem(placement: .primaryAction) {
+        Picker("Layout", selection: layoutBinding) {
+          ForEach(presentation.layouts, id: \.self) { layout in
+            Label(layout.title, systemImage: layout.symbol).tag(layout)
+          }
         }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .help("Layout (⌥⌘1–⌥⌘4)")
       }
-      .pickerStyle(.segmented)
-      .labelStyle(.iconOnly)
-      .help("Layout (⌥⌘1–⌥⌘4)")
     }
 
     ToolbarItem(placement: .primaryAction) {

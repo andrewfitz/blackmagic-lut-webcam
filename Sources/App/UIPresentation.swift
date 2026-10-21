@@ -473,7 +473,7 @@ enum UIPresentationBuilder {
     case .noFolder: recordTitle = "No folder"; recordDetail = "Choose where \(camera.name) records"; recordTone = .warning
     case .failed:
       recordTitle = "Recording stopped"; recordDetail = rec.error ?? "The recording ended with an error."; recordTone = .critical
-    case .stopped: recordTitle = "Camera stopped"; recordDetail = "Start the camera to record"
+    case .stopped: recordTitle = "Not recording"; recordDetail = "Start the camera to record"
     case .waiting: recordTitle = "Waiting for HDMI"; recordDetail = "Record becomes available with a signal"
     case .ready: recordTitle = "Ready to record"; recordDetail = [liveFormat, session.codecTitle].compactMap { $0 }.joined(separator: " · ")
     }
@@ -599,7 +599,11 @@ enum UIPresentationBuilder {
       segments.append(UIStatusSegment(kind: .program, text: "\(onAir) on air · \(mode)", tone: .neutral))
     }
     segments.append(UIStatusSegment(kind: .recording, text: recordingSummary, tone: recording.isEmpty ? .neutral : .critical))
-    let live = session.cameras.filter(\.running)
+    // Audio can only be judged from a picture with a signal; a running camera without HDMI has none.
+    let live = session.cameras.filter { camera in
+      if case .live = camera.signal { return camera.running }
+      return false
+    }
     let withAudio = live.filter(\.audio.present)
     let audioText = live.isEmpty ? "Audio —" : live.count == 1 ? (withAudio.isEmpty ? "No embedded audio" : "Audio OK")
       : "Audio: \(withAudio.count) of \(live.count)"
@@ -616,12 +620,16 @@ enum UIPresentationBuilder {
     var subtitleParts = [outputSummary]
     if !recording.isEmpty { subtitleParts.append("\(recording.count) recording") }
 
+    // One camera has one picture: every grid layout is the single layout.
+    let available = UILayout.allCases.filter { session.outputMode == .program || $0 != .programView }
+    let layouts = cameras.count > 1 ? available : available.filter { $0 == .single || $0 == .programView }
+    let layout = layouts.contains(session.layout) ? session.layout : .single
+
     return UISessionPresentation(
       title: title, subtitle: subtitleParts.joined(separator: " · "),
       cameras: cameras, selected: cameras.first(where: \.selected),
       outputMode: session.outputMode,
-      layouts: UILayout.allCases.filter { session.outputMode == .program || $0 != .programView },
-      layout: session.layout, recordControl: recordControl,
+      layouts: layouts, layout: layout, recordControl: recordControl,
       camerasRunning: running,
       camerasControlTitle: session.cameras.count == 1 ? (running ? "Stop Camera" : "Start Camera") : (running ? "Stop Cameras" : "Start Cameras"),
       cutButtons: cutButtons, autoSwitching: session.autoSwitching,

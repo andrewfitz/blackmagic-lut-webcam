@@ -97,6 +97,10 @@ import SwiftUI
       ("four-up", UIFixtures.fourUp()), ("stopped", UIFixtures.stopped()), ("problems", UIFixtures.problems())]
     for (name, session) in fixtures {
       for size in [CGSize(width: 1320, height: 860), CGSize(width: 980, height: 680)] {
+        // The smallest window is used without the sidebar. (A fixed-size offscreen window
+        // can't grow to fit both columns, so AppKit would loop on the split view's minimums.)
+        var session = session
+        if size.width < 1000 { session.sidebarVisible = false }
         let hosts = render("main-\(name)-\(Int(size.width))", mainWindow(.fixture(session)), size: size, titled: true)
         hosts.forEach { $0.close() }
       }
@@ -371,6 +375,15 @@ import SwiftUI
     verifier.check("bridge: toggle sidebar", interface.sidebarVisible == false)
     bridge.perform(.toggleInspector)
     verifier.check("bridge: toggle inspector", interface.inspectorOpen)
+    // Narrow window: the column opened last stays, the other closes.
+    bridge.perform(.setSidebarVisible(true))
+    bridge.perform(.makeRoomForPictures)
+    verifier.check("bridge: make room keeps the sidebar just opened", interface.sidebarVisible && !interface.inspectorOpen)
+    bridge.perform(.setInspectorOpen(true))
+    bridge.perform(.makeRoomForPictures)
+    verifier.check("bridge: make room keeps the inspector just opened", interface.inspectorOpen && !interface.sidebarVisible)
+    bridge.perform(.makeRoomForPictures)
+    verifier.check("bridge: make room with one column open changes nothing", interface.inspectorOpen && !interface.sidebarVisible)
 
     // Per-camera settings on the camera that isn't selected must persist without selecting it.
     let downscaleBefore = model.descriptor(for: beta)?.downscale ?? true

@@ -2,18 +2,27 @@ import AppKit
 import MonitorToolsCore
 import SwiftUI
 
+enum UISideColumn: Sendable { case sidebar, inspector }
+
 /// Interface-only preferences that are not part of the capture settings.
 @MainActor @Observable
 final class UIInterfaceState {
   private let defaults: UserDefaults
   var layout: UILayout { didSet { defaults.set(layout.rawValue, forKey: "ui.layout") } }
   var collapsed: Set<String> { didSet { defaults.set(Array(collapsed), forKey: "ui.collapsed") } }
-  var sidebarVisible: Bool { didSet { defaults.set(sidebarVisible, forKey: "ui.sidebar") } }
+  var sidebarVisible: Bool {
+    didSet {
+      defaults.set(sidebarVisible, forKey: "ui.sidebar")
+      if sidebarVisible { lastOpenedColumn = .sidebar }
+    }
+  }
   /// Display order of the pictures (camera IDs); cameras not listed follow in their saved order.
   var order: [String] { didSet { defaults.set(order, forKey: "ui.order") } }
   /// Set while a picture is expanded from a grid layout.
   var expandedFrom: UILayout?
-  var inspectorOpen = false
+  var inspectorOpen = false { didSet { if inspectorOpen { lastOpenedColumn = .inspector } } }
+  /// Which side column the user opened most recently; it stays when space runs out.
+  var lastOpenedColumn: UISideColumn = .sidebar
   /// Tests set this so confirmations are recorded instead of shown as modal alerts.
   var alertsDisabled = false
   /// A pending confirmation: the message and the action to run when confirmed.
@@ -240,6 +249,9 @@ struct UISessionBridge {
     case .setInspectorOpen(let open): if interface.inspectorOpen != open { interface.inspectorOpen = open }
     case .setSidebarVisible(let visible): if interface.sidebarVisible != visible { interface.sidebarVisible = visible }
     case .showInspector(let id): _ = model.selectFeed(feedID(id)); interface.inspectorOpen = true
+    case .makeRoomForPictures:
+      guard interface.sidebarVisible && interface.inspectorOpen else { break }
+      if interface.lastOpenedColumn == .sidebar { interface.inspectorOpen = false } else { interface.sidebarVisible = false }
     case .expandPicture(let id):
       _ = model.selectFeed(feedID(id))
       if interface.layout != .single { interface.expandedFrom = interface.layout }

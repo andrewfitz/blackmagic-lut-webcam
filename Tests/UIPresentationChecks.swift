@@ -342,6 +342,19 @@ import XCTest
       "No embedded audio")
     XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, running: false)])).statusSegments.first { $0.kind == .audio }?.text,
       "Audio —")
+    // Running without HDMI: nothing to judge, so never "Audio OK".
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, signal: .noSignal)])).statusSegments.first { $0.kind == .audio }?.text,
+      "Audio —")
+  }
+
+  func testOneCameraHasOnlyTheSingleLayout() {
+    var session = separate([camera(1)])
+    session.layout = .sideBySide
+    let one = UIPresentationBuilder.session(session)
+    XCTAssertEqual(one.layouts, [.single])
+    XCTAssertEqual(one.layout, .single, "the stored layout returns with a second camera")
+    session.cameras.append(camera(2))
+    XCTAssertEqual(UIPresentationBuilder.session(session).layout, .sideBySide)
   }
 
   func testMixedPausedRecordingSummary() {

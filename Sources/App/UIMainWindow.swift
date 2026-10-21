@@ -4,10 +4,6 @@ import SwiftUI
 /// inspector and the status bar. Every change goes through `context.send`.
 struct UIMainWindowView: View {
   let context: UIContext
-  @State private var width: CGFloat = 1320
-
-  /// The sidebar hides itself on narrow windows so the pictures keep their size.
-  private var sidebarShown: Bool { context.session.sidebarVisible && width >= 1100 }
 
   var body: some View {
     NavigationSplitView(columnVisibility: columnVisibility) {
@@ -18,12 +14,18 @@ struct UIMainWindowView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           UIStatusBarView(context: context)
         }
+        // With both side columns open on a narrow window the pictures get squeezed and the
+        // inspector is pushed past the window edge, so close the column opened earlier.
+        // (A minimum width here makes AppKit loop on the split view's size constraints.)
+        .onGeometryChange(for: Bool.self) { $0.size.width < 480 } action: { squeezed in
+          if squeezed { context.send(.makeRoomForPictures) }
+        }
     }
     .navigationTitle(context.presentation.title)
     .navigationSubtitle(context.presentation.subtitle)
     .inspector(isPresented: inspectorBinding) {
       UIInspectorView(context: context)
-        .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
+        .inspectorColumnWidth(min: 300, ideal: 340, max: 460)
     }
     .confirmationDialog(confirmationTitle, isPresented: confirmationBinding, titleVisibility: .visible) {
       Button(confirmationButton, role: .destructive) { context.confirm() }
@@ -31,7 +33,6 @@ struct UIMainWindowView: View {
     } message: {
       Text(context.confirmation?.message ?? "")
     }
-    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     // 680 pt is the window minimum; the content sits below the ~52 pt toolbar.
     .frame(minWidth: 980, minHeight: 620)
   }
@@ -50,9 +51,7 @@ struct UIMainWindowView: View {
           .disabled(!context.session.canEditTopology)
       }
     } else {
-      // With one camera every grid layout is the single layout.
-      let layout: UILayout = cameras.count == 1 && context.presentation.layout != .programView ? .single : context.presentation.layout
-      switch layout {
+      switch context.presentation.layout {
       case .programView:
         UIProgramView(context: context)
       case .single:
@@ -73,7 +72,7 @@ struct UIMainWindowView: View {
         }
       case .sideBySide, .fourUp:
         ScrollView {
-          if cameras.count <= 2 && layout == .sideBySide {
+          if cameras.count <= 2 && context.presentation.layout == .sideBySide {
             HStack(alignment: .top, spacing: 12) {
               ForEach(cameras) { camera in
                 UICameraColumnView(camera: camera, context: context)
@@ -104,18 +103,16 @@ struct UIMainWindowView: View {
   // MARK: Bindings
 
   private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+    // Showing the sidebar is always the user's choice, whatever the window width.
+    // The split view keeps the first binding it gets, so read the live state, not this view's copy.
     Binding(
-      get: { sidebarShown ? .all : .detailOnly },
-      set: { next in
-        // Only an explicit change on a wide window is a user choice; auto-hiding is not.
-        guard width >= 1100 else { return }
-        context.send(.setSidebarVisible(next != .detailOnly))
-      })
+      get: { context.current.session.sidebarVisible ? .all : .detailOnly },
+      set: { context.send(.setSidebarVisible($0 != .detailOnly)) })
   }
 
   private var inspectorBinding: Binding<Bool> {
     Binding(
-      get: { context.session.inspectorOpen },
+      get: { context.current.session.inspectorOpen },
       // Set, never toggle: SwiftUI may echo the current value back through the binding.
       set: { context.send(.setInspectorOpen($0)) })
   }

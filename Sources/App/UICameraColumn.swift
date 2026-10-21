@@ -74,6 +74,8 @@ struct UICameraPictureView: View {
     .onTapGesture { context.send(.select(cameraID: camera.id)) }
     .onHover { hovering = $0 }
     .focusable(!compact)
+    // The selection ring is the focus ring (D7); the system ring would draw a second one.
+    .focusEffectDisabled()
     .focused($focused)
     .onChange(of: focused) { _, isFocused in
       if isFocused && !camera.selected { context.send(.select(cameraID: camera.id)) }
@@ -456,7 +458,7 @@ struct UIChannelStripView: View {
       Divider()
       outputRow
       HStack(spacing: 8) {
-        Text("AUDIO").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).frame(width: 42, alignment: .leading)
+        Text("Audio").font(.caption).foregroundStyle(.secondary).frame(width: 42, alignment: .leading)
         UIAudioMeter(audio: camera.audio)
       }
     }
@@ -464,7 +466,8 @@ struct UIChannelStripView: View {
 
   /// Problems that need one action: a failed automatic start, an unavailable LUT.
   @ViewBuilder private var alertRows: some View {
-    if camera.automaticStartFailed {
+    // The stopped picture already explains a failed automatic start, with its own Retry.
+    if camera.automaticStartFailed && camera.tileState != .stopped {
       HStack(spacing: 6) {
         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
         Text("Couldn't start \(camera.name)").font(.caption.weight(.medium)).foregroundStyle(.orange)
@@ -610,9 +613,9 @@ struct UIChannelStripView: View {
         recordButton
       }
       VStack(alignment: .leading, spacing: 2) {
-        Text(camera.recordTitle.uppercased())
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(camera.recordTone == .neutral ? Color.secondary : camera.recordTone.color)
+        Text(camera.recordTitle)
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(camera.recordTone == .neutral ? Color.primary : camera.recordTone.color)
         if isRecordingOrPaused {
           Text(camera.recordDetail).font(.system(.title3, design: .monospaced).weight(.semibold))
             .foregroundStyle(camera.stripState == .paused ? .secondary : .primary)

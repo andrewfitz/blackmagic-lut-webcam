@@ -15,6 +15,8 @@ enum UIAction: Sendable, Equatable {
   case setInspectorOpen(Bool)
   case setSidebarVisible(Bool)
   case showInspector(cameraID: String)
+  /// The pictures got too narrow with both side columns open: close the one opened earlier.
+  case makeRoomForPictures
   /// Shows one camera alone (Single layout) from a grid; Restore Layout returns.
   case expandPicture(cameraID: String)
   case restoreLayout

@@ -70,10 +70,10 @@ struct UISettingsGeneralPane: View {
         }
         if let loginError { Text(loginError).font(.caption).foregroundStyle(.orange) }
       } header: { Text("App") } footer: {
-        UISettingsFootnote("Quitting waits for active recordings to finish writing.")
+        UISettingsFootnote("Quitting waits for active recordings to finish writing. The menu bar icon shows a dot while recording and a triangle when something needs attention.")
       }
 
-      Section("Window") {
+      Section {
         Picker("Layout", selection: $defaultLayout) {
           ForEach(UILayout.allCases, id: \.rawValue) { layout in
             Text(layout.title).tag(layout.rawValue)
@@ -86,17 +86,10 @@ struct UISettingsGeneralPane: View {
         }
         .pickerStyle(.segmented)
         .help("How a newly added camera's strip starts. Collapse or expand any strip at any time (⌥⌘S collapses all).")
-        LabeledContent("Video preview") {
-          Text("Each camera's picture can be hidden from its menu. Hidden previews do no rendering work (⇧⌘P).")
-            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-        }
-      }
-
-      Section("Menu Bar") {
-        LabeledContent("Status badges") {
-          Text("Always on: a dot while recording, a triangle when something needs attention.")
-            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-        }
+      } header: {
+        Text("Window")
+      } footer: {
+        UISettingsFootnote("Hide any camera's picture from its menu or with ⇧⌘P. Hidden previews do no rendering work.")
       }
     }
     .formStyle(.grouped)
@@ -220,7 +213,7 @@ struct UISettingsRecordingPane: View {
           Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
       } header: { Text("Crash Recovery") } footer: {
-        UISettingsFootnote("The first fragment is written after 1 s, then every 10 s. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original.")
+        UISettingsFootnote("The first fragment is written after 1 s, then every 10 s. Hidden .partial files and journals sit beside each take until it finishes. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original.")
       }
     }
     .formStyle(.grouped)
@@ -290,13 +283,12 @@ struct UISettingsCameraPane: View {
     let needsApproval = installer.status.localizedCaseInsensitiveContains("approve")
     Form {
       Section {
-        LabeledContent("Ultracam camera") {
-          HStack(spacing: 6) {
-            if installer.pending { ProgressView().controlSize(.small) }
-            Text(installer.unavailableReason ?? installer.status)
-              .foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+        LabeledContent {
+          if installer.pending { ProgressView().controlSize(.small) }
+        } label: {
+          Text("Ultracam camera")
+          Text(installer.unavailableReason ?? installer.status)
+            .fixedSize(horizontal: false, vertical: true)
         }
         if needsApproval {
           HStack {
@@ -483,7 +475,10 @@ struct UISettingsSlider: View {
   var body: some View {
     LabeledContent(title) {
       HStack {
-        Slider(value: $value, in: range, step: step) { editing in if !editing { onCommit() } }
+        // Rounded through the binding: a stepped Slider draws a tick for every step.
+        Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range) { editing in
+          if !editing { onCommit() }
+        }
           .accessibilityLabel(title)
           .accessibilityValue(formatted)
         Text(formatted).monospacedDigit().foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
@@ -600,13 +595,6 @@ struct UISettingsAdvancedPane: View {
         }
       } header: { Text("LUTs") } footer: {
         UISettingsFootnote("A missing LUT never blocks capture. The camera keeps its choice so it can be located again.")
-      }
-
-      Section("Recording") {
-        LabeledContent("Recovery journals") {
-          Text("Hidden .partial files and journals sit beside each take until it finishes")
-            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
-        }
       }
 
       Section {

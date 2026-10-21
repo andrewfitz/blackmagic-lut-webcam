@@ -11,6 +11,10 @@ import SwiftUI
     let model = UIAppEnvironment.model
     self.model = model
     menuBar = UIMenuBarController(model: model, interface: UIAppEnvironment.interface)
+    // scripts/ui-tour.sh reviews both appearances without changing the system setting.
+    if let flag = CommandLine.arguments.firstIndex(of: "--ui-appearance"), CommandLine.arguments.indices.contains(flag + 1) {
+      NSApplication.shared.appearance = NSAppearance(named: CommandLine.arguments[flag + 1] == "dark" ? .darkAqua : .aqua)
+    }
     // The self-test lives in its own file and is found through the Objective-C
     // runtime, so the app builds with or without it.
     if CommandLine.arguments.contains("--ui-self-test"),
