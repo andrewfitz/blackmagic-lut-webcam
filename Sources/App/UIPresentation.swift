@@ -117,6 +117,8 @@ struct UICameraSnapshot: Sendable, Equatable, Identifiable {
 }
 
 struct UIShotTiming: Sendable, Equatable {
+  /// When the camera now on Program went on air; views tick from here.
+  var startedAt: Date?
   var currentShot: TimeInterval?
   var minimum: TimeInterval = 10
   var softMaximum: TimeInterval = 20
@@ -157,6 +159,8 @@ struct UIInstallState: Sendable, Equatable {
   var pending = false
   var status = ""
   var unavailableReason: String?
+  /// True when an Ultracam camera device is present in the system.
+  var installed = true
   var needsApproval: Bool { status.localizedCaseInsensitiveContains("approve") }
 }
 
@@ -169,6 +173,7 @@ struct UISessionSnapshot: Sendable, Equatable {
   var pendingCutID: String?
   var autoSwitching = false
   var autoHold = false
+  var strategy: SwitcherStrategy = .manual
   var strategyTitle = "Manual"
   var shot = UIShotTiming()
   var programFormatMismatch = false

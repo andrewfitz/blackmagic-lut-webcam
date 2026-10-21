@@ -1,17 +1,34 @@
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// The app's long-lived models, shared by the scenes, the menu bar item and the self-test.
+@MainActor enum UIAppEnvironment {
+  static let model = AppModel()
+  static let interface = UIInterfaceState()
+}
+
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
   weak var model: AppModel?
+  private var menuBar: UIMenuBarController?
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     let hideFromDock = AppSettingsStore().hideFromDock
     NSApplication.shared.setActivationPolicy(hideFromDock ? .accessory : .regular)
+    let model = UIAppEnvironment.model
+    self.model = model
+    menuBar = UIMenuBarController(model: model, interface: UIAppEnvironment.interface)
+    // The self-test lives in its own file and is found through the Objective-C
+    // runtime, so the app builds with or without it.
+    if CommandLine.arguments.contains("--ui-self-test"),
+      let runner = NSClassFromString("UISelfTestRunner") as? NSObject.Type {
+      _ = runner.perform(NSSelectorFromString("run"))
+    }
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let model, model.recordingModel.hasActiveRecordings else { return .terminateNow }
     model.saveSettings()
-    model.stop()
+    model.stopAllCameras()
     model.recordingModel.stopAll {
       DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
     }
@@ -22,48 +39,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct UltracamApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @State private var model = AppModel()
+  private let model = UIAppEnvironment.model
+  private let interface = UIAppEnvironment.interface
 
   var body: some Scene {
-    // A single window keeps the main native video layer attached to one view.
+    // A single main window keeps the selected camera's native video layer attached to one view.
     Window("Ultracam", id: "main") {
-      ContentView(model: model)
-        .frame(minWidth: 850, minHeight: 590)
-        .onAppear { appDelegate.model = model }
-    }
-    .defaultSize(width: 1080, height: 700)
-    .commands {
-      CommandGroup(replacing: .newItem) {}
-      CommandGroup(after: .appSettings) {
-        Toggle("Hide from Dock", isOn: $model.hideFromDock)
-      }
-      CommandMenu("Feed") {
-        Button(model.running ? "Stop feed" : "Start feed") {
-          if model.running { model.stop() } else { model.start() }
-        }
-        .keyboardShortcut(.return, modifiers: .command)
-        .disabled(model.automaticFeedEnabled || (!model.running && !model.canStartFeed))
-        Divider()
-        Toggle("Start when camera is in use", isOn: $model.automaticFeedEnabled)
-        Toggle("Processing enabled", isOn: $model.pipelineEnabled)
-          .keyboardShortcut("b", modifiers: [.command, .shift])
-        Toggle("Video preview", isOn: $model.previewEnabled)
-          .keyboardShortcut("p", modifiers: [.command, .shift])
-      }
-      CommandGroup(replacing: .appTermination) {
-        Button("Quit Ultracam") {
-          model.saveSettings()
-          model.stop()
-          NSApplication.shared.terminate(nil)
-        }.keyboardShortcut("q")
+      UILiveRoot(model: model, interface: interface) { context in
+        UIMainWindowView(context: context)
+          .toolbar { UIToolbarContent(context: context) }
       }
     }
+    .defaultSize(width: 1320, height: 860)
+    .windowToolbarStyle(.unified)
+    .commands { UICommands(model: model, interface: interface) }
 
-    MenuBarExtra {
-      MenuBarInterface(model: model)
-    } label: {
-      MenuBarStatusIcon(model: model)
+    Window("Diagnostics", id: "diagnostics") {
+      UIDiagnosticsView(model: model)
     }
-    .menuBarExtraStyle(.window)
+    .defaultSize(width: 1100, height: 760)
+
+    Settings {
+      UISettingsView(model: model)
+    }
   }
 }

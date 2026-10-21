@@ -1,0 +1,674 @@
+import AppKit
+import ServiceManagement
+import SwiftUI
+
+/// Settings window (⌘,): General, Recording, Camera, Switcher, Monitor, Advanced.
+/// Settings change app-wide state, so these panes work on the models directly.
+struct UISettingsView: View {
+  let model: AppModel
+
+  var body: some View {
+    TabView {
+      UISettingsGeneralPane(model: model)
+        .tabItem { Label("General", systemImage: "gearshape") }
+      UISettingsRecordingPane(model: model)
+        .tabItem { Label("Recording", systemImage: "record.circle") }
+      UISettingsCameraPane(model: model)
+        .tabItem { Label("Camera", systemImage: "video") }
+      UISettingsSwitcherPane(model: model)
+        .tabItem { Label("Switcher", systemImage: "tv") }
+      UISettingsMonitorPane()
+        .tabItem { Label("Monitor", systemImage: "waveform.path.ecg") }
+      UISettingsAdvancedPane(model: model)
+        .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
+    }
+    .frame(width: 640)
+    .frame(minHeight: 460)
+  }
+}
+
+private struct UISettingsFootnote: View {
+  let text: String
+  init(_ text: String) { self.text = text }
+  var body: some View {
+    Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+// MARK: - General
+
+struct UISettingsGeneralPane: View {
+  @Bindable var model: AppModel
+  @AppStorage("ui.layout") private var defaultLayout = UILayout.sideBySide.rawValue
+  @AppStorage("ui.collapsed.default") private var collapsedByDefault = false
+  @State private var loginStatus = SMAppService.mainApp.status
+  @State private var loginError: String?
+
+  private var showInDock: Binding<Bool> {
+    Binding(get: { !model.hideFromDock }, set: { model.hideFromDock = !$0 })
+  }
+
+  var body: some View {
+    Form {
+      Section {
+        Picker("Show Ultracam in", selection: showInDock) {
+          Text("Dock and menu bar").tag(true)
+          Text("Menu bar only").tag(false)
+        }
+        .help("Menu bar only hides the Dock icon. Closing the window never stops capture, camera output or recording.")
+        Toggle("Open Ultracam at login", isOn: Binding(
+          get: { loginStatus == .enabled || loginStatus == .requiresApproval },
+          set: { setOpenAtLogin($0) }))
+        .help("Starts Ultracam in the menu bar when you log in, so automatic start can work.")
+        if loginStatus == .requiresApproval {
+          HStack {
+            UISettingsFootnote("Approve Ultracam in System Settings → General → Login Items.")
+            Spacer()
+            Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+          }
+        }
+        if let loginError { Text(loginError).font(.caption).foregroundStyle(.orange) }
+      } header: { Text("App") } footer: {
+        UISettingsFootnote("Quitting waits for active recordings to finish writing.")
+      }
+
+      Section("Window") {
+        Picker("Default layout", selection: $defaultLayout) {
+          ForEach(UILayout.allCases, id: \.rawValue) { layout in
+            Text(layout.title).tag(layout.rawValue)
+          }
+        }
+        .help("Program View is available only in Program mode.")
+        Picker("Camera strips", selection: $collapsedByDefault) {
+          Text("Expanded").tag(false)
+          Text("Collapsed").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .help("Collapse or expand any strip at any time (⌥⌘S collapses all).")
+        LabeledContent("Video preview") {
+          Text("Each camera's picture can be hidden from its menu. Hidden previews do no rendering work (⇧⌘P).")
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+        }
+      }
+
+      Section("Menu Bar") {
+        LabeledContent("Status badges") {
+          Text("Always on: a dot while recording, a triangle when something needs attention.")
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+        }
+      }
+    }
+    .formStyle(.grouped)
+    .onAppear { loginStatus = SMAppService.mainApp.status }
+  }
+
+  private func setOpenAtLogin(_ enabled: Bool) {
+    loginError = nil
+    do {
+      if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+    } catch {
+      loginError = "Couldn't change Open at login: \(error.localizedDescription)"
+    }
+    loginStatus = SMAppService.mainApp.status
+  }
+}
+
+// MARK: - Recording
+
+struct UISettingsRecordingPane: View {
+  let model: AppModel
+  @State private var showingRecovery = false
+
+  var body: some View {
+    let recording = model.recordingModel
+    let codec = Binding(get: { recording.codec }, set: { recording.codec = $0 })
+    let timecode = Binding(get: { recording.timecodeMode }, set: { recording.timecodeMode = $0 })
+    let folder = recording.outputFolder
+    let drive = UIRecordingLibrary.drives(for: [folder], recordingRates: [],
+      fallbackMegabits: UIRecordingLibrary.nominalMegabits(codec: recording.codec, fast: true)).first
+    Form {
+      Section {
+        LabeledContent("Default folder") {
+          HStack {
+            Text(folder.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "None")
+              .lineLimit(1).truncationMode(.middle)
+              .foregroundStyle(folder == nil ? .secondary : .primary)
+              .textSelection(.enabled)
+            Button(folder == nil ? "Choose…" : "Change…") { UIPanels.chooseFolder(model: model, cameraID: nil) }
+            if let folder {
+              Button { NSWorkspace.shared.activateFileViewerSelecting([folder]) } label: { Image(systemName: "magnifyingglass") }
+                .help("Show in Finder").accessibilityLabel("Show default folder in Finder")
+              Button("Clear") { recording.outputFolder = nil }
+            }
+          }
+        }
+        if let drive {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack {
+              Text(drive.name)
+              Spacer()
+              Text(driveSummary(drive)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .font(.callout)
+            ProgressView(value: usedFraction(drive))
+              .accessibilityLabel("\(drive.name) space used")
+          }
+        }
+      } header: { Text("Destination") } footer: {
+        UISettingsFootnote("Folder changes apply to the next take. Read/write access is remembered between launches.")
+      }
+
+      Section("Per-Camera Folders") {
+        ForEach(model.feedDescriptors) { descriptor in
+          LabeledContent(descriptor.name) {
+            HStack {
+              if let custom = recording.customOutputFolder(for: descriptor.id) {
+                Text((custom.path as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
+                Button("Change…") { UIPanels.chooseFolder(model: model, cameraID: descriptor.id) }
+                Button("Use Default") { recording.setOutputFolder(nil, for: descriptor.id) }
+              } else {
+                Text("Uses default").foregroundStyle(.secondary)
+                Button("Choose…") { UIPanels.chooseFolder(model: model, cameraID: descriptor.id) }
+              }
+            }
+          }
+        }
+      }
+
+      Section {
+        Picker("Codec", selection: codec) {
+          ForEach(RecordingCodec.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        Picker("Timecode", selection: timecode) {
+          ForEach(RecordingTimecodeMode.allCases, id: \.self) { Text(UITimecode.title($0)).tag($0) }
+        }
+        .help(recording.timecodeMode.help)
+        LabeledContent("File names") {
+          Text(fileNamePreview).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        }
+      } header: { Text("Format") } footer: {
+        UISettingsFootnote("Records the camera original: 2160p 10-bit 4:2:2 with embedded audio. LUT and effects are not baked in. "
+          + recording.timecodeMode.help)
+      }
+
+      Section {
+        Toggle(isOn: .constant(false)) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Backup recording with camera apps")
+            Text("Coming later").font(.caption).foregroundStyle(.secondary)
+          }
+        }
+        .disabled(true)
+      } header: { Text("Automation") } footer: {
+        UISettingsFootnote("When available: a backup take starts after 10 seconds of continuous camera use, and only takes it started stop automatically when the last camera app closes.")
+      }
+
+      Section {
+        LabeledContent("Fragmented QuickTime movies") {
+          Text("Always on").foregroundStyle(.secondary)
+        }
+        LabeledContent("Interrupted takes") {
+          HStack {
+            Text(recording.interruptedRecordings.isEmpty ? "None found in saved folders"
+              : "\(recording.interruptedRecordings.count) found").foregroundStyle(.secondary)
+            Button("Recover Interrupted Takes…") { showingRecovery = true }
+              .disabled(recording.interruptedRecordings.isEmpty)
+          }
+        }
+        if let message = recording.recoveryMessage {
+          Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        }
+      } header: { Text("Crash Recovery") } footer: {
+        UISettingsFootnote("The first fragment is written after 1 s, then every 10 s. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original.")
+      }
+    }
+    .formStyle(.grouped)
+    .sheet(isPresented: $showingRecovery) { UISettingsRecoverySheet(model: model) }
+  }
+
+  private var fileNamePreview: String {
+    let name = model.feedDescriptors.first?.name ?? "Camera 1"
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+    return "\(name)/\(name)_\(formatter.string(from: Date()))_001.mov"
+  }
+
+  private func usedFraction(_ drive: UIDrive) -> Double {
+    guard drive.totalBytes > 0 else { return 0 }
+    return min(1, max(0, 1 - Double(drive.availableBytes) / Double(drive.totalBytes)))
+  }
+
+  private func driveSummary(_ drive: UIDrive) -> String {
+    var parts = ["\(UIFormat.bytes(drive.availableBytes)) free"]
+    if let seconds = drive.secondsLeft { parts.append("about \(UIFormat.duration(seconds)) per camera") }
+    return parts.joined(separator: " · ")
+  }
+}
+
+private struct UISettingsRecoverySheet: View {
+  let model: AppModel
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    let recording = model.recordingModel
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Interrupted Takes").font(.headline)
+      if recording.interruptedRecordings.isEmpty {
+        Text("No interrupted takes were found in the saved folders.").foregroundStyle(.secondary)
+      }
+      ForEach(recording.interruptedRecordings) { take in
+        HStack {
+          Text(take.title).lineLimit(1).truncationMode(.middle)
+          Spacer()
+          if recording.recoveringID == take.id { ProgressView().controlSize(.small) }
+          Button("Recover") { recording.recover(take) }.disabled(recording.recoveringID != nil)
+        }
+      }
+      if let url = recording.recoveredURL {
+        Button("Show Recovered Movie in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+      }
+      HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+    }
+    .padding(20)
+    .frame(width: 460)
+  }
+}
+
+// MARK: - Camera
+
+struct UISettingsCameraPane: View {
+  let model: AppModel
+
+  var body: some View {
+    let installer = model.installer
+    let outputMode = Binding(get: { model.outputMode }, set: { model.setOutputMode($0) })
+    let needsApproval = installer.status.localizedCaseInsensitiveContains("approve")
+    Form {
+      Section {
+        LabeledContent("Ultracam camera") {
+          HStack(spacing: 6) {
+            if installer.pending { ProgressView().controlSize(.small) }
+            Text(installer.unavailableReason ?? installer.status)
+              .foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        if needsApproval {
+          HStack {
+            Label("Approve Ultracam Camera in System Settings → General → Login Items & Extensions → Camera Extensions.",
+              systemImage: "exclamationmark.circle")
+              .foregroundStyle(.orange).font(.callout)
+            Spacer()
+            Button("Open System Settings") {
+              if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+                NSWorkspace.shared.open(url)
+              }
+            }
+          }
+        }
+        HStack {
+          Spacer()
+          Button("Install Camera") { installer.install() }
+          Button("Remove Camera") { installer.uninstall() }
+        }
+        .disabled(!installer.canRequestChanges || installer.pending || model.running)
+        .help(installHelp)
+      } header: { Text("Camera Extension") } footer: {
+        UISettingsFootnote("Install and Remove need a signed build and go through System Settings. They're unavailable while a request is pending or a camera is running. Capture, preview and recording work without the extension.")
+      }
+
+      Section {
+        Picker("Output mode", selection: outputMode) {
+          Text("Separate cameras").tag(FeedOutputMode.separateCameras)
+          Text("Program").tag(FeedOutputMode.program)
+        }
+        .pickerStyle(.segmented)
+        .disabled(!model.canEditFeedTopology)
+        .help(model.canEditFeedTopology ? "Separate cameras publishes one virtual camera per camera. Program publishes one switched camera."
+          : "Change while all cameras are stopped and nothing is recording.")
+        if !model.canEditFeedTopology {
+          UISettingsFootnote("Change while all cameras are stopped and nothing is recording.")
+        }
+      } header: { Text("Output") } footer: {
+        UISettingsFootnote("After changing the output mode, choose the new camera in your meeting app.")
+      }
+
+      Section("Published Cameras") {
+        if model.outputMode == .program {
+          LabeledContent("Ultracam · Program") { Text(model.programInUse ? "In use" : "Not in use").foregroundStyle(.secondary) }
+        } else {
+          ForEach(model.feedDescriptors.filter(\.enabled)) { descriptor in
+            LabeledContent("Ultracam · \(descriptor.name)") {
+              Text(model.cameraInUse(descriptor.id) ? "In use" : "Not in use").foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+    }
+    .formStyle(.grouped)
+  }
+
+  private var installHelp: String {
+    if let reason = model.installer.unavailableReason { return reason }
+    if model.installer.pending { return "A camera extension request is pending." }
+    if model.running { return "Stop the cameras before installing or removing the camera extension." }
+    return "Install or remove the Ultracam camera extension."
+  }
+}
+
+// MARK: - Switcher
+
+struct UISettingsSwitcherPane: View {
+  let model: AppModel
+  @State private var draft = NaturalTalkingHeadSettings()
+  @State private var interval = 8.0
+  @State private var loaded = false
+
+  var body: some View {
+    let strategy = Binding(get: { model.switcherSettings.strategy }, set: { value in
+      var settings = model.switcherSettings
+      settings.strategy = value
+      settings.naturalTalkingHead.enabled = settings.automatic && value == .naturalTalkingHead
+      model.updateSwitcher(settings)
+    })
+    let mode = Binding(get: { model.switcherSettings.naturalTalkingHead.mode }, set: { value in
+      draft.mode = value
+      commitDirector()
+    })
+    Form {
+      Section {
+        Picker("Automatic strategy", selection: strategy) {
+          Text("Manual").tag(SwitcherStrategy.manual)
+          Text("Fixed interval").tag(SwitcherStrategy.fixedInterval)
+          Text("Natural talking head").tag(SwitcherStrategy.naturalTalkingHead)
+          Text("Dynamic analysis (later)").tag(SwitcherStrategy.dynamicAnalysis).disabled(true)
+        }
+        UISettingsSlider(title: "Fixed interval", value: $interval, range: 1...30, step: 0.5, unit: "s") { commitInterval() }
+          .disabled(model.switcherSettings.strategy != .fixedInterval)
+        Picker("Director mode", selection: mode) {
+          Text("Low latency").tag(TalkingHeadDirectorMode.lowLatency)
+          Text("Transcript assisted").tag(TalkingHeadDirectorMode.transcriptAssisted)
+        }
+      } header: { Text("Strategy") } footer: {
+        UISettingsFootnote("Transcript assisted needs an external transcript source; without one it cuts on audio alone. Low latency cuts on audio cues without waiting for a transcript.")
+      }
+
+      Section {
+        UISettingsShotTimeline(minimum: draft.minimumShotDuration, softMaximum: draft.softMaximumShotDuration,
+          maximum: draft.maximumShotDuration, grace: draft.forcedCutGracePeriod)
+        UISettingsSlider(title: "Minimum shot", value: $draft.minimumShotDuration, range: 10...60, step: 1, unit: "s") { commitDirector() }
+        UISettingsSlider(title: "Soft maximum", value: $draft.softMaximumShotDuration, range: 10...120, step: 1, unit: "s") { commitDirector() }
+        UISettingsSlider(title: "Maximum shot", value: $draft.maximumShotDuration, range: 10...180, step: 1, unit: "s") { commitDirector() }
+        UISettingsSlider(title: "Cooldown", value: $draft.cooldown, range: 0...10, step: 0.5, unit: "s") { commitDirector() }
+        UISettingsSlider(title: "Emphasis hold", value: $draft.emphasisHold, range: 0...30, step: 0.5, unit: "s") { commitDirector() }
+        UISettingsSlider(title: "Forced-cut grace", value: $draft.forcedCutGracePeriod, range: 0...10, step: 0.5, unit: "s") { commitDirector() }
+      } header: { Text("Shot Timing") }
+
+      Section {
+        DisclosureGroup("Advanced cut decisions") {
+          UISettingsSlider(title: "Cut threshold", value: floatBinding(\.cutThreshold), range: 0...1, step: 0.01, unit: "") { commitDirector() }
+          UISettingsSlider(title: "Hysteresis margin", value: floatBinding(\.hysteresisMargin), range: 0...1, step: 0.01, unit: "") { commitDirector() }
+          UISettingsSlider(title: "Transcript confidence", value: floatBinding(\.transcriptConfidenceThreshold), range: 0...1, step: 0.01, unit: "") { commitDirector() }
+          UISettingsSlider(title: "Pause boundary", value: $draft.pauseBoundaryDuration, range: 0...2, step: 0.01, unit: "s") { commitDirector() }
+          UISettingsSlider(title: "Boundary window", value: $draft.boundaryWindow, range: 0...2, step: 0.01, unit: "s") { commitDirector() }
+          UISettingsSlider(title: "Candidate dwell", value: $draft.candidateDwell, range: 0...2, step: 0.01, unit: "s") { commitDirector() }
+          UISettingsSlider(title: "Forced boundary lookback", value: $draft.forcedBoundaryLookback, range: 0...5, step: 0.1, unit: "s") { commitDirector() }
+          UISettingsSlider(title: "Transcript output delay", value: $draft.transcriptOutputDelay, range: 0...2, step: 0.01, unit: "s") { commitDirector() }
+        }
+        HStack {
+          UISettingsFootnote("Decisions apply at Program frame boundaries. A timeline sidecar is written to the recording folder.")
+          Spacer()
+          Button("Restore Defaults") { restoreDefaults() }
+        }
+      }
+    }
+    .formStyle(.grouped)
+    .onAppear {
+      guard !loaded else { return }
+      loaded = true
+      draft = model.switcherSettings.naturalTalkingHead
+      interval = model.switcherSettings.intervalSeconds
+    }
+  }
+
+  private func floatBinding(_ keyPath: WritableKeyPath<NaturalTalkingHeadSettings, Float>) -> Binding<Double> {
+    Binding(get: { Double(draft[keyPath: keyPath]) }, set: { draft[keyPath: keyPath] = Float($0) })
+  }
+
+  /// Writes the director settings once an edit ends. updateSwitcher recreates the director.
+  private func commitDirector() {
+    var settings = model.switcherSettings
+    let current = settings.naturalTalkingHead
+    var next = draft
+    next.enabled = current.enabled
+    next.anchorFeedID = current.anchorFeedID
+    next.emphasisFeedID = current.emphasisFeedID
+    next.manualHold = current.manualHold
+    guard next != current else { return }
+    settings.naturalTalkingHead = next
+    model.updateSwitcher(settings)
+  }
+
+  private func commitInterval() {
+    var settings = model.switcherSettings
+    guard settings.intervalSeconds != interval else { return }
+    settings.intervalSeconds = interval
+    model.updateSwitcher(settings)
+  }
+
+  private func restoreDefaults() {
+    var defaults = NaturalTalkingHeadSettings()
+    defaults.mode = draft.mode
+    draft = defaults
+    interval = 8
+    commitDirector()
+    commitInterval()
+  }
+}
+
+/// A slider that reports its value live but commits only when editing ends.
+struct UISettingsSlider: View {
+  let title: String
+  @Binding var value: Double
+  let range: ClosedRange<Double>
+  let step: Double
+  let unit: String
+  let onCommit: () -> Void
+
+  var body: some View {
+    LabeledContent(title) {
+      HStack {
+        Slider(value: $value, in: range, step: step) { editing in if !editing { onCommit() } }
+          .accessibilityLabel(title)
+          .accessibilityValue(formatted)
+        Text(formatted).monospacedDigit().foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
+      }
+    }
+  }
+
+  private var formatted: String {
+    let number = step < 0.1 ? String(format: "%.2f", value) : step < 1 ? String(format: "%.1f", value) : String(format: "%.0f", value)
+    return unit.isEmpty ? number : "\(number) \(unit)"
+  }
+}
+
+/// Visual of the shot limits: minimum, soft maximum, maximum and the forced-cut grace.
+struct UISettingsShotTimeline: View {
+  let minimum: Double
+  let softMaximum: Double
+  let maximum: Double
+  let grace: Double
+
+  var body: some View {
+    let span = max(maximum + grace, 1)
+    GeometryReader { proxy in
+      let width = proxy.size.width
+      ZStack(alignment: .leading) {
+        Capsule().fill(Color.secondary.opacity(0.18)).frame(height: 8)
+        Capsule().fill(LinearGradient(colors: [.green, .green, .yellow], startPoint: .leading, endPoint: .trailing))
+          .frame(width: width * minimum / span, height: 8)
+        marker("min \(Int(minimum)) s", at: width * minimum / span, color: .secondary)
+        marker("soft max \(Int(softMaximum)) s", at: width * softMaximum / span, color: .secondary)
+        marker("max \(Int(maximum)) s", at: width * maximum / span, color: .red)
+      }
+    }
+    .frame(height: 30)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Shot limits")
+    .accessibilityValue("Minimum \(Int(minimum)) seconds, soft maximum \(Int(softMaximum)) seconds, maximum \(Int(maximum)) seconds plus \(Int(grace)) seconds grace")
+  }
+
+  private func marker(_ text: String, at x: CGFloat, color: Color) -> some View {
+    VStack(spacing: 2) {
+      Rectangle().fill(color).frame(width: 1.5, height: 14)
+      Text(text).font(.system(size: 9)).foregroundStyle(.secondary).fixedSize()
+    }
+    .offset(x: x - 1, y: 8)
+  }
+}
+
+// MARK: - Monitor
+
+struct UISettingsMonitorPane: View {
+  var body: some View {
+    Form {
+      Section {
+        LabeledContent("Monitor tools") { Text("Off for new cameras").foregroundStyle(.secondary) }
+        LabeledContent("Scopes") { Text("RGB parade or luma waveform, one per camera").foregroundStyle(.secondary) }
+        LabeledContent("Zebra") { Text("95 IRE above-threshold by default").foregroundStyle(.secondary) }
+        LabeledContent("Picture signal") { Text("Processed output by default").foregroundStyle(.secondary) }
+      } header: { Text("Defaults for New Cameras") } footer: {
+        UISettingsFootnote("Settings are per camera: use each picture's tool buttons. Right-click a picture to copy its tools to another camera.")
+      }
+
+      Section {
+        LabeledContent("False color") { Text("Off · Sony S-Log3 · EL Zone").foregroundStyle(.secondary) }
+        LabeledContent("Source declarations") { Text("Camera/Log, input code range, Log transport mapping").foregroundStyle(.secondary) }
+      } header: { Text("False Color") } footer: {
+        UISettingsFootnote("False color is available when a Sony S-Log3 input is declared. Match the actual camera output: these declarations don't calibrate the capture device or change camera output. Older ARRI selections show as an unsupported saved mode.")
+      }
+
+      Section {
+        LabeledContent("Reduce quality under load") { Text("Always on").foregroundStyle(.secondary) }
+      } header: { Text("Under Load") } footer: {
+        UISettingsFootnote("If processing misses a source-frame deadline, new monitor analysis pauses while the clean picture continues. One healthy second allows reduced analysis; five more restore full quality. Hidden or covered monitors do no GPU work. Camera output and recordings are never affected.")
+      }
+    }
+    .formStyle(.grouped)
+  }
+}
+
+// MARK: - Advanced
+
+struct UISettingsAdvancedPane: View {
+  let model: AppModel
+  @Environment(\.openWindow) private var openWindow
+  @State private var confirmForgetLUTs = false
+  @State private var copied = false
+
+  var body: some View {
+    Form {
+      Section("Diagnostics") {
+        LabeledContent {
+          Button("Open") { openWindow(id: "diagnostics") }
+        } label: {
+          Text("Diagnostics window")
+          Text("Drops per stage, audio, encoder and monitoring details").font(.caption).foregroundStyle(.secondary)
+        }
+        LabeledContent {
+          Button(copied ? "Copied" : "Copy") {
+            UIDiagnosticsText.copy(model: model)
+            copied = true
+          }
+        } label: {
+          Text("Copy diagnostics")
+          Text("Plain-text summary for support, no image data").font(.caption).foregroundStyle(.secondary)
+        }
+      }
+
+      Section {
+        LabeledContent {
+          Button("Forget Saved LUTs…") { confirmForgetLUTs = true }
+        } label: {
+          Text("Saved LUT access")
+          Text("Read-only bookmarks for each camera's .cube file").font(.caption).foregroundStyle(.secondary)
+        }
+      } header: { Text("LUTs") } footer: {
+        UISettingsFootnote("A missing LUT never blocks capture. The camera keeps its choice so it can be located again.")
+      }
+
+      Section("Recording") {
+        LabeledContent("Recovery journals") {
+          Text("Hidden .partial files and journals sit beside each take until it finishes")
+            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+        }
+      }
+
+      Section {
+        LabeledContent {
+          Button("Reset…", role: .destructive) {}.disabled(true)
+        } label: {
+          Text("Reset all settings")
+          Text("Coming later").font(.caption).foregroundStyle(.secondary)
+        }
+      } header: { Text("Reset") } footer: {
+        UISettingsFootnote("Recordings are never touched. Reset will ask for confirmation and is unavailable while cameras run or recordings finish.")
+      }
+    }
+    .formStyle(.grouped)
+    .confirmationDialog("Forget saved LUTs?", isPresented: $confirmForgetLUTs) {
+      Button("Forget Saved LUTs", role: .destructive) { forgetLUTs() }
+    } message: {
+      Text("Each camera stops applying its saved LUT until you choose a .cube file again.")
+    }
+  }
+
+  private func forgetLUTs() {
+    for descriptor in model.feedDescriptors {
+      model.updateCamera(descriptor.id) { camera in
+        camera.lutBookmark = nil
+        camera.applyLUT = false
+      }
+    }
+  }
+}
+
+// MARK: - Plain-text diagnostics
+
+@MainActor
+enum UIDiagnosticsText {
+  static func summary(model: AppModel) -> String {
+    var lines = ["Ultracam diagnostics", "Output mode: \(model.outputMode == .program ? "Program" : "Separate cameras")"]
+    if model.outputMode == .program {
+      lines.append("Program: \(model.programInUse ? "in use" : "not in use")")
+    }
+    for descriptor in model.feedDescriptors {
+      lines.append("")
+      lines.append("[\(descriptor.name)] \(model.isCameraRunning(descriptor.id) ? "running" : "stopped")")
+      if let update = model.cameraUpdate(descriptor.id) {
+        lines.append("Input: \(update.input)")
+        lines.append("Output: \(update.output.isEmpty ? "—" : update.output)")
+        lines.append(String(format: "Delivered: %.2f fps · processing %.2f ms · video %.2f Mb/s", update.outputFPS, update.processingMS, update.videoBitrateMbps))
+        lines.append("Drops: source \(update.sourceDrops), capture \(update.captureDrops), buffers \(update.poolDrops), camera \(update.cameraDrops), preview \(update.previewDrops)")
+        lines.append("Audio: \(update.audioPresent ? "\(update.audioChannels) ch \(update.audioSampleRate) Hz" : "none") · drops \(update.audioDrops)")
+        lines.append("Message: \(update.message)")
+        lines.append("Camera: \(update.cameraMessage)")
+        if let error = update.previewError { lines.append("Preview: \(error)") }
+      }
+      if let state = model.recordingModel.feeds.first(where: { $0.id == descriptor.id }) {
+        lines.append("Recording: \(state.displayStatus)")
+        if let stats = state.statistics {
+          lines.append("Take: \(stats.elapsedText) · \(stats.sizeText) · dropped \(stats.droppedVideoFrames) · encoder errors \(stats.encoderErrors) · writer errors \(stats.writerErrors)")
+          if let error = stats.lastError { lines.append("Last error: \(error)") }
+        }
+        if let error = state.error { lines.append("Error: \(error)") }
+      }
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  static func copy(model: AppModel) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(summary(model: model), forType: .string)
+  }
+}

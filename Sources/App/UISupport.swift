@@ -1,4 +1,5 @@
 import AppKit
+import CoreMediaIO
 import MonitorToolsCore
 import MonitorToolsUI
 
@@ -19,6 +20,17 @@ enum UIRecordingLibrary {
   /// One entry per destination volume. Time left divides free space by the
   /// combined bitrate of the takes recording to that volume, or one nominal
   /// take when nothing is recording there.
+  @MainActor private static var takeCache: (key: [String], date: Date, takes: [UITake])?
+
+  /// `recentTakes(in:)` cached for a few seconds; folder scans are not free.
+  @MainActor static func cachedRecentTakes(in folders: [URL]) -> [UITake] {
+    let key = folders.map(\.path)
+    if let cache = takeCache, cache.key == key, Date().timeIntervalSince(cache.date) < 3 { return cache.takes }
+    let takes = recentTakes(in: folders)
+    takeCache = (key, Date(), takes)
+    return takes
+  }
+
   static func drives(for folders: [URL?], recordingRates: [(URL, Double)], fallbackMegabits: Double = 707) -> [UIDrive] {
     var seen: [String: UIDrive] = [:]
     var order: [String] = []
@@ -69,6 +81,12 @@ enum UIRecordingLibrary {
 enum UIMonitorBridge {
   /// Presenters of the pictures currently on screen, so menu commands can act on the selected camera.
   private static var presenters: [String: MonitorSurfacePresenter] = [:]
+  /// Cameras whose picture is currently the native preview (freeze then waits for the next frame).
+  private static var nativePreview: Set<String> = []
+
+  static func setUsesNativePreview(_ native: Bool, cameraID: String) {
+    if native { nativePreview.insert(cameraID) } else { nativePreview.remove(cameraID) }
+  }
 
   static func register(_ presenter: MonitorSurfacePresenter, cameraID: String) { presenters[cameraID] = presenter }
   static func unregister(cameraID: String, presenter: MonitorSurfacePresenter) {
@@ -89,7 +107,14 @@ enum UIMonitorBridge {
 
   /// Turns one tool on or off. The configuration's master switch follows the
   /// tools: it is on while any tool is on.
-  static func toggled(_ tool: UIMonitorTool, in configuration: MonitorConfiguration) -> MonitorConfiguration {
+  /// Source profile for a camera's declared LUT input, used when false color
+  /// is turned on before a source profile was chosen.
+  static func sourceProfile(forGamut gamut: String) -> String {
+    gamut.contains("Cine") ? "sony-slog3-sgamut3cine" : "sony-slog3-sgamut3"
+  }
+
+  static func toggled(_ tool: UIMonitorTool, in configuration: MonitorConfiguration,
+    defaultSourceProfile: String? = nil) -> MonitorConfiguration {
     var next = configuration
     let active = activeTools(configuration).contains(tool)
     if !configuration.toolsEnabled {
@@ -103,7 +128,21 @@ enum UIMonitorBridge {
     switch tool {
     case .guides: next.guides.enabled = !active
     case .zebra: next.zebra.enabled = !active
-    case .falseColor: next.falseColor.mode = active ? .off : .sonySLog3
+    case .falseColor:
+      if active {
+        next.falseColor.mode = .off
+      } else {
+        if next.sourceProfileID == nil, let defaultSourceProfile { next.sourceProfileID = defaultSourceProfile }
+        if SonySLog3FalseColor.supports(sourceProfileID: next.sourceProfileID) {
+          next.falseColor.mode = .sonySLog3
+          next.falseColor.profileID = SonySLog3FalseColor.profileID
+          next.falseColor.specificationVersion = SonySLog3FalseColor.specificationVersion
+        } else if ELZoneProfile.supports(sourceProfileID: next.sourceProfileID) {
+          next.falseColor.mode = .elZone
+          next.falseColor.profileID = ELZoneProfile.profileID
+          next.falseColor.specificationVersion = ELZoneProfile.specificationVersion
+        }
+      }
     case .focus: next.focus.enabled = !active
     case .scopes: next.scopes.enabled = !active
     }
@@ -112,16 +151,20 @@ enum UIMonitorBridge {
     return next
   }
 
-  static func toggle(_ tool: UIMonitorTool, for cameraID: String, coordinator: MonitorCoordinator) {
+  static func toggle(_ tool: UIMonitorTool, for cameraID: String, coordinator: MonitorCoordinator,
+    defaultSourceProfile: String? = nil) {
     let target = MonitorTargetID(cameraID)
-    coordinator.setConfiguration(toggled(tool, in: coordinator.configuration(for: target)), for: target)
+    coordinator.setConfiguration(toggled(tool, in: coordinator.configuration(for: target),
+      defaultSourceProfile: defaultSourceProfile), for: target)
   }
 
   static func perform(_ action: UIAction, coordinator: MonitorCoordinator) {
     switch action {
     case .freeze(let id):
       guard let presenter = presenters[id] else { return }
-      if presenter.isFreezePending { presenter.cancelPendingFreeze() } else { presenter.toggleFreeze() }
+      if presenter.isFreezePending { presenter.cancelPendingFreeze() }
+      else if !presenter.isFrozen && nativePreview.contains(id) { presenter.requestFreezeOnNextFrame() }
+      else { presenter.toggleFreeze() }
     case .toggleClean(let id):
       presenters[id]?.toggleClean()
     case .detachMonitor(let id):
@@ -146,5 +189,44 @@ enum UIPanels {
     panel.canCreateDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return }
     if let cameraID { recording.setOutputFolder(url, for: cameraID) } else { recording.outputFolder = url }
+  }
+}
+
+/// Detects whether the Ultracam camera extension is installed and active by
+/// looking for one of its devices in Core Media I/O. Cached briefly so the
+/// interface can ask on every refresh.
+@MainActor
+enum UIExtensionDetector {
+  private static var cached: (date: Date, installed: Bool)?
+
+  static func isInstalled() -> Bool {
+    if let cached, Date().timeIntervalSince(cached.date) < 5 { return cached.installed }
+    let installed = scan()
+    cached = (Date(), installed)
+    return installed
+  }
+
+  private static func address(_ selector: Int) -> CMIOObjectPropertyAddress {
+    CMIOObjectPropertyAddress(mSelector: UInt32(selector), mScope: UInt32(kCMIOObjectPropertyScopeGlobal),
+      mElement: UInt32(kCMIOObjectPropertyElementMain))
+  }
+
+  private static func scan() -> Bool {
+    var property = address(kCMIOHardwarePropertyDevices)
+    var size: UInt32 = 0
+    guard CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, &size) == noErr,
+      size % 4 == 0, size <= 64 * 1024 else { return false }
+    var devices = [CMIOObjectID](repeating: 0, count: Int(size) / 4)
+    guard !devices.isEmpty, devices.withUnsafeMutableBytes({
+      CMIOObjectGetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, size, &size, $0.baseAddress!)
+    }) == noErr else { return false }
+    return devices.contains { device in
+      var nameProperty = address(kCMIOObjectPropertyName)
+      var value: Unmanaged<CFString>?
+      var valueSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+      guard CMIOObjectGetPropertyData(device, &nameProperty, 0, nil, valueSize, &valueSize, &value) == noErr else { return false }
+      let name = value?.takeRetainedValue() as String? ?? ""
+      return name.hasPrefix(VideoContract.cameraName)
+    }
   }
 }

@@ -164,6 +164,8 @@ final class AppModel {
   private(set) var recentCuts: [UICutRecord] = []
   /// When the camera now on Program went on air.
   private(set) var programShotStartedAt: Date?
+  /// Set by `resetAllSettings()`; no further saves happen before the app quits.
+  private(set) var settingsResetPending = false
   let recordingModel: RecordingModel
   private let feedCoordinator: FeedCoordinator
   private let settingsStore: AppSettingsStore
@@ -595,7 +597,7 @@ final class AppModel {
   }
 
   func saveSettings() {
-    guard !restoringSettings else { return }
+    guard !restoringSettings, !settingsResetPending else { return }
     let oldName = feedCoordinator.selectedDescriptor.name
     var monitorConfiguration = feedCoordinator.selectedDescriptor.monitorConfiguration
     if feedCoordinator.selectedDescriptor.selectedDevice != selectedDevice {
@@ -1208,6 +1210,36 @@ final class AppModel {
       }
       reconcileProgramTransportDemand()
     }
+  }
+
+  /// Forgets one camera's saved LUT bookmark and turns its LUT effect off.
+  func forgetLUT(_ id: FeedID) {
+    if id == selectedFeedID {
+      lutLoadGeneration &+= 1
+      loading = false
+      lutBookmark = nil
+      lutLoaded = false
+      lutFileName = nil
+      lutError = nil
+      lutTitle = "No LUT loaded"
+      rememberedLUTEnabled = false
+      if configuration.applyLUT { configuration.applyLUT = false } else { saveSettings() }
+      return
+    }
+    updateCamera(id) { descriptor in
+      descriptor.lutBookmark = nil
+      descriptor.applyLUT = false
+    }
+  }
+
+  /// Clears every saved preference. Only allowed while no camera runs or records;
+  /// the app should quit afterwards so nothing writes the old state back.
+  @discardableResult
+  func resetAllSettings() -> Bool {
+    guard canEditFeedTopology else { return false }
+    settingsResetPending = true
+    settingsStore.resetAll()
+    return true
   }
 
   /// Holds the current Program shot: automatic switching stays on but makes no cuts.

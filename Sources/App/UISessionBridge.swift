@@ -10,6 +10,8 @@ final class UIInterfaceState {
   var collapsed: Set<String> { didSet { defaults.set(Array(collapsed), forKey: "ui.collapsed") } }
   var sidebarVisible: Bool { didSet { defaults.set(sidebarVisible, forKey: "ui.sidebar") } }
   var inspectorOpen = false
+  /// Tests set this so confirmations are recorded instead of shown as modal alerts.
+  var alertsDisabled = false
   /// A pending confirmation: the message and the action to run when confirmed.
   var confirmation: (message: String, action: UIAction)?
 
@@ -137,8 +139,9 @@ struct UISessionBridge {
     let switcher = model.switcherSettings
     session.autoSwitching = switcher.automatic
     session.autoHold = switcher.naturalTalkingHead.manualHold
+    session.strategy = switcher.strategy
     session.strategyTitle = UIStrategy.title(switcher.strategy)
-    session.shot = UIShotTiming(currentShot: model.programShotStartedAt.map { Date().timeIntervalSince($0) },
+    session.shot = UIShotTiming(startedAt: model.programShotStartedAt, currentShot: model.programShotStartedAt.map { Date().timeIntervalSince($0) },
       minimum: switcher.naturalTalkingHead.minimumShotDuration,
       softMaximum: switcher.naturalTalkingHead.softMaximumShotDuration,
       maximum: switcher.naturalTalkingHead.maximumShotDuration)
@@ -148,12 +151,13 @@ struct UISessionBridge {
     session.timecodeTitle = UITimecode.title(recording.timecodeMode)
     session.defaultFolderPath = recording.outputFolder?.path
     session.drives = drives
-    session.recentTakes = UIRecordingLibrary.recentTakes(in: model.feedDescriptors.compactMap { recording.outputFolder(for: $0.id) })
+    session.recentTakes = UIRecordingLibrary.cachedRecentTakes(in: model.feedDescriptors.compactMap { recording.outputFolder(for: $0.id) })
     session.interruptedTakes = recording.interruptedRecordings.map { UIInterruptedTake(id: $0.id.path, title: $0.title) }
     session.recoveringID = recording.recoveringID?.path
     session.recoveryMessage = recording.recoveryMessage
     session.install = UIInstallState(canRequestChanges: model.installer.canRequestChanges, pending: model.installer.pending,
-      status: model.installer.status, unavailableReason: model.installer.unavailableReason)
+      status: model.installer.status, unavailableReason: model.installer.unavailableReason,
+      installed: UIExtensionDetector.isInstalled())
     session.canEditTopology = model.canEditFeedTopology
     session.layout = model.outputMode == .program || interface.layout != .programView ? interface.layout : .sideBySide
     session.collapsed = interface.collapsed
@@ -174,8 +178,22 @@ struct UISessionBridge {
   /// Runs an action, asking for confirmation first when it would end a recording or on-air output.
   func send(_ action: UIAction, confirmed: Bool = false) {
     if !confirmed, let message = action.needsConfirmation(in: presentation()) {
-      interface.confirmation = (message, action)
-      return
+      // The main window shows the confirmation. Without a visible main window
+      // (menus or the menu bar item), ask with a standard alert instead.
+      let mainVisible = NSApplication.shared.windows.contains {
+        $0.isVisible && ($0.identifier?.rawValue.hasPrefix("main") ?? false)
+      }
+      if mainVisible || interface.alertsDisabled {
+        interface.confirmation = (message, action)
+        return
+      }
+      let alert = NSAlert()
+      alert.messageText = message
+      alert.alertStyle = .warning
+      alert.addButton(withTitle: UISessionBridge.confirmTitle(for: action))
+      alert.addButton(withTitle: "Cancel")
+      if #available(macOS 11.0, *) { alert.buttons.first?.hasDestructiveAction = true }
+      guard alert.runModal() == .alertFirstButtonReturn else { return }
     }
     perform(action)
   }
@@ -262,7 +280,10 @@ struct UISessionBridge {
         NSWorkspace.shared.open(folder)
       }
     case .recover(let id): if let take = recording.interruptedRecordings.first(where: { $0.id.path == id }) { recording.recover(take) }
-    case .toggleTool(let id, let tool): UIMonitorBridge.toggle(tool, for: id, coordinator: model.monitorCoordinator)
+    case .toggleTool(let id, let tool):
+      let gamut = model.descriptor(for: feedID(id))?.gamut ?? model.gamut
+      UIMonitorBridge.toggle(tool, for: id, coordinator: model.monitorCoordinator,
+        defaultSourceProfile: UIMonitorBridge.sourceProfile(forGamut: gamut))
     case .freeze, .toggleClean, .detachMonitor: UIMonitorBridge.perform(action, coordinator: model.monitorCoordinator)
     case .resetMonitorTools(let id):
       model.monitorCoordinator.setConfiguration(MonitorConfiguration(), for: MonitorTargetID(id))
@@ -278,6 +299,15 @@ struct UISessionBridge {
     case .quit:
       model.saveSettings()
       NSApplication.shared.terminate(nil)
+    }
+  }
+}
+
+extension UISessionBridge {
+  static func confirmTitle(for action: UIAction) -> String {
+    switch action {
+    case .stopAllCameras: return "Stop All Cameras"
+    default: return "Stop Camera"
     }
   }
 }

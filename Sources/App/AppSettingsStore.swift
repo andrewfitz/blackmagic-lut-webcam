@@ -389,6 +389,17 @@ final class AppSettingsStore {
 
   init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+  /// Removes every saved Ultracam preference: feeds, switcher, monitor tools,
+  /// Dock visibility, interface layout and recording-folder bookmarks.
+  /// Recordings and their recovery journals on disk are not touched.
+  func resetAll() {
+    let names = defaults.dictionaryRepresentation().keys.filter {
+      $0 == Self.hideFromDockKey || $0 == Self.key || $0 == Self.snapshotKey ||
+        $0.hasPrefix("ui.") || $0.hasPrefix("recordingFolderBookmark")
+    }
+    for name in names { defaults.removeObject(forKey: name) }
+  }
+
   var hideFromDock: Bool {
     get { defaults.bool(forKey: Self.hideFromDockKey) }
     set { defaults.set(newValue, forKey: Self.hideFromDockKey) }
