@@ -467,7 +467,7 @@ enum UIPresentationBuilder {
     }
 
     let canRecordNow = camera.running && liveFormat != nil && rec.folderPath != nil && rec.status == .idle
-    let recordButtonActive = rec.status == .recording
+    let recordButtonActive = rec.status == .recording || rec.status == .paused
     let recordButtonEnabled = rec.status == .recording || rec.status == .paused || canRecordNow
     let recordHelp: String = {
       if rec.status == .recording || rec.status == .paused { return "Stop Recording (⌘R)" }
@@ -482,8 +482,8 @@ enum UIPresentationBuilder {
       UIChip(id: index, title: title, isOn: camera.effects.indices.contains(index) && camera.effects[index],
         enabled: index != 0 || camera.lutName != nil,
         help: index == 0
-          ? (camera.lutName == nil ? "Load a .cube LUT to enable this effect." : "Apply the LUT. Doesn't change the format Zoom receives.")
-          : "\(effectLongTitles[index]). Changes the format Zoom receives; its video updates briefly.")
+          ? (camera.lutName == nil ? "Load a .cube LUT to enable this effect." : "Apply the LUT. Doesn't change the camera output format.")
+          : "\(effectLongTitles[index]). Changes the camera output format; the video updates briefly.")
     }
 
     let outputLine: String

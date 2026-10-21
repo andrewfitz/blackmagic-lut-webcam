@@ -199,7 +199,7 @@
 
   // ---------- 3 · pictures ----------
   const T = (c, o) => tw(tile(c, o));
-  const holdBadge = '<span class="pill sm glass">Auto · holding 8.2 s</span>';
+  const holdBadge = '<span class="pill sm glass">Shot held · 8.2 s</span>';
   mount('pics', [
     card('', T(C1, { role: 'air', programInUse: true }), 1, 'ON AIR', 'Program mode, and an app is using Ultracam · Program. Red ring plus a text badge, never color alone.'),
     card('', T(C1, { role: 'air', programInUse: false }), 2, 'PROGRAM · no viewer', 'Selected for Program, but nothing is watching yet. Outlined badge, no red ring.'),
@@ -216,7 +216,7 @@
     card('', tw(phTile('Camera 1', 'info', 'Preview stopped', 'The preview renderer reported an error. Camera output keeps running.', '<span class="btn" style="margin-top:4px">' + ic('refresh') + 'Retry Preview</span>')), 13, 'Preview error · Retry Preview', 'Restores the current app\'s preview retry. It restarts rendering only.'),
     card('', T(idleCam(C1), { state: 'stopped' }), 14, 'Camera stopped', 'Start Camera on the picture and in the strip. ⌘↩ starts the cameras.'),
     card('', T(C1, { role: 'air', selected: true }), 15, 'Selected (blue ring)', 'Selection = keyboard focus (D7). ⌘1–⌘4 move it; ⇧⌘B, ⌘R and the Camera menu act on it. Blue is never a tally color.'),
-    card('', tw(phTile('Program', 'video', 'Program shows black', 'No camera has a signal. Zoom receives black until one returns.', '', '<span class="role prog">PROGRAM</span>', 'tally-air')), 16, 'No healthy source', 'Program view: the on-air camera was lost and none can replace it. The ring stays red because Zoom is still watching.'),
+    card('', tw(phTile('Program', 'video', 'Program shows black', 'No camera has a signal. Your meeting app receives black until one returns.', '', '<span class="role air">ON AIR</span>', 'tally-air')), 16, 'No healthy source', 'Program view: the on-air camera was lost and none can replace it. ON AIR and the red ring stay because a meeting app is still receiving Program (black).'),
   ].join(''));
 
   // ---------- 4 · sidebar crops ----------
@@ -226,7 +226,7 @@
       <div class="mini-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:10px 8px"><b style="font-size:12.5px">Connect an UltraStudio</b><small>No Blackmagic capture device found. Check Desktop Video is installed and the device is connected.</small><span class="btn">${ic('refresh')}Refresh</span></div>`),
       1, 'First run · no inputs', 'The Cameras header shows the count. Refresh rescans devices; it is the only action until an input appears.'),
     card('', sbw(`<div class="side-h">Output</div>
-      <div class="banner info" style="margin:4px 0 2px"><span class="bi">${ic('camlink')}</span><div><b>Install the Ultracam camera</b><small>Needed before Zoom can see it. macOS asks you to approve it.</small></div></div>
+      <div class="banner info" style="margin:4px 0 2px"><span class="bi">${ic('camlink')}</span><div><b>Install the Ultracam camera</b><small>Needed before meeting apps can see it. macOS asks you to approve it.</small></div></div>
       <div style="padding:4px 8px"><span class="btn blue">Install Camera</span></div>`),
       2, 'Camera not installed', 'Signed build, extension not active. One action. Capture, preview and recording already work.'),
     card('', sbw(`<div class="side-h">Output</div>
@@ -264,7 +264,7 @@
   const sbl = (title, text, html) => `<div class="sbline"><div class="lab"><b>${title}</b>${text}</div><div class="sbwrap">${html}</div></div>`;
   const recNoSig = statusbar({ mode: 'program' }).replace('<div class="sp"></div>', '<div class="div"></div><div class="seg2 warnseg">' + ic('info') + 'Camera 1 · recording, no signal 0:42</div><div class="sp"></div>').replace('CPU 48.6% · GPU (video) 29.8% · Memory 1.71 GB', 'CPU 49% · GPU 30% · 1.71 GB');
   const diskFull = statusbar({ mode: 'program' }).replace('<span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 2 · 12:31</span> · ', '<span class="dot red" style="box-shadow:none"></span><span style="color:var(--label)">REC 1 · 12:31</span> · ')
-    .replace('<div class="sp"></div>', '<div class="div"></div><div class="seg2 errseg">' + ic('info') + 'Camera 2 · Archive is full · saved up to 12:20</div><div class="sp"></div>').replace('CPU 48.6% · GPU (video) 29.8% · Memory 1.71 GB', 'CPU 49% · GPU 30% · 1.71 GB');
+    .replace('<div class="sp"></div>', '<div class="div"></div><div class="seg2 errseg">' + ic('info') + 'Camera 2 · Archive is full · saved up to 12:20</div><div class="sp"></div>').replace('8TB 1 h 52 m · Archive 5 h 40 m left', '8TB 1 h 52 m left · Archive full').replace('CPU 48.6% · GPU (video) 29.8% · Memory 1.71 GB', 'CPU 49% · GPU 30% · 1.71 GB');
   mount('sbars', [
     sbl('Normal', 'Published and live, not recording.', statusbar({ mode: 'program', recording: false })),
     sbl('Recording', 'Both takes and the time left on each drive.', statusbar({ mode: 'program' })),
@@ -295,7 +295,7 @@
       <div class="mi dis"><span class="ck"></span><span class="ico">${ic('trash')}</span>Remove Camera…<small>stop all cameras first</small></div>
     </div></div>`,
       2, 'Topology locked · ⋯ menu', '⋯ is a menu (D5). Rename, Add and Remove are blocked while any camera runs or records, so they are shown disabled with the reason instead of failing.'),
-    card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('power')}</span><div style="line-height:1.35"><b style="font-size:13px">Keep the lid open while recording</b><div class="c2" style="font-size:11.5px;margin-top:3px">Ultracam keeps the Mac awake while cameras run, but closing the lid still sleeps it and stops both takes.</div></div></div>
+    card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('power')}</span><div style="line-height:1.35"><b style="font-size:13px">Keep the lid open while recording</b><span class="newtag">NEW</span><div class="c2" style="font-size:11.5px;margin-top:3px">Ultracam keeps the Mac awake while cameras run, but closing the lid still sleeps it and stops both takes.</div></div></div>
       <div class="btnrow"><span class="btn">Don't Show Again</span><span class="btn blue">OK</span></div>`),
       3, 'Keep awake · lid notice', 'Idle sleep is prevented while any camera runs or records. Shown once when the first take starts on battery power.'),
     card('', sheet(`<div style="display:flex;gap:12px;align-items:flex-start"><span class="appicon">${ic('videofill')}</span><div style="line-height:1.35"><b style="font-size:13px">2 recordings are finishing</b><div class="c2" style="font-size:11.5px;margin-top:3px">Ultracam quits when they're saved.</div></div></div>
@@ -311,7 +311,7 @@
         <div class="step"><span class="sn">3</span><div class="st">Load a LUT · optional<small>S-Log3 → Rec.709 .cube for the output</small></div><span class="btn">Load LUT…</span></div>
         <div class="step"><span class="sn">4</span><div class="st">Choose a recording folder<small>For backup or standalone recording</small></div><span class="btn">Choose…</span></div>
       </div>
-      <div class="c2" style="font-size:11.5px;margin-top:10px">Then choose <b style="color:var(--label)">Ultracam · Camera 1</b> as the camera in Zoom.</div></div>`,
+      <div class="c2" style="font-size:11.5px;margin-top:10px">Then choose <b style="color:var(--label)">Ultracam · Camera 1</b> as the camera in your meeting app.</div></div>`,
       5, 'First launch', 'The empty window becomes a checklist. Completed steps tick off; the last line tells you which camera to pick in Zoom.'),
     card('w2', `<div class="ddwrap ddw">
       <div class="dd glass" style="width:330px">

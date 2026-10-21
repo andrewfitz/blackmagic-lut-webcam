@@ -532,7 +532,7 @@ struct UIMenuPreviewContent: View {
           Image(systemName: "video").font(.system(size: 26, weight: .light))
           Text(waiting ? "Waiting for a camera app" : presentation.cameras.count == 1 ? "Camera stopped" : "Cameras stopped")
             .font(.callout.weight(.semibold))
-          Text(waiting ? "Ultracam starts when Zoom or another app opens its camera." : "Start the camera to see its HDMI input.")
+          Text(waiting ? "Ultracam starts when a meeting app opens its camera." : "Start the camera to see its HDMI input.")
             .font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
         }
         .foregroundStyle(.white)

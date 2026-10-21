@@ -57,7 +57,7 @@
         <div class="cutbar">
           <div style="display:flex; align-items:center; gap:8px">
             <div class="bigcut air"><span class="kk">1</span>Camera 1<span style="font-weight:500;opacity:0.9;font-size:11px">on air</span></div>
-            <div class="bigcut pend"><span class="kk">2</span>Camera 2<span class="c2" style="font-weight:500;font-size:11px">next · at speech gap</span></div>
+            <div class="bigcut"><span class="kk">2</span>Camera 2<span class="c3" style="font-weight:500;font-size:11px">⌃2</span></div>
             <div style="width:0.5px;height:24px;background:var(--sep);margin:0 4px"></div>
             <span style="display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px"><i data-i="auto" class="sm"></i>Auto<div class="switch sm on"></div></span>
             <span class="popup">Natural talking head<span class="chev"><i data-i="chevud" class="sm"></i></span></span>
@@ -72,7 +72,7 @@
                 <span class="mkl" style="left:33.3%">min 10 s</span><span class="mkl" style="left:66.6%">soft max 20 s</span><span class="mkl" style="left:95%">max 30 s</span>
               </div>
             </div>
-            <span class="c2" style="width:270px; text-align:right; white-space:nowrap">Camera 2 is next, at the first speech gap after 10 s</span>
+            <span class="c2" style="width:270px; text-align:right; white-space:nowrap">Next auto cut: speech gap after 10 s</span>
           </div>
         </div>
 
@@ -81,7 +81,7 @@
         <div class="cuts">
           <div style="display:flex; align-items:center; gap:8px; font-size:12px; white-space:nowrap"><b>Recent Cuts</b><span class="c2">this session</span>
             <span style="margin-left:auto;font-size:11px" class="c2 tnum">5 cuts · average shot 21 s · 0 forced</span></div>
-          <div class="alane"><span class="c2" style="width:84px">Program audio</span><div class="lt"><svg class="sp" viewBox="0 0 400 18" preserveAspectRatio="none"></svg></div><span class="c3" style="font-size:10.5px">last 2 min</span></div>
+          <div class="alane"><span class="c2" style="width:124px;white-space:nowrap">Program audio<span class="newtag">NEW</span></span><div class="lt"><svg class="sp" viewBox="0 0 400 18" preserveAspectRatio="none"></svg></div><span class="c3" style="font-size:10.5px">last 2 min</span></div>
           <div class="form">
             <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:22:23</span><span class="lbl">Cut to <b>Camera 1</b></span><span class="c2" style="font-size:11px">Auto</span><span class="badge orange">max shot</span></div>
             <div class="row"><span class="mono c2" style="font-size:11px;width:68px">14:21:58</span><span class="lbl">Cut to <b>Camera 2</b></span><span class="c2" style="font-size:11px">Auto</span><span class="badge">speech gap</span></div>
@@ -114,10 +114,10 @@
   mount('tb', toolbar({ title: 'Program View', subtitle: 'Optional layout', layout: 'program', collapsedAll: true }));
   const cutBtn = (n) => `<div class="overlay" style="right:8px; bottom:8px;"><span class="btn cutbtn" style="height:24px;background:rgba(18,18,20,0.78);color:#fff"><i data-i="cut" class="sm"></i>Cut<span style="opacity:0.7;margin-left:3px">⌃${n}</span></span></div>`;
   const t1 = tile(CAMS.c1, { role: 'air', compact: true, height: 194, selected: true });
-  const t2 = tile(CAMS.c2, { role: 'next', compact: true, height: 194 }).replace(/<\/div>\s*$/, cutBtn(2) + '</div>');
+  const t2 = tile(CAMS.c2, { compact: true, height: 194 }).replace(/<\/div>\s*$/, cutBtn(2) + '</div>');
   // Source REC pills move left so the Cut button has the bottom-right corner.
   mount('srcs', t1 + t2.replace('style="right:10px; bottom:10px;"', 'style="left:10px; bottom:10px;"'));
-  mount('strips', strip(CAMS.c1, { expanded: false, role: 'air', selected: true }) + strip(CAMS.c2, { expanded: false, role: 'next' }));
+  mount('strips', strip(CAMS.c1, { expanded: false, role: 'air', selected: true }) + strip(CAMS.c2, { expanded: false }));
   mount('st', statusbar({ mode: 'program' }));
   (function bars() {
     const svg = document.querySelector('.sp');

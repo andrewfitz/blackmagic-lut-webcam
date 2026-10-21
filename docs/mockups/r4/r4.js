@@ -13,7 +13,7 @@ const CAMS = {
     fx: [0, 1, 1, 0], lut: null, audio: [40, 38, '−21.4'], tools: [0, 0, 0, 0, 1], fxview: '', signal: 'Output' },
 };
 const FX_NAMES = ['LUT', '1080p', '4:2:0', '29.97'];
-const FX_HELP = ['Live-safe', 'Changes the format Zoom receives', 'Changes the format Zoom receives', 'Changes the format Zoom receives'];
+const FX_HELP = ['Live-safe', 'Changes the camera output format', 'Changes the camera output format', 'Changes the camera output format'];
 const TOOL_ICONS = ['guides', 'zebra', 'falsecolor', 'focus', 'scope'];
 const ic = (n, cls = 'sm', style = '') => `<i data-i="${n}" class="${cls}"${style ? ` style="${style}"` : ''}></i>`;
 const newtag = '<span class="newtag">NEW</span>';
@@ -41,13 +41,14 @@ function tile(c, { role = null, mode = 'program', programInUse = true, inUse = f
   const roleBadge = mode === 'program' && role === 'air' ? (programInUse ? '<span class="role air">ON AIR</span>' : '<span class="role prog">PROGRAM</span>')
     : mode === 'program' && role === 'next' ? '<span class="role nxt">NEXT</span>' : onAir ? '<span class="role air">ON AIR</span>' : '';
   const ring = onAir ? 'tally-air' : role === 'next' ? 'tally-next' : '';
-  const live = !['nosignal', 'unsupported', 'stopped', 'hidden'].includes(state);
+  const live = !['nosignal', 'unsupported', 'stopped', 'hidden', 'recnosignal'].includes(state);
   let rec = '';
   if (c.rec.state === 'rec' && state !== 'recnosignal') rec = `<span class="pill sm glass recpill"><span class="dot red"></span><span class="tnum">REC ${c.rec.t.replace(/^00:/, '')}</span></span>`;
   if (c.rec.state === 'paused' || state === 'paused') rec = `<span class="pill sm glass"><span class="co">❚❚</span><span class="tnum">Paused ${c.rec.t.replace(/^00:/, '')}</span></span>`;
   if (state === 'recnosignal') rec = `<span class="pill sm glass co">${ic('info')}<span class="tnum">REC · no signal 0:42</span></span>`;
   const ph = {
     nosignal: `<div class="ph">${ic('video', 'lg')}<b>No HDMI signal</b><small>Check the camera's HDMI output: 2160p 29.97 or 59.94, 10-bit 4:2:2, RAW off.</small></div>`,
+    recnosignal: `<div class="ph">${ic('video', 'lg')}<b>No HDMI signal</b><small>The take stays open; nothing is written until the signal returns.</small></div>`,
     unsupported: `<div class="ph">${ic('info', 'lg')}<b>1920×1080i 59.94 isn't supported</b><small>Waiting for 2160p 29.97 or 59.94.</small></div>`,
     stopped: `<div class="ph">${ic('video', 'lg')}<b>Camera stopped</b><small>Start the camera to see its HDMI input.</small><span class="btn" style="margin-top:4px">${ic('play')}Start Camera</span></div>`,
     hidden: `<div class="ph">${ic('eye', 'lg')}<b>Preview hidden</b><small>Camera output continues. Hidden previews do no rendering work.</small><span class="btn" style="margin-top:4px">Show Preview</span></div>`,
@@ -73,6 +74,7 @@ function strip(c, { expanded = true, state = null, role = null, mode = 'program'
   const recOn = state === 'recording' || state === 'recnosignal';
   const tone = state === 'recnosignal' || state === 'nofolder' ? ' warn' : state === 'failed' ? ' err' : '';
   const statusBadge = state === 'stopped' ? '<span class="badge">Stopped</span>' : state === 'waiting' ? '<span class="badge orange">Waiting for HDMI</span>'
+    : state === 'recnosignal' ? '<span class="badge orange">No signal</span>'
     : `<span class="badge green">● ${c.fmt}</span>`;
   const roleBadge = mode === 'program' && role === 'air' ? (programInUse ? '<span class="badge red">On air</span>' : '<span class="badge">Program</span>')
     : mode === 'program' && role === 'next' ? '<span class="badge green">Next</span>' : '';
@@ -98,7 +100,7 @@ function strip(c, { expanded = true, state = null, role = null, mode = 'program'
     ready: '', stopped: `<span class="btn">${ic('play')}Start Camera</span>`, waiting: '',
   }[state];
   const recBtn = state === 'finishing' ? '<span class="recbtn sm" style="opacity:0.35"></span>'
-    : ['nofolder', 'stopped', 'waiting'].includes(state) ? '<span class="recbtn sm dis"></span>' : `<span class="recbtn sm${recOn || state === 'updating' ? ' on' : ''}" title="${recOn ? 'Stop Recording' : 'Record'}"></span>`;
+    : ['nofolder', 'stopped', 'waiting'].includes(state) ? '<span class="recbtn sm dis"></span>' : `<span class="recbtn sm${recOn || state === 'updating' || state === 'paused' ? ' on' : ''}" title="${recOn || state === 'paused' ? 'Stop Recording' : 'Record'}"></span>`;
   const outputCell = mode === 'program'
     ? (role === 'air' ? (programInUse ? '<span class="cg" style="font-size:11.5px">● In Program · on air</span>' : '<span class="c2" style="font-size:11.5px">In Program · no viewer yet</span>')
       : `<span class="btn">${ic('cut')}Cut<span class="c3" style="margin-left:4px">⌃${c.n}</span></span>`)
@@ -148,7 +150,7 @@ function sidebar({ mode = 'program', cams = ['c1', 'c2'], programInUse = true, r
     const c = cams.map((k) => CAMS[k]).find((x) => x.drive === d);
     return `<div style="padding:3px 8px 2px;display:flex;flex-direction:column;gap:4px">
       <div style="display:flex;align-items:center;gap:6px;font-size:11px">${ic('folder', 'sm c2')}${d}<span class="c2 tnum" style="margin-left:auto">${c.left} left</span></div>
-      <div class="gauge"><i style="width:${d === '8TB' ? 93 : 38}%"></i></div></div>`;
+      <div class="gauge"><i style="width:${d === '8TB' ? 93 : 55}%"></i></div></div>`;
   }).join('');
   return `<div class="sidebar glass sb3">
     <div style="position:absolute; top:20px; left:18px;" class="traffic"><span></span><span></span><span></span></div>
@@ -225,7 +227,7 @@ function inspector(c, { mode = 'program' } = {}) {
     </div>
     <div class="form-h">Processing <span class="lblsw" style="font-weight:500">Processing<span class="switch sm on"></span></span></div>
     <div class="form">
-      ${FX_NAMES.map((n, i) => `<div class="row"><div class="check${c.fx[i] ? ' on' : ''}${i === 0 && !c.lut ? ' off-dim' : ''}"></div><span class="lbl">${i + 1} · ${['LUT', 'Downscale to 1080p', 'Color 4:2:0 8-bit', 'Limit to 29.97 fps'][i]}<small>${i === 0 ? (c.lut ? 'Live-safe' : 'Load a .cube to enable') : 'Changes the format Zoom receives'}</small></span></div>`).join('')}
+      ${FX_NAMES.map((n, i) => `<div class="row"><div class="check${c.fx[i] ? ' on' : ''}${i === 0 && !c.lut ? ' off-dim' : ''}"></div><span class="lbl">${i + 1} · ${['LUT', 'Downscale to 1080p', 'Color 4:2:0 8-bit', 'Limit to 29.97 fps'][i]}<small>${i === 0 ? (c.lut ? 'Live-safe' : 'Load a .cube to enable') : 'Changes the camera output format'}</small></span></div>`).join('')}
     </div>
     <div class="note cg">✓ Effects active · ${c.out} to ${mode === 'program' ? 'Program' : 'its camera'}</div>
     <div class="form-h">LUT</div>

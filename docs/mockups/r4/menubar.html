@@ -168,7 +168,7 @@
         <div class="picture" data-scene="mcu"><div class="overlay" style="left:5px;top:5px">${pill('<span class="dot red" style="width:6px;height:6px"></span>12:31', 'tp')}</div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 1', 'tp')}</div></div>
         <div class="picture" data-scene="wide"><div class="overlay" style="left:5px;top:5px">${pill('<span class="co">❚❚</span> 4:12', 'tp')}</div><div class="overlay" style="left:5px;bottom:5px">${pill('Camera 2', 'tp')}</div></div>
       </div>
-      <div class="ddstat tnum"><span><span class="cr">●</span> 1 recording · 1 paused</span><span>97 GB so far</span></div>
+      <div class="ddstat tnum"><span><span class="cr">●</span> 1 recording · 1 paused</span><span>75.4 GB so far</span></div>
       <div class="ddstat tnum" style="padding-top:2px"><span>${ic('camlink', 'sm', 'vertical-align:-2px')} Not in use</span><span>8TB 1 h 52 m · Archive 5 h 40 m</span></div>
     </div>` + sep + mh('Cameras') +
     row('Camera 1', { dot: 'red', small: 'Recording 12:31', arrow: true }) +
@@ -261,7 +261,7 @@
   // (i) Drive full, take stopped
   html += cap(Y[4], R2 - 26, 'i', 'Drive full · take stopped', 'output keeps running');
   html += dd(Y[4], R2, `<div class="ddtop">
-      ${preview('mcu', 150, pill(`Ultracam · Camera 1${ic('chevud')}`), onAir, pill('14:22:31:12', 'mono') + pill('<span class="cr">■</span> Not recording'), 'tally-air')}
+      ${preview('mcu', 150, pill(`Ultracam · Camera 1${ic('chevud')}`), onAir, pill('14:22:31:12', 'mono') + pill('<span class="c2">■</span> Not recording'), 'tally-air')}
     </div>
     <div class="banner err"><span class="bi">${ic('info')}</span><div><b>Recording stopped: 8TB is full</b><small>Saved up to 00:41:12</small></div><div class="bact"><span class="btn" style="height:22px">Show</span></div></div>` + sep + mh('Camera 1 · In use') +
     row('Record', { icon: 'record', small: 'choose another folder first', key: '⌘R', cls: 'dis' }) +

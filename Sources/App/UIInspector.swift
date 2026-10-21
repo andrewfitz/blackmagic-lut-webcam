@@ -102,8 +102,8 @@ struct UIInspectorView: View {
         Toggle(isOn: Binding(get: { chip.isOn }, set: { context.send(.setEffect(cameraID: camera.id, index: chip.id, $0)) })) {
           VStack(alignment: .leading, spacing: 1) {
             Text("\(chip.id + 1) · \(UIPresentationBuilder.effectLongTitles[chip.id])")
-            Text(chip.id == 0 ? (snapshot.lutName == nil ? "Load a .cube to enable" : "Doesn't change the format Zoom receives")
-              : "Changes the format Zoom receives")
+            Text(chip.id == 0 ? (snapshot.lutName == nil ? "Load a .cube to enable" : "Doesn't change the camera output format")
+              : "Changes the camera output format")
               .font(.caption).foregroundStyle(.secondary)
           }
         }

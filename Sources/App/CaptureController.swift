@@ -637,7 +637,7 @@ final class CaptureController: @unchecked Sendable {
     do {
       try services.connect(next, inputType)
       cameraConnected = true
-      cameraMessage = "Virtual camera connected — choose Ultracam in Zoom"
+      cameraMessage = "Virtual camera connected — choose Ultracam in your meeting app"
     } catch {
       cameraMessage = "Camera output unavailable — \(error.localizedDescription)"
       if wasConnected { beginCameraRecovery() }
