@@ -631,12 +631,12 @@ private struct UIShotTimelineLabels: Layout {
 
 // MARK: - Monitor
 
-/// Monitor tools are set per camera under its picture; this pane only explains them.
+/// Monitor tools are set per camera on its picture; this pane only explains them.
 struct UISettingsMonitorPane: View {
   var body: some View {
     Form {
       Section {
-        Label("Each camera has its own scopes, zebra, false color and picture signal. Use the tool buttons under its picture.",
+        Label("Each camera has its own guides, zebra, false color, focus peaking and scopes. Use the tool bar at the top right of its picture, or View › Monitor Tools.",
           systemImage: "waveform.path.ecg")
         Label("New cameras start with monitor tools off. Zebra starts at 95 IRE, and the picture shows the processed output.",
           systemImage: "plus.rectangle.on.rectangle")

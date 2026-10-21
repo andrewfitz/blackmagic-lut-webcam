@@ -37,6 +37,36 @@ struct UIMonitorToolButtons: View {
   }
 
   var body: some View {
+    // A narrow picture (Four Up, a small window) gets one menu button instead of the full bar.
+    ViewThatFits(in: .horizontal) {
+      bar
+      menu
+    }
+  }
+
+  private var menu: some View {
+    Menu {
+      ForEach(UIMonitorTool.allCases, id: \.self) { tool in
+        Toggle(tool.title, isOn: Binding(get: { activeTools.contains(tool) }, set: { _ in toggle(tool) }))
+          .disabled(UIMonitorToolSettingsView.unavailableReason(tool, isProgram: isProgram) != nil)
+      }
+    } label: {
+      Image(systemName: activeTools.isEmpty ? "slider.horizontal.3" : "slider.horizontal.below.square.filled.and.square")
+        .font(.callout.weight(.medium))
+        .foregroundStyle(.white)
+        .frame(width: 28, height: 24)
+        .contentShape(Rectangle())
+    }
+    .menuStyle(.button)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .uiPictureControls()
+    .help(activeTools.isEmpty ? "Monitor tools" : "Monitor tools: " + activeTools.map(\.title).joined(separator: ", "))
+    .accessibilityLabel("Monitor tools for \(name)")
+  }
+
+  private var bar: some View {
     HStack(spacing: 2) {
       ForEach(UIMonitorTool.allCases, id: \.self) { tool in
         UIMonitorToolSplitButton(tool: tool, isOn: activeTools.contains(tool),

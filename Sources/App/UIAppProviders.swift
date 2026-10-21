@@ -118,7 +118,8 @@ private struct UIAppSurfacePicture: View {
     }
     .overlay(alignment: .topTrailing) {
       // Program's tool bar lives with its picture (camera pictures draw theirs in the overlay).
-      if isProgram && !compact && hovering && previewEnabled {
+      // Always shown, so the tools can be found; Clean View hides it until hover.
+      if isProgram && !compact && previewEnabled && (hovering || !presenter.isClean) {
         UIMonitorToolButtons(targetID: target.rawValue, name: "Program",
           activeTools: UIMonitorTool.allCases.filter { UIMonitorBridge.activeTools(configuration).contains($0) },
           isProgram: true,

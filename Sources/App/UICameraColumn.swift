@@ -200,23 +200,14 @@ struct UICameraPictureView: View {
             .lineLimit(1).truncationMode(.tail)
             .uiPictureOverlay()
             .help(camera.name)
+            // The name keeps its room; a narrow picture folds the tool bar into a menu instead.
+            .layoutPriority(1)
           UITallyBadge(tally: camera.tally)
         }
         Spacer(minLength: 4)
-        if revealed {
+        // The tools stay on the picture so they can be found; Clean View hides them until hover.
+        if !compact && (!isClean || revealed) {
           UIMonitorToolButtons(camera: camera, context: context)
-        } else if !camera.activeTools.isEmpty && !compact && !isClean && camera.tileState.showsPicture {
-          HStack(spacing: 3) {
-            ForEach(camera.activeTools, id: \.self) { tool in
-              Image(systemName: tool.symbol).font(.uiOverlay)
-                .frame(width: 24, height: 24)
-                .background(Color.black.opacity(0.72), in: Capsule())
-                .foregroundStyle(.white)
-                .help("\(tool.title) is on")
-            }
-          }
-          .accessibilityElement(children: .ignore)
-          .accessibilityLabel("Active tools: " + camera.activeTools.map(\.title).joined(separator: ", "))
         }
       }
       Spacer(minLength: 0)

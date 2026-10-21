@@ -232,10 +232,14 @@ struct UICommands: Commands {
           set: { _ in send(.toggleClean(cameraID: selected.id)) }))
           .keyboardShortcut("c", modifiers: [.control, .option])
           .disabled(!showsPicture)
-        Toggle("Show Scopes", isOn: Binding(get: { selected.activeTools.contains(.scopes) },
-          set: { _ in send(.toggleTool(cameraID: selected.id, .scopes)) }))
-          .keyboardShortcut("k", modifiers: [.command, .option])
-          .disabled(!showsPicture)
+        // Every tool, also with no picture yet: the choice is kept and applies when video arrives.
+        Menu("Monitor Tools") {
+          ForEach(UIMonitorTool.allCases, id: \.self) { tool in
+            let toggle = Toggle(tool.title, isOn: Binding(get: { selected.activeTools.contains(tool) },
+              set: { _ in send(.toggleTool(cameraID: selected.id, tool)) }))
+            if tool == .scopes { toggle.keyboardShortcut("k", modifiers: [.command, .option]) } else { toggle }
+          }
+        }
       }
       Divider()
     }
