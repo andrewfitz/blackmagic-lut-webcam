@@ -41,9 +41,9 @@ enum UIFormatLabels {
     if let format = shortFormat(input) { return .live(format: format) }
     let lowered = (input + " " + update.message).lowercased()
     if lowered.contains("unsupported") { return .unsupported(input) }
-    if lowered.contains("no video signal") || lowered.contains("no hdmi") || input == "No signal" {
-      return update.frames > 0 ? .noSignal : (deviceAvailable ? .connecting : .deviceMissing)
-    }
+    // The backend says so explicitly once it has looked for a signal.
+    if lowered.contains("no video signal") || lowered.contains("no hdmi") { return deviceAvailable ? .noSignal : .deviceMissing }
+    if input == "No signal" && update.frames > 0 { return .noSignal }
     return deviceAvailable ? .connecting : .deviceMissing
   }
 }
@@ -59,6 +59,11 @@ struct UISessionBridge {
   var openSettings: () -> Void = {}
 
   func snapshot() -> UISessionSnapshot {
+    // Register the observable camera state up front. Whether a camera runs is read
+    // from the capture coordinator, which SwiftUI can't observe on its own.
+    _ = model.cameraStateRevision
+    _ = model.running
+    _ = model.cameraUpdates
     let recording = model.recordingModel
     let drives = UIRecordingLibrary.drives(for: model.feedDescriptors.map { recording.outputFolder(for: $0.id) },
       recordingRates: model.feedDescriptors.compactMap { descriptor -> (URL, Double)? in

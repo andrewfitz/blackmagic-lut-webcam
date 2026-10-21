@@ -4,7 +4,7 @@
 # Settings and Diagnostics windows and the inspector, renders every window in
 # light and dark, checks the menu bar item, writes report.json and quits.
 # It never starts cameras. Windows appear briefly on screen while it runs.
-# SKIP_BUILD=1 reuses the last build.
+# SKIP_BUILD=1 reuses the last build. LIVE=1 adds the real-camera start/stop check.
 set -euo pipefail
 if [[ $# -ne 0 ]]; then
   echo 'Usage: app-self-test.sh' >&2
@@ -27,7 +27,10 @@ out_root="$external_root/agent-work/build/ultracam/app-self-test"
 out="$out_root/$run_id"
 mkdir -p "$out"
 ln -sfn "$run_id" "$out_root/latest"
-"$binary" --ui-self-test "$out" > "$out/app.log" 2>&1 &
+live_args=()
+# LIVE=1 also starts and stops the selected camera on the real UltraStudio input (HDMI read only, no recording).
+if [[ "${LIVE:-0}" == 1 ]]; then live_args=(--live); fi
+"$binary" --ui-self-test "$out" "${live_args[@]}" > "$out/app.log" 2>&1 &
 pid=$!
 deadline=$((SECONDS + ${SELF_TEST_TIMEOUT:-90}))
 while kill -0 "$pid" 2>/dev/null; do

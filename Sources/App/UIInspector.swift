@@ -1,7 +1,13 @@
 import SwiftUI
 
 /// On-demand inspector for the selected camera's deeper settings (D5).
+/// Rebuilds the context inside its own body so this column refreshes with the models.
 struct UIInspectorView: View {
+  let context: UIContext
+  var body: some View { UIInspectorViewContent(context: context.current) }
+}
+
+struct UIInspectorViewContent: View {
   let context: UIContext
   @State private var renaming = false
   @State private var nameDraft = ""

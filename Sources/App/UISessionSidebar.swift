@@ -3,7 +3,13 @@ import SwiftUI
 
 /// The session panel: cameras (only when more than two), output, Program,
 /// recording destinations, recent takes, interrupted takes and automation.
+/// Rebuilds the context inside its own body so this column refreshes with the models.
 struct UISessionSidebarView: View {
+  let context: UIContext
+  var body: some View { UISessionSidebarViewContent(context: context.current) }
+}
+
+struct UISessionSidebarViewContent: View {
   let context: UIContext
 
   private var session: UISessionSnapshot { context.session }

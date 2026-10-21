@@ -43,6 +43,47 @@ import AppKit
     checks.append(Check(name: name, pass: pass, detail: detail))
   }
 
+  /// Opt-in (`--live`): starts the selected camera through the same action the
+  /// interface sends, reads the state the interface shows, then stops it.
+  /// Reads HDMI only; never records.
+  private static func liveCameraCheck(model: AppModel, interface: UIInterfaceState) async {
+    let bridge = UISessionBridge.live(model: model, interface: interface)
+    guard let camera = bridge.snapshot().cameras.first(where: { $0.id == model.selectedFeedID.rawValue }) else {
+      record("live: a camera is configured", false, "")
+      return
+    }
+    guard camera.deviceAvailable else {
+      record("live: capture input present", false, "no UltraStudio input for \(camera.name)")
+      return
+    }
+    bridge.send(.startCamera(cameraID: camera.id))
+    var timeline: [String] = []
+    for second in 1...8 {
+      await wait(1)
+      let now = bridge.snapshot().cameras.first { $0.id == camera.id }
+      timeline.append("\(second)s running=\(now?.running == true) signal=\(String(describing: now?.signal)) message=\(now?.message ?? "")")
+    }
+    try? timeline.joined(separator: "\n").write(to: output.appendingPathComponent("live-timeline.txt"), atomically: true, encoding: .utf8)
+    let started = bridge.snapshot().cameras.first { $0.id == camera.id }
+    record("live: Start Camera starts capture", started?.running == true, "")
+    let tile = started.map { UIPresentationBuilder.tileState(for: $0) }
+    record("live: the picture shows a real state", tile != nil && tile != .stopped,
+      "signal \(String(describing: started?.signal)), tile \(String(describing: tile))")
+    let liveLabels = appWindows().filter { identifier(of: $0).hasPrefix("main") }
+      .flatMap { window in window.contentView.map { accessibilityLabels(in: $0) } ?? [] }
+    try? liveLabels.joined(separator: "\n").write(to: output.appendingPathComponent("accessibility-live.txt"), atomically: true, encoding: .utf8)
+    // The picture's own label carries the camera state ("Camera 1, No signal"); the
+    // inspector column's accessibility values can lag behind what it draws.
+    record("live: the window shows the running camera",
+      liveLabels.contains { $0.hasPrefix("\(camera.name),") && !$0.localizedCaseInsensitiveContains("stopped") },
+      liveLabels.filter { $0.localizedCaseInsensitiveContains("signal") || $0.localizedCaseInsensitiveContains("stopped") }.joined(separator: " | "))
+    await renderWindows(suffix: "-live")
+    bridge.send(.stopCamera(cameraID: camera.id))
+    await wait(2)
+    let stopped = bridge.snapshot().cameras.first { $0.id == camera.id }
+    record("live: Stop Camera stops capture", stopped?.running == false, "")
+  }
+
   private static func wait(_ seconds: Double) async {
     try? await Task.sleep(for: .seconds(seconds))
   }
@@ -71,6 +112,7 @@ import AppKit
       record("main window exposes \"\(label)\"", mainLabels.contains { $0.hasPrefix(label) }, "")
     }
     await renderWindows()
+    if CommandLine.arguments.contains("--live") { await liveCameraCheck(model: model, interface: interface) }
     interface.inspectorOpen = false
     finish()
   }
@@ -212,7 +254,7 @@ import AppKit
     window.identifier?.rawValue ?? window.title
   }
 
-  private static func renderWindows() async {
+  private static func renderWindows(suffix extra: String = "") async {
     let windows = appWindows()
     let titles = windows.map { identifier(of: $0) }
     record("main window is visible", titles.contains { $0.hasPrefix("main") }, titles.joined(separator: ", "))
@@ -226,7 +268,7 @@ import AppKit
       NSApp.appearance = NSAppearance(named: appearanceName)
       await wait(0.6)
       for (index, window) in windows.enumerated() {
-        let name = sanitized(titles[index]) + "-\(suffix)"
+        let name = sanitized(titles[index]) + "-\(suffix)" + extra
         guard let frameView = window.contentView?.superview ?? window.contentView else { continue }
         frameView.layoutSubtreeIfNeeded()
         guard let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else {

@@ -164,6 +164,9 @@ final class AppModel {
   private(set) var recentCuts: [UICutRecord] = []
   /// When the camera now on Program went on air.
   private(set) var programShotStartedAt: Date?
+  /// Bumped whenever any camera starts or stops, so observers refresh even when
+  /// the change happened in the (non-observable) capture coordinator.
+  private(set) var cameraStateRevision = 0
   /// Set by `resetAllSettings()`; no further saves happen before the app quits.
   private(set) var settingsResetPending = false
   let recordingModel: RecordingModel
@@ -873,6 +876,7 @@ final class AppModel {
         guard let self, self.feedDescriptors.contains(where: { $0.id == feedID }) else { return }
         self.cameraUpdates[feedID] = update
         if update.stopped {
+          self.cameraStateRevision &+= 1
           self.monitorCoordinator.sourceStateChanged(target: MonitorTargetID(feedID.rawValue), running: false, message: update.message)
           self.detectedInputCadence[feedID] = nil
           self.feedCoordinator.stopCapture(feedID: feedID)
@@ -1128,6 +1132,7 @@ final class AppModel {
     if descriptor.applyLUT, let bookmark = descriptor.lutBookmark {
       restoreHeadlessLUT(feedID: id, bookmark: bookmark, pipelineEnabled: descriptor.pipelineEnabled)
     }
+    cameraStateRevision &+= 1
     reconcileProgramTransportDemand()
   }
 
@@ -1142,6 +1147,7 @@ final class AppModel {
     if outputMode == .program { retireProgramSource(id) }
     monitorCoordinator.sourceStateChanged(target: MonitorTargetID(id.rawValue), running: false, message: "Camera stopped")
     cameraUpdates[id] = nil
+    cameraStateRevision &+= 1
     reconcileProgramTransportDemand()
   }
 

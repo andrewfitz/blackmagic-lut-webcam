@@ -35,6 +35,13 @@ struct UIContext {
   var confirmation: (message: String, action: UIAction)? = nil
   var confirm: @MainActor () -> Void = {}
   var cancelConfirmation: @MainActor () -> Void = {}
+  /// Rebuilds the context from the live models. Views hosted in their own column
+  /// (inspector, sidebar) call this inside `body` so Observation tracks the models
+  /// there too. Fixtures leave it nil.
+  var refreshed: (@MainActor () -> UIContext)? = nil
+
+  /// The freshest context available: rebuilt from the models in the app, unchanged in fixtures.
+  var current: UIContext { refreshed?() ?? self }
 
   func camera(_ id: String) -> UICameraPresentation? { presentation.cameras.first { $0.id == id } }
   func snapshot(_ id: String) -> UICameraSnapshot? { session.cameras.first { $0.id == id } }

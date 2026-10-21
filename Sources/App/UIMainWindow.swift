@@ -14,18 +14,17 @@ struct UIMainWindowView: View {
       UISessionSidebarView(context: context)
         .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 300)
     } detail: {
-      // On macOS the inspector belongs to the detail column of a split view.
       detail
         .safeAreaInset(edge: .bottom, spacing: 0) {
           UIStatusBarView(context: context)
         }
-        .inspector(isPresented: inspectorBinding) {
-          UIInspectorView(context: context)
-            .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
-        }
     }
     .navigationTitle(context.presentation.title)
     .navigationSubtitle(context.presentation.subtitle)
+    .inspector(isPresented: inspectorBinding) {
+      UIInspectorView(context: context)
+        .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
+    }
     .confirmationDialog(confirmationTitle, isPresented: confirmationBinding, titleVisibility: .visible) {
       Button(confirmationButton, role: .destructive) { context.confirm() }
       Button("Cancel", role: .cancel) { context.cancelConfirmation() }

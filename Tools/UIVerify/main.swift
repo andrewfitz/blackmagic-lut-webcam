@@ -142,6 +142,13 @@ import SwiftUI
     render("component-inspector", UIInspectorView(context: meeting), size: CGSize(width: 320, height: 860)).forEach { $0.close() }
     render("component-status-bar", UIStatusBarView(context: meeting), size: CGSize(width: 1320, height: 40)).forEach { $0.close() }
     render("component-program-view", UIProgramView(context: meeting), size: CGSize(width: 1060, height: 800)).forEach { $0.close() }
+    // The menu bar item's preview card, for every fixture (the live preview stays off while waiting).
+    for (name, session) in [("program-meeting", UIFixtures.programMeeting()), ("single-meeting", UIFixtures.singleMeeting()),
+      ("standalone", UIFixtures.standalone()), ("stopped", UIFixtures.stopped())] {
+      let presentation = UIPresentationBuilder.session(session)
+      render("menubar-preview-\(name)", UIMenuPreviewContent(presentation: presentation, session: session,
+        pictures: UIFixturePictures(), showLive: true).frame(width: 330).fixedSize(horizontal: false, vertical: true), size: CGSize(width: 330, height: 330)).forEach { $0.close() }
+    }
   }
 
   // MARK: Accessibility and interaction
