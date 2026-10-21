@@ -4,69 +4,8 @@ import MonitorToolsCore
 import MonitorToolsUI
 import SwiftUI
 
-struct MonitorWorkspaceView: View {
-  @ObservedObject var coordinator: MonitorCoordinator
-  var model: AppModel? = nil
-  var body: some View {
-    MonitorWorkspaceShell(workspace: $coordinator.workspace) { index, focused in
-      MonitorWorkspaceTile(coordinator: coordinator, index: index, focused: focused, model: model)
-    }
-  }
-}
-
-struct MonitorWorkspaceTile: View {
-  @ObservedObject var coordinator: MonitorCoordinator
-  let index: Int
-  var focused = false
-  var compact = false
-  var model: AppModel? = nil
-  @State private var surfaceID = UUID()
-  private var target: MonitorTargetID? {
-    index < coordinator.workspace.tileBindings.count
-      ? coordinator.workspace.tileBindings[index] : nil
-  }
-  private var targetBinding: Binding<MonitorTargetID?> {
-    Binding(
-      get: { target },
-      set: { value in
-        while coordinator.workspace.tileBindings.count <= index {
-          coordinator.workspace.tileBindings.append(nil)
-        }
-        coordinator.workspace.tileBindings[index] = value
-      })
-  }
-  private var configuration: Binding<MonitorConfiguration> {
-    Binding(
-      get: { target.map { coordinator.configuration(for: $0) } ?? MonitorConfiguration() },
-      set: { value in
-        if let target { coordinator.setConfiguration(value, for: target) }
-      })
-  }
-  var body: some View {
-    Group {
-      if let target {
-        MonitorBoundTile(
-          coordinator: coordinator, presenter: coordinator.surface(id: surfaceID, target: target),
-          surfaceID: surfaceID, target: target, targetBinding: targetBinding,
-          configuration: configuration, compact: compact, focused: focused,
-          model: coordinator.workspace.layout == .single ? model : nil
-        )
-        .id(target)
-      } else {
-        MonitorTileChrome(
-          target: targetBinding, configuration: configuration, choices: coordinator.targets,
-          status: "No Signal", compact: compact
-        ) {
-          Rectangle().fill(.black).aspectRatio(16.0 / 9, contentMode: .fit)
-            .overlay { Text("Choose a feed or Program").foregroundStyle(.secondary) }
-        } scopes: {
-          EmptyView()
-        }
-      }
-    }
-  }
-}
-
+/// Detached monitor windows. The main window and the menu bar use the new interface;
+/// a detached window keeps this monitor tile with its full tool chrome.
 private struct MonitorBoundTile: View {
   @ObservedObject var coordinator: MonitorCoordinator
   @ObservedObject var presenter: MonitorSurfacePresenter
@@ -115,7 +54,8 @@ private struct MonitorBoundTile: View {
           .overlay { Text("Preview hidden").foregroundStyle(.secondary) }
           .overlay { MonitorSurfaceVisibility(presenter: presenter).allowsHitTesting(false) }
       } else if usesNativePreview, let model {
-        FeedPreview(model: model, compact: compact)
+        VideoPreview(renderer: compact ? model.miniPreviewRenderer : model.previewRenderer)
+          .aspectRatio(16.0 / 9, contentMode: .fit)
           .modifier(MonitorPictureZoom(zoom))
           .overlay { MonitorSurfaceVisibility(presenter: presenter).allowsHitTesting(false) }
       } else {
@@ -355,39 +295,6 @@ private struct DetachedMonitorContent: View {
 }
 
 /// The tray owns its target choice independently of main-window tile bindings.
-struct MonitorCompactPreview: View {
-  @ObservedObject var coordinator: MonitorCoordinator
-  let model: AppModel
-  @State private var target: MonitorTargetID?
-  @State private var surfaceID = UUID()
-  init(coordinator: MonitorCoordinator, model: AppModel) {
-    self.coordinator = coordinator
-    self.model = model
-    _target = State(initialValue: MonitorTargetID(model.selectedFeedID.rawValue))
-  }
-  var body: some View {
-    if let target {
-      MonitorBoundTile(
-        coordinator: coordinator, presenter: coordinator.surface(id: surfaceID, target: target),
-        surfaceID: surfaceID, target: target, targetBinding: $target,
-        configuration: Binding(
-          get: { coordinator.configuration(for: target) },
-          set: { coordinator.setConfiguration($0, for: target) }), compact: true, model: model
-      ).id(target)
-    } else {
-      MonitorTileChrome(
-        target: $target, configuration: .constant(MonitorConfiguration()),
-        choices: coordinator.targets, status: "No Signal", compact: true
-      ) {
-        Rectangle().fill(.black).aspectRatio(16.0 / 9, contentMode: .fit)
-          .overlay { Text("Choose a feed or Program").foregroundStyle(.secondary) }
-      } scopes: {
-        EmptyView()
-      }
-    }
-  }
-}
-
 private struct MonitorWindowTitle: NSViewRepresentable {
   let title: String
   func makeNSView(context: Context) -> MonitorTitleNSView { MonitorTitleNSView(title: title) }

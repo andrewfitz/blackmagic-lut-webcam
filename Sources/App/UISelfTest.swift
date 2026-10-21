@@ -5,12 +5,9 @@ import AppKit
 @objc(UISelfTestRunner) final class UISelfTestRunner: NSObject {
   @objc static func run() {
     // AppDelegate calls this from applicationDidFinishLaunching, on the main thread.
-    // The offscreen harness (scripts/ui-verify.sh) compiles without the app entry point.
-    #if !UI_VERIFY
     MainActor.assumeIsolated {
       UISelfTest.runIfRequested(model: UIAppEnvironment.model, interface: UIAppEnvironment.interface)
     }
-    #endif
   }
 }
 

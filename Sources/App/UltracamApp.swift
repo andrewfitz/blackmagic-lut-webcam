@@ -1,12 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The app's long-lived models, shared by the scenes, the menu bar item and the self-test.
-@MainActor enum UIAppEnvironment {
-  static let model = AppModel()
-  static let interface = UIInterfaceState()
-}
-
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
   weak var model: AppModel?
   private var menuBar: UIMenuBarController?
