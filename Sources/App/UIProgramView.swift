@@ -45,7 +45,7 @@ struct UIProgramView: View {
       }
       .overlay(alignment: .topLeading) {
         HStack(spacing: 6) {
-          Label("Ultracam · Program", systemImage: "tv").font(.caption.weight(.semibold)).uiPictureOverlay()
+          Label("Ultracam · Program", systemImage: "tv").font(.subheadline.weight(.semibold)).uiPictureOverlay()
           UITallyBadge(tally: tally)
         }
         .padding(10)
@@ -53,16 +53,20 @@ struct UIProgramView: View {
       .overlay(alignment: .bottomLeading) {
         HStack(spacing: 6) {
           if let onAir {
-            Text("\(onAir.name) on air").font(.caption).uiPictureOverlay()
+            // "On air" only while a meeting app shows Program; otherwise it's just the Program camera.
+            Text("\(onAir.name) \(tally == .onAir ? "on air" : "in Program")").font(.subheadline.weight(.semibold)).uiPictureOverlay()
           }
           if let format = onAir?.outputFormat {
-            Text(format).font(.caption.monospacedDigit()).uiPictureOverlay()
+            Text(format).font(.subheadline.weight(.semibold).monospacedDigit()).uiPictureOverlay()
           }
           if session.programFormatMismatch {
-            Label("Cameras use different formats — each cut updates the output", systemImage: "exclamationmark.triangle.fill")
-              .font(.caption)
-              .uiPictureOverlay()
-              .foregroundStyle(.orange)
+            Label {
+              Text("Cameras use different formats — each cut updates the output")
+            } icon: {
+              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            .font(.subheadline.weight(.semibold))
+            .uiPictureOverlay()
           }
         }
         .padding(10)
@@ -73,13 +77,15 @@ struct UIProgramView: View {
 
   private func source(_ camera: UICameraPresentation) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      UICameraPictureView(camera: camera, context: context, compact: true)
+      UIColumnPictureLayout {
+        UICameraPictureView(camera: camera, context: context, compact: true)
+      }
       HStack {
-        Text("\(camera.number)").font(.caption.monospacedDigit().weight(.bold)).foregroundStyle(.secondary)
-        Text(camera.name).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+        Text("\(camera.number)").font(.headline.monospacedDigit()).foregroundStyle(.secondary)
+        Text(camera.name).font(.headline).lineLimit(1).truncationMode(.middle)
         Spacer()
-        if camera.tally == .onAir || camera.tally == .program {
-          UIBadge(text: camera.tally == .onAir ? "On air" : "Program", tone: camera.tally == .onAir ? .critical : .neutral)
+        if camera.tally == .onAir || camera.tally == .program, let label = camera.tally.label {
+          UIBadge(text: label, tone: camera.tally == .onAir ? .onAir : .neutral)
         } else {
           Button {
             context.send(.cut(cameraID: camera.id))
@@ -109,9 +115,12 @@ struct UIProgramCutBar: View {
           cutButton(button)
         }
         Divider().frame(height: 20)
-        Toggle("Auto", isOn: Binding(get: { session.autoSwitching }, set: { context.send(.setAutoSwitching($0)) }))
+        // Auto needs a strategy first, so the strategy picker stays available while Auto is off.
+        Toggle("Auto", isOn: Binding(get: { context.presentation.autoSwitching }, set: { context.send(.setAutoSwitching($0)) }))
           .toggleStyle(.switch)
-          .help("Automatic switching (⌃⌥A)")
+          .disabled(!context.presentation.canAutoSwitch)
+          .help(context.presentation.canAutoSwitch
+            ? "Automatic switching (⌃⌥A)" : "Choose a switching strategy first.")
         Picker("Strategy", selection: strategyBinding) {
           ForEach([SwitcherStrategy.manual, .fixedInterval, .naturalTalkingHead, .dynamicAnalysis], id: \.self) { strategy in
             Text(UIStrategy.title(strategy)).tag(strategy)
@@ -120,10 +129,10 @@ struct UIProgramCutBar: View {
         }
         .labelsHidden()
         .fixedSize()
-        .disabled(!session.autoSwitching)
+        .help("Switching strategy")
         Toggle("Hold Shot", isOn: Binding(get: { session.autoHold }, set: { context.send(.setAutoHold($0)) }))
           .toggleStyle(.button)
-          .disabled(!session.autoSwitching)
+          .disabled(!context.presentation.canHoldShot)
           .help("Keep the current shot: Auto stays on but makes no cuts")
         Spacer()
       }
@@ -143,14 +152,14 @@ struct UIProgramCutBar: View {
           .help("The camera the director cuts to for emphasis")
           Spacer()
         }
-        .disabled(!session.autoSwitching)
+        .disabled(!context.presentation.autoSwitching)
       }
       TimelineView(.periodic(from: .now, by: 1)) { timeline in
         shotTimer(now: timeline.date)
       }
     }
     .padding(12)
-    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 12))
     .onAppear { anchor = (session.shot.currentShot, .now) }
     .onChange(of: session.shot.currentShot) { _, value in anchor = (value, .now) }
   }
@@ -168,16 +177,18 @@ struct UIProgramCutBar: View {
     let label = HStack(spacing: 4) {
       Text("\(button.number)").monospacedDigit().fontWeight(.bold)
       Text(button.name)
-      if button.pending { Text("next").font(.caption).foregroundStyle(.secondary) }
+      if button.pending { Text("Next").font(.subheadline).foregroundStyle(.secondary) }
     }
     if button.onAir {
       Button { context.send(.cut(cameraID: button.id)) } label: { label }
         .buttonStyle(.borderedProminent).tint(.red)
         .accessibilityLabel("\(button.name), on air")
     } else {
+      // A pending cut is outlined in green; the capsule shape keeps the outline on the button's edge.
       Button { context.send(.cut(cameraID: button.id)) } label: { label }
         .buttonStyle(.bordered)
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(button.pending ? Color.green : .clear, lineWidth: 1.5))
+        .buttonBorderShape(.capsule)
+        .overlay(Capsule().strokeBorder(button.pending ? Color.green : .clear, lineWidth: 1.5).allowsHitTesting(false))
         .disabled(!button.enabled)
         .help("Cut to \(button.name) (⌃\(button.number))")
         .accessibilityLabel(button.pending ? "\(button.name), cut pending" : "Cut to \(button.name)")
@@ -195,7 +206,7 @@ struct UIProgramCutBar: View {
       GeometryReader { proxy in
         let width = proxy.size.width
         ZStack(alignment: .leading) {
-          Capsule().fill(Color.primary.opacity(0.12)).frame(height: 8)
+          Capsule().fill(.fill.tertiary).frame(height: 8)
           Capsule().fill(LinearGradient(colors: [.green, .green, .yellow], startPoint: .leading, endPoint: .trailing))
             .frame(width: width * min(1, (current ?? 0) / maximum), height: 8)
           marker(at: shot.minimum / maximum, width: width, label: "min \(Int(shot.minimum)) s")
@@ -204,7 +215,7 @@ struct UIProgramCutBar: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
       }
-      .frame(height: 26)
+      .frame(height: 30)
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Shot timer")
@@ -215,7 +226,7 @@ struct UIProgramCutBar: View {
     let x = width * min(1, max(0, fraction))
     return ZStack(alignment: .topLeading) {
       Rectangle().fill(color).frame(width: 1.5, height: 14).offset(x: x - 0.75, y: -3)
-      Text(label).font(.caption2).foregroundStyle(.secondary).fixedSize()
+      Text(label).font(.subheadline).foregroundStyle(.secondary).fixedSize()
         .offset(x: min(max(0, x - 24), width - 60), y: 13)
     }
   }
@@ -237,7 +248,7 @@ struct UIRecentCutsList: View {
               .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             Text("Cut to \(cut.cameraName)").font(.callout)
             Spacer()
-            UIBadge(text: cut.automatic ? "Auto" : "Manual", tone: cut.automatic ? .neutral : .warning)
+            UIBadge(text: cut.automatic ? "Auto" : "Manual")
           }
           .accessibilityElement(children: .combine)
         }
@@ -245,6 +256,6 @@ struct UIRecentCutsList: View {
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 12))
   }
 }

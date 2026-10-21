@@ -30,7 +30,7 @@ ln -sfn "$run_id" "$out_root/latest"
 live_args=()
 # LIVE=1 also starts and stops the selected camera on the real UltraStudio input (HDMI read only, no recording).
 if [[ "${LIVE:-0}" == 1 ]]; then live_args=(--live); fi
-"$binary" --ui-self-test "$out" "${live_args[@]}" > "$out/app.log" 2>&1 &
+"$binary" --ui-self-test "$out" ${live_args[@]+"${live_args[@]}"} > "$out/app.log" 2>&1 &
 pid=$!
 deadline=$((SECONDS + ${SELF_TEST_TIMEOUT:-90}))
 while kill -0 "$pid" 2>/dev/null; do

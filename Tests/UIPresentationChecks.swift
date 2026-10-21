@@ -88,16 +88,19 @@ import XCTest
     let presentation = UIPresentationBuilder.session(separate([camera(1, inUse: true), camera(2)]))
     XCTAssertEqual(presentation.cameras[0].outputLine, "Ultracam · Camera 1 · In use")
     XCTAssertEqual(presentation.cameras[1].outputLine, "Ultracam · Camera 2 · Not in use")
-    XCTAssertEqual(presentation.outputSummary, "Ultracam · Camera 1 · in use")
+    XCTAssertEqual(presentation.outputSummary, "Ultracam · Camera 1 · In use")
     XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)], inUse: false)).outputSummary,
-      "Ultracam · Program · not in use")
+      "Ultracam · Program · Not in use")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1), camera(2)])).outputSummary, "Ultracam cameras not in use")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1)])).outputSummary, "Ultracam · Camera 1 · Not in use",
+      "One output is called by its published device name")
   }
 
   func testProgramOutputLines() {
     let cams = [camera(1), camera(2), camera(3)]
     let onAir = UIPresentationBuilder.session(program(cams, pending: "camera-2"))
     XCTAssertEqual(onAir.cameras[0].outputLine, "In Program · on air")
-    XCTAssertEqual(onAir.cameras[1].outputLine, "Cut pending")
+    XCTAssertEqual(onAir.cameras[1].outputLine, "Next", "The pending camera reads \"Next\" everywhere")
     XCTAssertEqual(onAir.cameras[2].outputLine, "Program source")
     XCTAssertEqual(UIPresentationBuilder.session(program(cams, inUse: false)).cameras[0].outputLine, "In Program · no viewer yet")
   }
@@ -162,7 +165,9 @@ import XCTest
 
     let rec = presented(separate([camera(1, recording: .recording)]))
     XCTAssertEqual(rec.recordTitle, "Recording")
-    XCTAssertEqual(rec.recordDetail, "00:12:31")
+    XCTAssertEqual(rec.recordDetail, "12:31", "Every clock uses the short form")
+    XCTAssertEqual(presented(separate([camera(1, recording: .recording, elapsed: 3767)])).recordDetail, "1:02:47")
+    XCTAssertEqual(presented(separate([camera(1, recording: .paused, elapsed: 252)])).recordDetail, "4:12")
     XCTAssertEqual(rec.pauseTitle, "Pause")
     XCTAssertEqual(rec.dropsLine, "0 dropped")
     XCTAssertFalse(rec.dropsWarning)
@@ -291,13 +296,16 @@ import XCTest
     XCTAssertEqual(UIAction.stopCamera(cameraID: "camera-1").needsConfirmation(in: presentation),
       "Camera 1 is recording. Stopping the camera ends the take.")
     XCTAssertNil(UIAction.stopCamera(cameraID: "camera-2").needsConfirmation(in: presentation))
-    XCTAssertEqual(UIAction.stopAllCameras.needsConfirmation(in: presentation), "Stop all cameras? 1 recording ends.")
+    XCTAssertEqual(UIAction.stopAllCameras.needsConfirmation(in: presentation), "1 recording ends.",
+      "The dialog title asks the question; the message doesn't repeat it")
     XCTAssertNil(UIAction.cut(cameraID: "camera-2").needsConfirmation(in: presentation))
     XCTAssertNil(UIAction.toggleRecording(cameraID: "camera-1").needsConfirmation(in: presentation))
 
     let busy = UIPresentationBuilder.session(program([camera(1, recording: .recording), camera(2, recording: .paused)]))
     XCTAssertEqual(UIAction.stopAllCameras.needsConfirmation(in: busy),
-      "Stop all cameras? 2 recordings end and on-air video stops.")
+      "2 recordings end and on-air video stops.")
+    XCTAssertEqual(UIAction.stopAllCameras.needsConfirmation(in: UIPresentationBuilder.session(program([camera(1), camera(2)]))),
+      "On-air video stops.")
     let quiet = UIPresentationBuilder.session(separate([camera(1), camera(2)]))
     XCTAssertNil(UIAction.stopAllCameras.needsConfirmation(in: quiet))
   }
@@ -307,16 +315,17 @@ import XCTest
   func testStatusSegmentOrderAndTexts() {
     var session = program([camera(1, recording: .recording), camera(2, recording: .recording)])
     session.autoSwitching = true
+    session.strategy = .naturalTalkingHead
     session.drives = [UIDrive(name: "8TB", availableBytes: 1, totalBytes: 2, secondsLeft: 6720),
       UIDrive(name: "Archive", availableBytes: 1, totalBytes: 2, secondsLeft: 20400)]
     let presentation = UIPresentationBuilder.session(session)
     XCTAssertEqual(presentation.statusSegments.map(\.kind), [.output, .program, .recording, .audio])
-    XCTAssertEqual(presentation.statusSegments[0].text, "Ultracam · Program · in use")
+    XCTAssertEqual(presentation.statusSegments[0].text, "Ultracam · Program · In use")
     XCTAssertEqual(presentation.statusSegments[0].tone, .positive)
     XCTAssertEqual(presentation.statusSegments[1].text, "Camera 1 on air · Auto")
     XCTAssertEqual(presentation.statusSegments[2].text, "REC 2 · 12:31 · 8TB 1 h 52 m · Archive 5 h 40 m left")
     XCTAssertEqual(presentation.statusSegments[2].tone, .critical)
-    XCTAssertEqual(presentation.statusSegments[3].text, "Audio: 2 of 2")
+    XCTAssertEqual(presentation.statusSegments[3].text, "Audio OK", "Every live camera has audio")
 
     session.autoHold = true
     XCTAssertEqual(UIPresentationBuilder.session(session).statusSegments[1].text, "Camera 1 on air · Auto · hold")
@@ -325,7 +334,7 @@ import XCTest
 
     let separatePresentation = UIPresentationBuilder.session(separate([camera(1)]))
     XCTAssertEqual(separatePresentation.statusSegments.map(\.kind), [.output, .recording, .audio])
-    XCTAssertEqual(separatePresentation.statusSegments[0].text, "Virtual cameras not in use")
+    XCTAssertEqual(separatePresentation.statusSegments[0].text, "Ultracam · Camera 1 · Not in use")
     XCTAssertEqual(separatePresentation.statusSegments[0].tone, .neutral)
     XCTAssertEqual(separatePresentation.statusSegments[1].text, "Not recording")
     XCTAssertEqual(separatePresentation.statusSegments[2].text, "Audio OK")
@@ -340,11 +349,17 @@ import XCTest
     XCTAssertEqual(audio?.tone, .warning)
     XCTAssertEqual(UIPresentationBuilder.session(separate([silent])).statusSegments.first { $0.kind == .audio }?.text,
       "No embedded audio")
-    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, running: false)])).statusSegments.first { $0.kind == .audio }?.text,
-      "Audio —")
+    XCTAssertNil(UIPresentationBuilder.session(separate([camera(1, running: false)])).statusSegments.first { $0.kind == .audio },
+      "No audio segment until a camera is live")
     // Running without HDMI: nothing to judge, so never "Audio OK".
-    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, signal: .noSignal)])).statusSegments.first { $0.kind == .audio }?.text,
-      "Audio —")
+    XCTAssertNil(UIPresentationBuilder.session(separate([camera(1, signal: .noSignal)])).statusSegments.first { $0.kind == .audio })
+  }
+
+  func testProgramStatusSaysOnAirOnlyWhileInUse() {
+    let idle = UIPresentationBuilder.session(program([camera(1), camera(2)], inUse: false))
+    XCTAssertEqual(idle.statusSegments.first { $0.kind == .program }?.text, "Camera 1 in Program · Manual")
+    let live = UIPresentationBuilder.session(program([camera(1), camera(2)]))
+    XCTAssertEqual(live.statusSegments.first { $0.kind == .program }?.text, "Camera 1 on air · Manual")
   }
 
   func testOneCameraHasOnlyTheSingleLayout() {
@@ -372,7 +387,7 @@ import XCTest
     XCTAssertEqual(UIPresentationBuilder.warning(session), "Camera 1: recording, no signal")
     session.cameras[0].recording.status = .idle
     session.cameras[0].recording.error = "Drive disconnected"
-    XCTAssertEqual(UIPresentationBuilder.warning(session), "Camera 1: recording stopped")
+    XCTAssertEqual(UIPresentationBuilder.warning(session), "Camera 1: recording failed")
     session.cameras[0].recording.error = nil
     session.drives = [UIDrive(name: "8TB", availableBytes: 1, totalBytes: 2, secondsLeft: 12 * 60)]
     XCTAssertEqual(UIPresentationBuilder.warning(session), "8TB: 12 min left")
@@ -455,17 +470,19 @@ import XCTest
   }
 
   func testStatusBadgesAndAccessibilityLabels() {
-    XCTAssertEqual(presented(separate([camera(1)])).statusBadge, "● 2160p 59.94")
+    XCTAssertEqual(presented(separate([camera(1)])).statusBadge, "2160p 59.94")
     XCTAssertEqual(presented(separate([camera(1, running: false)])).statusBadge, "Stopped")
     XCTAssertEqual(presented(separate([camera(1, signal: .connecting)])).statusBadge, "Starting…")
     XCTAssertEqual(presented(separate([camera(1, signal: .noSignal)])).statusBadge, "No signal")
     XCTAssertEqual(presented(separate([camera(1, signal: .noSignal)])).statusTone, .warning)
     var missing = camera(1, running: false)
     missing.deviceAvailable = false
+    XCTAssertEqual(presented(separate([missing])).statusBadge, "No input", "No input was ever chosen")
+    missing.inputName = "UltraStudio 4K Mini"
     XCTAssertEqual(presented(separate([missing])).statusBadge, "Input missing")
 
     let label = presented(program([camera(1, recording: .recording), camera(2)])).accessibilityLabel
-    XCTAssertEqual(label, "Camera 1, On Air, recording 12:31")
+    XCTAssertEqual(label, "Camera 1, On air, recording 12:31")
     XCTAssertEqual(presented(separate([camera(1, recording: .paused, elapsed: 252)])).accessibilityLabel,
       "Camera 1, recording paused at 4:12")
   }
@@ -483,11 +500,12 @@ import XCTest
     session.layout = .fourUp
     XCTAssertTrue(UIPresentationBuilder.session(session).cameras.allSatisfy(\.collapsed), "Four Up collapses strips")
     XCTAssertEqual(presentation.cameras.map(\.number), [1, 2])
+    // The title is always "Ultracam"; the state lives in the subtitle and the status bar.
     XCTAssertEqual(presentation.title, "Ultracam")
-    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, inUse: true)])).title, "Meeting")
-    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, recording: .recording)])).title, "Recording")
-    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)])).title, "Meeting")
-    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)], inUse: false)).title, "Program")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, inUse: true)])).title, "Ultracam")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, recording: .recording)])).title, "Ultracam")
+    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)])).title, "Ultracam")
+    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)], inUse: false)).title, "Ultracam")
     XCTAssertEqual(UILayout.allCases.map(\.title), ["Single", "Side by Side", "Program View", "Four Up"])
   }
 
@@ -516,11 +534,165 @@ import XCTest
   func testRemoveAndResetNeedConfirmation() {
     let presentation = UIPresentationBuilder.session(separate([camera(1), camera(2)]))
     let remove = UIAction.removeCamera(cameraID: "camera-2").needsConfirmation(in: presentation)
-    XCTAssertEqual(remove, "Remove Camera 2? Its settings are deleted. Recordings on disk are kept.")
+    XCTAssertEqual(remove, "Its settings are deleted. Recordings on disk are kept.")
     XCTAssertNotNil(UIAction.resetAllSettings.needsConfirmation(in: presentation))
     XCTAssertTrue(UIAction.resetAllSettings.needsConfirmation(in: presentation)?.contains("Recordings are not touched") == true)
     XCTAssertNil(UIAction.swapPictures.needsConfirmation(in: presentation))
     XCTAssertNil(UIAction.expandPicture(cameraID: "camera-1").needsConfirmation(in: presentation))
     XCTAssertNil(UIAction.forgetLUT(cameraID: "camera-1").needsConfirmation(in: presentation))
+  }
+
+  // MARK: Polish round (docs/ui-polish)
+
+  func testAutoSwitchingNeedsAStrategyThatSwitches() {
+    var session = program([camera(1), camera(2)])
+    session.autoSwitching = true
+    // S1: the default Manual strategy never cuts, so Auto never shows as on.
+    let manual = UIPresentationBuilder.session(session)
+    XCTAssertFalse(manual.canAutoSwitch)
+    XCTAssertFalse(manual.autoSwitching)
+    XCTAssertFalse(manual.canHoldShot)
+    XCTAssertEqual(manual.statusSegments.first { $0.kind == .program }?.text, "Camera 1 on air · Manual")
+
+    session.strategy = .fixedInterval
+    let fixed = UIPresentationBuilder.session(session)
+    XCTAssertTrue(fixed.canAutoSwitch)
+    XCTAssertTrue(fixed.autoSwitching)
+    XCTAssertFalse(fixed.canHoldShot, "Hold only reaches the natural talking head director")
+    session.autoHold = true
+    XCTAssertEqual(UIPresentationBuilder.session(session).statusSegments.first { $0.kind == .program }?.text,
+      "Camera 1 on air · Auto", "A hold that does nothing isn't shown")
+
+    session.strategy = .naturalTalkingHead
+    XCTAssertTrue(UIPresentationBuilder.session(session).canHoldShot)
+    session.autoSwitching = false
+    XCTAssertTrue(UIPresentationBuilder.session(session).canAutoSwitch)
+    XCTAssertFalse(UIPresentationBuilder.session(session).canHoldShot, "Hold needs Auto on")
+
+    var separateSession = separate([camera(1)])
+    separateSession.strategy = .fixedInterval
+    separateSession.autoSwitching = true
+    XCTAssertFalse(UIPresentationBuilder.session(separateSession).canAutoSwitch, "Auto is a Program mode control")
+    XCTAssertFalse(UIPresentationBuilder.session(separateSession).autoSwitching)
+  }
+
+  func testCanStartAny() {
+    XCTAssertTrue(UIPresentationBuilder.session(separate([camera(1)])).canStartAny, "Running: the control stops")
+    XCTAssertTrue(UIPresentationBuilder.session(separate([camera(1, running: false)])).canStartAny)
+    var missing = camera(1, running: false)
+    missing.deviceAvailable = false
+    XCTAssertFalse(UIPresentationBuilder.session(separate([missing])).canStartAny, "Nothing can start without an input")
+    XCTAssertTrue(UIPresentationBuilder.session(separate([missing, camera(2, running: false)])).canStartAny)
+    XCTAssertFalse(UIPresentationBuilder.session(separate([])).canStartAny)
+  }
+
+  func testTallyLabelsAreSentenceCase() {
+    XCTAssertEqual(UITally.onAir.label, "On air")
+    XCTAssertEqual(UITally.program.label, "Program")
+    XCTAssertEqual(UITally.next.label, "Next")
+    XCTAssertNil(UITally.none.label)
+    XCTAssertEqual(UITally.next.badge, "NEXT", "The picture keeps all caps")
+    XCTAssertEqual(presented(program([camera(1), camera(2)], pending: "camera-2"), 1).accessibilityLabel, "Camera 2, Next")
+  }
+
+  func testFailedRecordingIsOrangeAndSaysFailed() {
+    var failed = camera(1, inUse: true)
+    failed.recording.error = "The drive was disconnected."
+    let presentation = presented(separate([failed]))
+    XCTAssertEqual(presentation.recordTitle, "Recording failed")
+    XCTAssertEqual(presentation.recordDetail, "The drive was disconnected.")
+    XCTAssertEqual(presentation.recordTone, .warning, "Red is only for recording and on air (D8)")
+    var flagged = camera(1)
+    flagged.recording.failed = true
+    XCTAssertEqual(presented(separate([flagged])).recordDetail, "The recording ended with an error.")
+    XCTAssertEqual(presented(separate([camera(1, recording: .recording)])).recordTone, .critical)
+  }
+
+  func testFailedAutomaticStartBadge() {
+    var failed = camera(1, running: false)
+    failed.automaticStart = true
+    failed.automaticStartFailed = true
+    let presentation = presented(separate([failed]))
+    XCTAssertEqual(presentation.statusBadge, "Couldn't start")
+    XCTAssertEqual(presentation.statusTone, .warning)
+    XCTAssertTrue(presentation.canStart)
+    failed.deviceAvailable = false
+    failed.inputName = "UltraStudio 4K Mini"
+    XCTAssertEqual(presented(separate([failed])).statusBadge, "Input missing", "A missing input says what to fix")
+    XCTAssertEqual(presented(separate([camera(1, running: false)])).statusBadge, "Stopped")
+  }
+
+  func testSubtitleOnlyCarriesWhatTheStatusBarDoesNot() {
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1)])).subtitle, "")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([camera(1, recording: .recording, inUse: true)])).subtitle, "")
+    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1), camera(2)])).subtitle, "Camera 1 on air")
+    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1), camera(2)], inUse: false)).subtitle, "Camera 1 in Program")
+    XCTAssertEqual(UIPresentationBuilder.session(program([camera(1), camera(2)], onAir: nil)).subtitle, "")
+  }
+
+  func testWaitingRecordDetailNamesWhatIsMissing() {
+    let noSignal = presented(separate([camera(1, signal: .noSignal)]))
+    XCTAssertEqual(noSignal.stripState, .waiting)
+    XCTAssertEqual(noSignal.recordTitle, "Can't record yet")
+    XCTAssertEqual(noSignal.recordDetail, "Needs a supported signal")
+    XCTAssertEqual(presented(separate([camera(1, signal: .noSignal, folder: nil)])).recordDetail,
+      "Needs a supported signal and a recording folder")
+    XCTAssertEqual(presented(separate([camera(1, signal: .unsupported("1080i"))])).recordTitle, "Can't record yet",
+      "Not \"Waiting for HDMI\" when HDMI is there in the wrong format")
+  }
+
+  func testSizeLineBeforeBytesArrive() {
+    XCTAssertEqual(presented(separate([camera(1, signal: .noSignal, recording: .recording)])).sizeLine, "— · —")
+    var writing = camera(1, recording: .recording)
+    writing.recording.fileBytes = 1_000_000
+    writing.recording.megabitsPerSecond = 707
+    XCTAssertEqual(presented(separate([writing])).sizeLine, "\(UIFormat.bytes(1_000_000)) · 707 Mb/s")
+  }
+
+  func testStatusBarLeavesPlainNoSignalToTheSinglePicture() {
+    let one = separate([camera(1, signal: .noSignal)])
+    XCTAssertNil(UIPresentationBuilder.session(one).statusSegments.first { $0.kind == .warning },
+      "One camera: its picture already says No signal")
+    XCTAssertEqual(UIPresentationBuilder.warning(one), "Camera 1: no signal", "The menu bar still warns")
+    XCTAssertEqual(UIPresentationBuilder.menuBarIcon(one), .attention)
+    let two = separate([camera(1, signal: .noSignal), camera(2)])
+    XCTAssertEqual(UIPresentationBuilder.session(two).statusSegments.last?.text, "Camera 1: no signal")
+    let unsupported = separate([camera(1, signal: .unsupported("1080i"))])
+    XCTAssertEqual(UIPresentationBuilder.session(unsupported).statusSegments.last?.text, "Camera 1: unsupported format")
+  }
+
+  func testMenuBarPreviewShowsTheCameraInTheMeeting() {
+    var session = separate([camera(1), camera(2, inUse: true)])
+    session.selectedID = "camera-1"
+    XCTAssertEqual(UIPresentationBuilder.session(session).previewCamera?.id, "camera-2")
+    session.cameras[1].inUse = false
+    XCTAssertEqual(UIPresentationBuilder.session(session).previewCamera?.id, "camera-1", "Nothing on air: the selected camera")
+  }
+
+  func testConfirmationTitlesAndButtons() {
+    let presentation = UIPresentationBuilder.session(separate([camera(1, recording: .recording), camera(2)]))
+    XCTAssertEqual(UIAction.stopCamera(cameraID: "camera-1").confirmationTitle(in: presentation), "Stop Camera 1?")
+    XCTAssertEqual(UIAction.removeCamera(cameraID: "camera-2").confirmationTitle(in: presentation), "Remove Camera 2?")
+    XCTAssertEqual(UIAction.stopAllCameras.confirmationTitle(in: presentation), "Stop All Cameras?")
+    XCTAssertEqual(UIAction.resetAllSettings.confirmationTitle(in: presentation), "Reset All Settings?")
+    // S2: the destructive button says what it does, never "Stop Camera" for a removal or a reset.
+    XCTAssertEqual(UIAction.stopCamera(cameraID: "camera-1").confirmationButtonTitle, "Stop Camera")
+    XCTAssertEqual(UIAction.stopAllCameras.confirmationButtonTitle, "Stop All Cameras")
+    XCTAssertEqual(UIAction.removeCamera(cameraID: "camera-2").confirmationButtonTitle, "Remove Camera")
+    XCTAssertEqual(UIAction.resetAllSettings.confirmationButtonTitle, "Reset and Quit")
+    for action in [UIAction.removeCamera(cameraID: "camera-2"), .resetAllSettings, .stopAllCameras] {
+      let message = action.needsConfirmation(in: presentation) ?? ""
+      XCTAssertFalse(message.contains("?"), "The message doesn't repeat the title's question: \(message)")
+    }
+    XCTAssertNil(UIAction.beginRename(cameraID: "camera-1").needsConfirmation(in: presentation))
+    XCTAssertNil(UIAction.resumeAll.needsConfirmation(in: presentation))
+  }
+
+  func testRevealRecordingsNeedsAFolder() {
+    XCTAssertTrue(UIPresentationBuilder.session(separate([camera(1)])).canRevealRecordings)
+    XCTAssertFalse(UIPresentationBuilder.session(separate([camera(1, folder: nil)])).canRevealRecordings)
+    var withDefault = separate([camera(1, folder: nil)])
+    withDefault.defaultFolderPath = "/Volumes/8TB/Takes"
+    XCTAssertTrue(UIPresentationBuilder.session(withDefault).canRevealRecordings)
   }
 }

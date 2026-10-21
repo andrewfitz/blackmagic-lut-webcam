@@ -9,9 +9,25 @@ struct UICameraColumnView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      UICameraPictureView(camera: camera, context: context)
+      UIColumnPictureLayout {
+        UICameraPictureView(camera: camera, context: context)
+      }
       UIChannelStripView(camera: camera, context: context)
     }
+  }
+}
+
+/// Sizes the picture from the column's width alone (16:9). Left to `aspectRatio`, a live
+/// picture is sized from the native preview's own ideal size whenever the column is
+/// proposed no height (inside a scroll view), and comes out narrower than its strip.
+struct UIColumnPictureLayout: Layout {
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let width = proposal.width ?? 640
+    return CGSize(width: width, height: (width * 9 / 16).rounded())
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    for subview in subviews { subview.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size)) }
   }
 }
 
@@ -90,45 +106,57 @@ struct UICameraPictureView: View {
     case .live:
       EmptyView()
     case .connecting:
-      UIPicturePlaceholder(symbol: "video", title: "Starting…", detail: "Waiting for the first frame from \(camera.inputName).",
-        showsProgress: true)
+      UIPicturePlaceholder(symbol: "video", title: "Starting…", compact: compact,
+        detail: "Waiting for the first frame from \(camera.inputName).", showsProgress: true)
     case .noSignal:
-      UIPicturePlaceholder(symbol: "video.slash", title: "No HDMI signal",
+      UIPicturePlaceholder(symbol: "video.slash", title: "No HDMI signal", compact: compact,
         detail: "Check the camera's HDMI output: 2160p 29.97 or 59.94, 10-bit 4:2:2, RAW off, display LUT off.")
     case .unsupported(let mode):
-      UIPicturePlaceholder(symbol: "exclamationmark.triangle", title: "Unsupported format",
+      UIPicturePlaceholder(symbol: "exclamationmark.triangle", title: "Unsupported format", compact: compact,
         detail: mode.isEmpty ? "Waiting for 2160p 29.97 or 59.94, 10-bit 4:2:2." : "\(mode) Waiting for 2160p 29.97 or 59.94.")
+    case .deviceMissing where snapshot?.inputName == nil:
+      UIPicturePlaceholder(symbol: "cable.connector", title: "No input selected", compact: compact,
+        detail: "Choose this camera's UltraStudio input in the inspector.") {
+        Button("Show Inspector") { context.send(.showInspector(cameraID: camera.id)) }
+      }
     case .deviceMissing:
-      UIPicturePlaceholder(symbol: "cable.connector.slash", title: "Input disconnected",
+      UIPicturePlaceholder(symbol: "cable.connector.slash", title: "Input disconnected", compact: compact,
         detail: "Reconnect \(camera.inputName) or choose another input.") {
         Button("Refresh Inputs") { context.send(.refreshInputs) }
       }
     case .stopped where camera.automaticStartFailed:
-      UIPicturePlaceholder(symbol: "exclamationmark.triangle", title: "Couldn't start \(camera.name)",
+      UIPicturePlaceholder(symbol: "exclamationmark.triangle", title: "Couldn't start \(camera.name)", compact: compact,
         detail: startFailureDetail) {
         Button("Retry", systemImage: "arrow.clockwise") { context.send(.retryAutomaticStart) }
       }
     case .stopped:
-      UIPicturePlaceholder(symbol: "video", title: "Camera stopped", detail: "Start the camera to see its HDMI input.") {
-        Button("Start Camera", systemImage: "play.fill") { context.send(.startCamera(cameraID: camera.id)) }
-          .disabled(!camera.canStart)
+      UIPicturePlaceholder(symbol: "video", title: "Camera stopped", compact: compact, detail: "Start the camera to see its HDMI input.") {
+        // The expanded strip's header has the same button just below.
+        if camera.collapsed {
+          Button("Start Camera", systemImage: "play.fill") { context.send(.startCamera(cameraID: camera.id)) }
+            .disabled(!camera.canStart)
+        }
       }
     case .previewHidden:
-      UIPicturePlaceholder(symbol: "eye.slash", title: "Preview hidden",
+      UIPicturePlaceholder(symbol: "eye.slash", title: "Preview hidden", compact: compact,
         detail: "Camera output continues. Hidden previews do no rendering work.") {
         Button("Show Preview") { context.send(.setPreviewEnabled(cameraID: camera.id, true)) }
       }
     case .updating:
       Label("Updating output…", systemImage: "arrow.triangle.2.circlepath")
-        .font(.caption.weight(.medium))
         .uiPictureOverlay()
         .accessibilityLabel("Updating output")
     }
   }
 
+  /// The reason only: the title already says "Couldn't start".
   private var startFailureDetail: String {
-    let status = snapshot?.automaticStatus ?? snapshot?.message ?? ""
-    return status.isEmpty ? "Automatic start tries once per camera session. Retry to try again." : status
+    var status = snapshot?.automaticStatus ?? snapshot?.message ?? ""
+    for prefix in ["Couldn't start: ", "Couldn’t start: "] where status.hasPrefix(prefix) {
+      status = String(status.dropFirst(prefix.count))
+    }
+    guard let first = status.first else { return "Retry to try again." }
+    return first.uppercased() + status.dropFirst()
   }
 
   /// Preview rendering failed; camera output is unaffected and keeps running.
@@ -136,8 +164,8 @@ struct UICameraPictureView: View {
     if !compact, let error = snapshot?.previewError, !error.isEmpty {
       VStack(spacing: 6) {
         Label("Preview error — camera output continues", systemImage: "exclamationmark.triangle.fill")
-          .font(.caption.weight(.semibold)).foregroundStyle(.orange)
-        Text(error).font(.caption2).foregroundStyle(.white.opacity(0.7)).lineLimit(2).multilineTextAlignment(.center)
+          .font(.uiOverlay).foregroundStyle(.orange)
+        Text(error).font(.uiMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(2).multilineTextAlignment(.center)
         Button("Retry Preview") { context.send(.retryPreview) }
           .controlSize(.small)
           .help("Restart preview rendering. Camera output keeps running.")
@@ -155,18 +183,19 @@ struct UICameraPictureView: View {
 
   private var overlays: some View {
     VStack(spacing: 0) {
-      HStack(alignment: .top, spacing: 6) {
+      HStack(alignment: .center, spacing: 6) {
         if isProgramMode && !isClean {
           Text("\(camera.number)")
-            .font(.caption.weight(.bold).monospacedDigit())
-            .frame(width: 20, height: 20)
-            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+            .font(.subheadline.weight(.bold).monospacedDigit())
+            .padding(.horizontal, 6)
+            .frame(minWidth: 24, minHeight: 24)
+            .background(Color.black.opacity(0.72), in: Capsule())
             .foregroundStyle(.white)
             .accessibilityHidden(true)
         }
         if !isClean {
           Text(camera.name)
-            .font(.caption.weight(.semibold))
+            .font(.uiOverlay)
             .lineLimit(1).truncationMode(.tail)
             .uiPictureOverlay()
             .help(camera.name)
@@ -178,8 +207,8 @@ struct UICameraPictureView: View {
         } else if !camera.activeTools.isEmpty && !compact && !isClean && camera.tileState.showsPicture {
           HStack(spacing: 3) {
             ForEach(camera.activeTools, id: \.self) { tool in
-              Image(systemName: tool.symbol).font(.system(size: 10, weight: .semibold))
-                .frame(width: 22, height: 22)
+              Image(systemName: tool.symbol).font(.uiOverlay)
+                .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.72), in: Capsule())
                 .foregroundStyle(.white)
                 .help("\(tool.title) is on")
@@ -190,9 +219,9 @@ struct UICameraPictureView: View {
         }
       }
       Spacer(minLength: 0)
-      HStack(alignment: .bottom, spacing: 6) {
+      HStack(alignment: .center, spacing: 6) {
         if revealed {
-          Text(camera.timecode).font(.caption.monospacedDigit().weight(.medium)).uiPictureOverlay()
+          Text(camera.timecode).font(.uiOverlay.monospacedDigit()).uiPictureOverlay()
             .accessibilityLabel("Timecode \(camera.timecode)")
           signalMenu
         }
@@ -212,27 +241,26 @@ struct UICameraPictureView: View {
     case .recording, .updating:
       HStack(spacing: 5) {
         Circle().fill(.red).frame(width: 8, height: 8)
-        Text("REC \(elapsed)").font(.caption.weight(.semibold).monospacedDigit())
+        Text("REC \(elapsed)").font(.uiOverlay.monospacedDigit())
       }
       .uiPictureOverlay()
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Recording \(elapsed)")
     case .paused:
       HStack(spacing: 5) {
-        Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(.orange)
-        Text("Paused \(elapsed)").font(.caption.weight(.semibold).monospacedDigit())
+        Image(systemName: "pause.fill").imageScale(.small).foregroundStyle(.orange)
+        Text("Paused \(elapsed)").monospacedDigit()
       }
       .uiPictureOverlay()
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Recording paused at \(elapsed)")
     case .recordingNoSignal:
       HStack(spacing: 5) {
-        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
-        Text("REC · no signal").font(.caption.weight(.semibold))
+        Image(systemName: "exclamationmark.triangle.fill").imageScale(.small)
+        Text("REC · no signal")
       }
       .foregroundStyle(.orange)
-      .padding(.horizontal, 8).frame(height: 24)
-      .background(Color.black.opacity(0.72), in: Capsule())
+      .uiPictureOverlay()
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Recording, no signal")
     default:
@@ -255,7 +283,7 @@ struct UICameraPictureView: View {
       }
       .pickerStyle(.inline)
     } label: {
-      Text(stage == .source ? "Source" : "Output").font(.caption.weight(.medium))
+      Text(stage == .source ? "Source" : "Output").font(.uiOverlay)
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.visible)
@@ -280,24 +308,24 @@ struct UICameraPictureView: View {
         }
         .pickerStyle(.inline)
       } label: {
-        Text(zoom == 1 ? "Fit" : "\(Int(zoom * 100))%").font(.caption.weight(.medium))
+        Text(zoom == 1 ? "Fit" : "\(Int(zoom * 100))%").font(.uiOverlay)
       }
       .menuStyle(.borderlessButton)
       .fixedSize()
+      .padding(.horizontal, 6)
+      .frame(minWidth: 36, minHeight: 24)
       .help("Zoom (center crop, this view only)")
       .accessibilityLabel("Zoom")
       overlayButton("arrow.up.forward.square", help: "Detach to Window", label: "Detach to Window") {
         context.send(.detachMonitor(cameraID: camera.id))
       }
     }
-    .padding(.horizontal, 4).frame(height: 30)
-    .background(Color.black.opacity(0.72), in: Capsule())
-    .environment(\.colorScheme, .dark)
+    .uiPictureControls()
   }
 
   private func overlayButton(_ symbol: String, help: String, label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Image(systemName: symbol).font(.system(size: 12, weight: .medium))
+      Image(systemName: symbol).font(.callout.weight(.medium))
         .frame(width: 26, height: 24).foregroundStyle(.white).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -321,7 +349,11 @@ struct UICameraPictureView: View {
     }
     Divider()
     Button("Detach to Window") { context.send(.detachMonitor(cameraID: camera.id)) }
-    Button("Hide Preview") { context.send(.setPreviewEnabled(cameraID: camera.id, false)) }
+    if camera.tileState == .previewHidden {
+      Button("Show Preview") { context.send(.setPreviewEnabled(cameraID: camera.id, true)) }
+    } else {
+      Button("Hide Preview") { context.send(.setPreviewEnabled(cameraID: camera.id, false)) }
+    }
     Button("Show Inspector") { context.send(.showInspector(cameraID: camera.id)) }
   }
 }
@@ -365,13 +397,16 @@ private struct UIPicturePlaceholder<Actions: View>: View {
   let symbol: String
   let title: String
   let detail: String
+  /// Small pictures (Program sources) keep the small sizes.
+  var compact = false
   var showsProgress = false
   @ViewBuilder var actions: () -> Actions
 
-  init(symbol: String, title: String, detail: String, showsProgress: Bool = false,
+  init(symbol: String, title: String, compact: Bool = false, detail: String, showsProgress: Bool = false,
     @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }) {
     self.symbol = symbol
     self.title = title
+    self.compact = compact
     self.detail = detail
     self.showsProgress = showsProgress
     self.actions = actions
@@ -380,13 +415,15 @@ private struct UIPicturePlaceholder<Actions: View>: View {
   var body: some View {
     ZStack {
       Color(white: 0.06)
-      VStack(spacing: 6) {
-        if showsProgress { ProgressView().controlSize(.small) }
-        else { Image(systemName: symbol).font(.system(size: 26, weight: .light)).foregroundStyle(.white.opacity(0.6)) }
-        Text(title).font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-        Text(detail).font(.caption).foregroundStyle(.white.opacity(0.6))
-          .multilineTextAlignment(.center).frame(maxWidth: 380).fixedSize(horizontal: false, vertical: true)
-        actions().controlSize(.small).padding(.top, 2)
+      VStack(spacing: compact ? 6 : 8) {
+        if showsProgress { ProgressView().controlSize(compact ? .small : .regular) }
+        else {
+          Image(systemName: symbol).font(.system(size: compact ? 26 : 32, weight: .light)).foregroundStyle(.white.opacity(0.6))
+        }
+        Text(title).font(compact ? .callout.weight(.semibold) : .uiPlaceholderTitle).foregroundStyle(.white.opacity(0.9))
+        Text(detail).font(compact ? .caption : .uiRow).foregroundStyle(.white.opacity(0.6))
+          .multilineTextAlignment(.center).frame(maxWidth: compact ? 380 : 440).fixedSize(horizontal: false, vertical: true)
+        actions().controlSize(.small).padding(.top, compact ? 2 : 4)
       }
       .padding(.horizontal, 24)
     }
@@ -399,11 +436,14 @@ private struct UIPicturePlaceholder<Actions: View>: View {
 // MARK: - Channel strip
 
 /// A camera's own controls under its picture: recording, output, effects and audio.
+/// Every row starts with a glyph in the same gutter, so the text lines up in one column.
 struct UIChannelStripView: View {
   let camera: UICameraPresentation
   let context: UIContext
-  @State private var renaming = false
-  @State private var nameDraft = ""
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  /// Width of the leading glyph column in every row.
+  private static let gutter: CGFloat = 28
 
   private var snapshot: UICameraSnapshot? { context.snapshot(camera.id) }
   private var isRecordingOrPaused: Bool { camera.pauseTitle != nil }
@@ -415,35 +455,33 @@ struct UIChannelStripView: View {
     .padding(.horizontal, 12)
     .padding(.vertical, camera.collapsed ? 6 : 10)
     .background(background, in: RoundedRectangle(cornerRadius: 12))
-    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(borderColor, lineWidth: camera.selected ? 1.5 : 1))
-    .alert("Rename \(camera.name)", isPresented: $renaming) {
-      TextField("Camera name", text: $nameDraft)
-      Button("Rename") {
-        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { context.send(.renameCamera(cameraID: camera.id, name: trimmed)) }
-      }
-      Button("Cancel", role: .cancel) {}
-    }
+    // The picture's ring is the one selection indicator (D7), so the strip has no accent border.
+    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(border, lineWidth: contrast == .increased ? 1.5 : 1))
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(camera.name) controls")
   }
 
+  /// Orange for problems, including a failed take; red stays for on air and recording (D8).
   private var stateTone: UITone? {
     switch camera.stripState {
-    case .recordingNoSignal, .noFolder: return .warning
-    case .failed: return .critical
+    case .recordingNoSignal, .noFolder, .failed: return .warning
     default: return nil
     }
   }
 
-  private var background: Color {
-    if let tone = stateTone { return tone.color.opacity(0.08) }
-    return Color.primary.opacity(0.045)
+  private var background: AnyShapeStyle {
+    if let tone = stateTone { return AnyShapeStyle(tone.color.opacity(0.08)) }
+    return AnyShapeStyle(.fill.quaternary)
   }
 
-  private var borderColor: Color {
-    if let tone = stateTone { return tone.color.opacity(0.5) }
-    return camera.selected ? Color.accentColor.opacity(0.55) : .clear
+  private var border: AnyShapeStyle {
+    if let tone = stateTone { return AnyShapeStyle(tone.color.opacity(0.5)) }
+    return AnyShapeStyle(.separator)
+  }
+
+  /// A leading row glyph in the shared gutter.
+  private func gutterIcon(_ symbol: String, color: Color = .secondary) -> some View {
+    Image(systemName: symbol).font(.uiRow).foregroundStyle(color).frame(width: Self.gutter)
   }
 
   // MARK: Expanded
@@ -458,7 +496,7 @@ struct UIChannelStripView: View {
       Divider()
       outputRow
       HStack(spacing: 8) {
-        Text("Audio").font(.caption).foregroundStyle(.secondary).frame(width: 42, alignment: .leading)
+        gutterIcon("waveform").help("Embedded audio").accessibilityHidden(true)
         UIAudioMeter(audio: camera.audio)
       }
     }
@@ -466,23 +504,23 @@ struct UIChannelStripView: View {
 
   /// Problems that need one action: a failed automatic start, an unavailable LUT.
   @ViewBuilder private var alertRows: some View {
-    // The stopped picture already explains a failed automatic start, with its own Retry.
+    // A stopped camera's picture and header already offer Retry.
     if camera.automaticStartFailed && camera.tileState != .stopped {
-      HStack(spacing: 6) {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
-        Text("Couldn't start \(camera.name)").font(.caption.weight(.medium)).foregroundStyle(.orange)
-        Text(snapshot?.automaticStatus ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+      HStack(spacing: 8) {
+        gutterIcon("exclamationmark.triangle.fill", color: .orange)
+        Text("Couldn't start \(camera.name)").font(.uiRowEmphasis)
+        Text(snapshot?.automaticStatus ?? "").font(.uiRow).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
         Spacer(minLength: 4)
         Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.small)
-          .help("Automatic start tries once per camera session. Retry tries again.")
+          .help("Try starting the camera again.")
       }
       .accessibilityElement(children: .contain)
     }
     if let error = camera.lutError {
-      HStack(spacing: 6) {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
-        Text("LUT unavailable").font(.caption.weight(.medium)).foregroundStyle(.orange)
-        Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail).help(error)
+      HStack(spacing: 8) {
+        gutterIcon("exclamationmark.triangle.fill", color: .orange)
+        Text("LUT unavailable").font(.uiRowEmphasis)
+        Text(error).font(.uiRow).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail).help(error)
         Spacer(minLength: 4)
         Button("Locate…") { context.send(.chooseLUT(cameraID: camera.id)) }.controlSize(.small)
           .help("Choose the .cube file again. Capture keeps working without it.")
@@ -494,7 +532,7 @@ struct UIChannelStripView: View {
   private var header: some View {
     HStack(spacing: 8) {
       chevron
-      Text(camera.name).font(.headline).lineLimit(1).truncationMode(.middle)
+      Text(camera.name).font(.uiTitle).lineLimit(1).truncationMode(.middle)
         .help("\(camera.name) · \(camera.inputName)")
       UIBadge(text: camera.statusBadge, tone: camera.statusTone)
       tallyBadge
@@ -510,8 +548,8 @@ struct UIChannelStripView: View {
   private var chevron: some View {
     Button { context.send(.toggleCollapsed(cameraID: camera.id)) } label: {
       Image(systemName: camera.collapsed ? "chevron.right" : "chevron.down")
-        .font(.system(size: 11, weight: .semibold))
-        .frame(width: 24, height: 24)
+        .font(.subheadline.weight(.semibold))
+        .frame(width: Self.gutter, height: 24)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -521,11 +559,12 @@ struct UIChannelStripView: View {
   }
 
   @ViewBuilder private var tallyBadge: some View {
-    switch camera.tally {
-    case .onAir: UIBadge(text: "On air", tone: .critical)
-    case .program: UIBadge(text: "Program", tone: .neutral)
-    case .next: UIBadge(text: "Next", tone: .positive)
-    case .none: EmptyView()
+    if let label = camera.tally.label {
+      switch camera.tally {
+      case .onAir: UIBadge(text: label, tone: .critical)
+      case .next: UIBadge(text: label, tone: .positive)
+      default: UIBadge(text: label, tone: .neutral)
+      }
     }
   }
 
@@ -538,6 +577,14 @@ struct UIChannelStripView: View {
       .help(camera.stopNeedsConfirmation ? "Stops capture and output. Asks first because it would end a recording or on-air video."
         : "Stops this camera's capture and output.")
       .accessibilityLabel("Stop \(camera.name)")
+    } else if camera.automaticStartFailed {
+      // One problem, one action: the same Retry the picture offers.
+      Button { context.send(.retryAutomaticStart) } label: {
+        if compact { Image(systemName: "arrow.clockwise") } else { Label("Retry", systemImage: "arrow.clockwise") }
+      }
+      .controlSize(.small)
+      .help("Couldn't start \(camera.name). Try starting the camera again.")
+      .accessibilityLabel("Retry \(camera.name)")
     } else {
       Button { context.send(.startCamera(cameraID: camera.id)) } label: {
         if compact { Image(systemName: "play.fill") } else { Label("Start Camera", systemImage: "play.fill") }
@@ -550,10 +597,12 @@ struct UIChannelStripView: View {
   }
 
   private var overflowMenu: some View {
-    Menu {
+    let canEdit = context.session.canEditTopology
+    let lastCamera = context.presentation.cameras.count < 2
+    return Menu {
       Button("Show Inspector") { context.send(.showInspector(cameraID: camera.id)) }
       if context.presentation.outputMode == .program {
-        Button("Cut to \(camera.name) (⌃\(camera.number))") { context.send(.cut(cameraID: camera.id)) }
+        Button("Cut to \(camera.name)") { context.send(.cut(cameraID: camera.id)) }
           .disabled(!camera.cutEnabled)
       }
       Divider()
@@ -572,11 +621,10 @@ struct UIChannelStripView: View {
       }
       UICopySettingsMenu(camera: camera, context: context, title: "Copy Monitor Settings To")
       Divider()
-      Button(context.session.canEditTopology ? "Rename…" : "Rename… (stop all cameras first)") {
-        nameDraft = camera.name
-        renaming = true
-      }
-      .disabled(!context.session.canEditTopology)
+      // The one rename alert lives on the main window; this only asks for it.
+      Button("Rename…") { context.send(.beginRename(cameraID: camera.id)) }
+        .disabled(!canEdit)
+        .help(canEdit ? "Rename \(camera.name)" : "Stop all cameras to rename a camera.")
       Button("Diagnostics…") { context.send(.openDiagnostics) }
       Divider()
       if camera.canStop {
@@ -584,52 +632,82 @@ struct UIChannelStripView: View {
       } else {
         Button("Start Camera") { context.send(.startCamera(cameraID: camera.id)) }.disabled(!camera.canStart)
       }
-      Button(context.session.canEditTopology ? "Remove Camera…" : "Remove Camera… (stop all cameras first)") {
-        context.send(.removeCamera(cameraID: camera.id))
-      }
-      .disabled(!context.session.canEditTopology || context.presentation.cameras.count < 2)
+      Button("Remove Camera…") { context.send(.removeCamera(cameraID: camera.id)) }
+        .disabled(!canEdit || lastCamera)
+        .help(!canEdit ? "Stop all cameras to remove a camera." : lastCamera ? "The only camera can't be removed." : "Remove \(camera.name)")
     } label: {
-      Image(systemName: "ellipsis.circle")
+      Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly)
+        .frame(minWidth: 24, minHeight: 24)
+        .contentShape(Rectangle())
     }
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
+    .frame(minWidth: 24, minHeight: 24)
+    .contentShape(Rectangle())
     .help("More for \(camera.name)")
     .accessibilityLabel("More for \(camera.name)")
   }
 
+  /// The footnote ("Camera original · no LUT or effects") can drop out of a
+  /// narrow strip, so the record button's help always says it too.
+  private var recordHelp: String {
+    camera.recordButtonActive || isRecordingOrPaused ? camera.recordButtonHelp
+      : camera.recordButtonHelp + " Records the camera original, without LUT or effects."
+  }
+
   private var recordButton: some View {
     UIRecordButton(active: camera.recordButtonActive || camera.pauseTitle == "Resume", enabled: camera.recordButtonEnabled,
-      help: camera.recordButtonHelp) {
+      help: recordHelp) {
       context.send(.toggleRecording(cameraID: camera.id))
     }
   }
 
+  /// Small status words stay in a label color; the state's color goes on a symbol.
+  private var recordSymbol: (name: String, color: Color)? {
+    switch camera.stripState {
+    case .paused: return ("pause.fill", .orange)
+    case .recordingNoSignal, .noFolder, .failed: return ("exclamationmark.triangle.fill", .orange)
+    case .saved: return ("checkmark.circle.fill", .green)
+    default: return nil
+    }
+  }
+
   private var recordRow: some View {
-    HStack(spacing: 10) {
-      if camera.stripState == .finishing {
-        ProgressView().controlSize(.small).frame(width: 28, height: 28)
-      } else {
-        recordButton
+    HStack(spacing: 8) {
+      Group {
+        if camera.stripState == .finishing { ProgressView().controlSize(.small) } else { recordButton }
       }
+      .frame(width: Self.gutter, height: 28)
       VStack(alignment: .leading, spacing: 2) {
-        Text(camera.recordTitle)
-          .font(.subheadline.weight(.semibold))
-          .foregroundStyle(camera.recordTone == .neutral ? Color.primary : camera.recordTone.color)
+        HStack(spacing: 4) {
+          if let symbol = recordSymbol {
+            Image(systemName: symbol.name).foregroundStyle(symbol.color).imageScale(.small)
+          }
+          // Red only for a live take, where the title is bold next to the red stop button.
+          Text(camera.recordTitle)
+            .foregroundStyle(camera.recordTone == .critical ? Color.red : Color.primary)
+        }
+        .font(.uiRowEmphasis)
         if isRecordingOrPaused {
-          Text(camera.recordDetail).font(.system(.title3, design: .monospaced).weight(.semibold))
+          Text(camera.recordDetail).font(.uiClock)
             .foregroundStyle(camera.stripState == .paused ? .secondary : .primary)
         } else {
-          Text(camera.recordDetail).font(.caption).lineLimit(1).truncationMode(.middle)
+          Text(camera.recordDetail).font(.uiRow).lineLimit(1).truncationMode(.middle)
             .foregroundStyle(camera.stripState == .saved ? .primary : .secondary)
         }
       }
       .layoutPriority(1)
       if let size = camera.sizeLine {
         VStack(alignment: .leading, spacing: 2) {
-          Text(size).font(.caption.monospacedDigit())
+          Text(size).font(.uiValue)
           if let drops = camera.dropsLine {
-            Text(drops).font(.caption2.monospacedDigit()).foregroundStyle(camera.dropsWarning ? .orange : .green)
+            HStack(spacing: 4) {
+              Image(systemName: camera.dropsWarning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(camera.dropsWarning ? .orange : .green).imageScale(.small)
+              Text(drops).foregroundStyle(.secondary)
+            }
+            .font(.uiValue)
           }
         }
       }
@@ -665,7 +743,7 @@ struct UIChannelStripView: View {
     case .stopped:
       EmptyView()
     case .finishing:
-      Text("Saving…").font(.caption).foregroundStyle(.secondary)
+      Text("Saving…").font(.uiRow).foregroundStyle(.secondary)
     case .ready, .waiting:
       EmptyView()
     }
@@ -679,19 +757,21 @@ struct UIChannelStripView: View {
   }
 
   private func folderContent(footnote: Bool) -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
-      Text(camera.folderLine).font(.caption).lineLimit(1).truncationMode(.middle)
-        .help(snapshot?.recording.folderPath ?? camera.folderLine)
-      if let left = camera.timeLeftLine {
-        Text("· \(left)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).fixedSize()
+    HStack(spacing: 8) {
+      gutterIcon("folder")
+      HStack(spacing: 4) {
+        Text(camera.folderLine).font(.uiRow).lineLimit(1).truncationMode(.middle)
+          .help(snapshot?.recording.folderPath ?? camera.folderLine)
+        if let left = camera.timeLeftLine {
+          Text("· \(left)").font(.uiValue).foregroundStyle(.secondary).fixedSize()
+        }
       }
       if snapshot?.recording.folderIsCustom == true {
         UIBadge(text: "Own folder").fixedSize()
       }
       Spacer(minLength: 4)
       if footnote {
-        Text("Camera original · no LUT or effects").font(.caption2).foregroundStyle(.tertiary).fixedSize()
+        Text("Camera original · no LUT or effects").font(.uiMeta).foregroundStyle(.secondary).fixedSize()
       }
     }
   }
@@ -700,61 +780,76 @@ struct UIChannelStripView: View {
     ViewThatFits(in: .horizontal) {
       outputContent(full: true)
       outputContent(full: false)
+      // Narrow cells: icon-only output state and an unlabeled Processing switch, so the
+      // strip never grows wider than its picture.
+      outputContent(full: false, minimal: true)
     }
   }
 
-  private func outputContent(full: Bool) -> some View {
+  private func outputContent(full: Bool, minimal: Bool = false) -> some View {
     HStack(spacing: 8) {
-      outputLabel(full: full)
+      outputLabel(full: full, minimal: minimal)
       Spacer(minLength: 4)
       if camera.applying {
         HStack(spacing: 4) {
           ProgressView().controlSize(.mini)
-          if full { Text("Updating output…").font(.caption).foregroundStyle(.secondary) }
+          if full { Text("Updating output…").font(.uiRow).foregroundStyle(.secondary) }
         }
         .fixedSize()
         .accessibilityLabel("Updating output")
       }
-      HStack(spacing: 4) {
-        ForEach(camera.chips) { chip in
-          UIChipToggle(chip: chip, compact: !full) {
-            context.send(.setEffect(cameraID: camera.id, index: chip.id, !chip.isOn))
-          }
-        }
-      }
-      .opacity(camera.processing ? 1 : 0.5)
-      .fixedSize()
-      Toggle(isOn: Binding(get: { camera.processing }, set: { context.send(.setProcessing(cameraID: camera.id, $0)) })) {
-        Text("Processing").font(.caption).foregroundStyle(.secondary)
-      }
-      .toggleStyle(.switch)
-      .controlSize(.mini)
-      .fixedSize()
-      .help("Off = complete bypass: the original resolution, color, pixels and frame rate. Effect choices stay saved. ⇧⌘B")
+      effectChips
+      if minimal { processingToggle.labelsHidden() } else { processingToggle }
     }
   }
 
-  @ViewBuilder private func outputLabel(full: Bool) -> some View {
+  private var processingToggle: some View {
+    Toggle(isOn: Binding(get: { camera.processing }, set: { context.send(.setProcessing(cameraID: camera.id, $0)) })) {
+      Text("Processing").font(.uiMeta).foregroundStyle(.secondary)
+    }
+    .toggleStyle(.switch)
+    .controlSize(.mini)
+    .fixedSize()
+    .help("Processing. Off = complete bypass: the original resolution, color, pixels and frame rate. Effect choices stay saved. ⇧⌘B")
+  }
+
+  /// Effects only apply with Processing on, so the chips are disabled (not just dimmed) without it.
+  private var effectChips: some View {
+    HStack(spacing: 4) {
+      ForEach(camera.chips) { chip in
+        UIChipToggle(chip: chip) { context.send(.setEffect(cameraID: camera.id, index: chip.id, $0)) }
+      }
+    }
+    .disabled(!camera.processing)
+    .fixedSize()
+  }
+
+  @ViewBuilder private func outputLabel(full: Bool, minimal: Bool = false) -> some View {
     if camera.showsCut {
+      // Wider than the gutter; the cut button leads the row in Program mode.
       Button {
         context.send(.cut(cameraID: camera.id))
       } label: {
-        Label(full ? "Cut  ⌃\(camera.number)" : "Cut", systemImage: "arrow.left.arrow.right")
+        Label("Cut", systemImage: "arrow.left.arrow.right")
       }
       .controlSize(.small)
       .disabled(!camera.cutEnabled)
       .help(camera.cutEnabled ? "Cut Program to \(camera.name) (⌃\(camera.number))" : "\(camera.name) needs a live signal before it can go on air.")
       .accessibilityLabel("Cut to \(camera.name)")
     } else {
-      HStack(spacing: 5) {
-        Image(systemName: context.presentation.outputMode == .program ? "dot.radiowaves.left.and.right" : "video.badge.checkmark")
-          .font(.caption)
-        Text(full ? camera.outputLine : compactOutputLine)
-          .font(.caption).lineLimit(1).truncationMode(.middle)
+      HStack(spacing: 8) {
+        gutterIcon(context.presentation.outputMode == .program ? "dot.radiowaves.left.and.right" : "video.badge.checkmark",
+          color: camera.outputInUse ? .green : .secondary)
+        if !minimal {
+          // Natural width, so the row falls back to shorter wording instead of truncating.
+          Text(full ? camera.outputLine : compactOutputLine)
+            .font(.uiRow).lineLimit(1).fixedSize()
+            .foregroundStyle(camera.outputInUse ? .primary : .secondary)
+        }
       }
-      .foregroundStyle(camera.outputInUse ? .green : .secondary)
       .help(camera.outputLine)
       .accessibilityElement(children: .combine)
+      .accessibilityLabel(camera.outputLine)
     }
   }
 
@@ -769,46 +864,48 @@ struct UIChannelStripView: View {
   // MARK: Collapsed
 
   private var collapsed: some View {
-    HStack(spacing: 7) {
+    HStack(spacing: 8) {
       chevron
-      Text(camera.name).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+      Text(camera.name).font(.uiTitle).lineLimit(1).truncationMode(.middle)
       tallyBadge
       collapsedState
       if camera.automaticStartFailed {
-        Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.mini)
-          .help("Couldn't start \(camera.name). Automatic start tries once per camera session.")
+        Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.small)
+          .help("Couldn't start \(camera.name). Try starting the camera again.")
       }
       if camera.lutError != nil {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.uiRow)
           .help(camera.lutError ?? "")
           .accessibilityLabel("LUT unavailable")
       }
       Spacer(minLength: 4)
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 6) {
-          HStack(spacing: 3) {
-            ForEach(camera.chips) { chip in
-              UIChipToggle(chip: chip, compact: true) {
-                context.send(.setEffect(cameraID: camera.id, index: chip.id, !chip.isOn))
-              }
-            }
-          }
-          .opacity(camera.processing ? 1 : 0.5)
+          effectChips
           UIAudioMeter(audio: camera.audio, compact: true)
         }
         UIAudioMeter(audio: camera.audio, compact: true)
         EmptyView()
       }
       if camera.stripState == .finishing {
-        ProgressView().controlSize(.mini).frame(width: 22, height: 22)
+        ProgressView().controlSize(.mini).frame(width: 24, height: 24)
       } else {
         UIRecordButton(active: camera.recordButtonActive || camera.pauseTitle == "Resume", enabled: camera.recordButtonEnabled,
-          help: camera.recordButtonHelp, size: 22) {
+          help: recordHelp, size: 24) {
           context.send(.toggleRecording(cameraID: camera.id))
         }
       }
       overflowMenu
     }
+  }
+
+  /// One collapsed status: words in a label color, the state's color on the symbol.
+  private func collapsedLabel(_ text: String, symbol: String? = nil, color: Color = .secondary, value: Bool = false) -> some View {
+    HStack(spacing: 4) {
+      if let symbol { Image(systemName: symbol).foregroundStyle(color).imageScale(.small) }
+      Text(text).foregroundStyle(.secondary).lineLimit(1)
+    }
+    .font(value ? .uiValue : .uiRow)
   }
 
   @ViewBuilder private var collapsedState: some View {
@@ -817,22 +914,26 @@ struct UIChannelStripView: View {
     case .recording, .updating:
       HStack(spacing: 4) {
         Circle().fill(.red).frame(width: 7, height: 7)
-        Text(elapsed).font(.caption.monospacedDigit())
+        Text(elapsed).font(.uiValue)
       }
       .accessibilityElement(children: .ignore).accessibilityLabel("Recording \(elapsed)")
     case .recordingNoSignal:
-      Label("\(elapsed) · no signal", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-        .lineLimit(1)
+      collapsedLabel("\(elapsed) · no signal", symbol: "exclamationmark.triangle.fill", color: .orange, value: true)
+        .accessibilityElement(children: .combine)
     case .paused:
-      Label(elapsed, systemImage: "pause.fill").font(.caption.monospacedDigit()).foregroundStyle(.orange)
+      collapsedLabel(elapsed, symbol: "pause.fill", color: .orange, value: true)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Paused at \(elapsed)")
-    case .saved: Text("Saved").font(.caption).foregroundStyle(.green)
-    case .finishing: Text("Finishing…").font(.caption).foregroundStyle(.secondary)
-    case .stopped: Text("Stopped").font(.caption).foregroundStyle(.secondary)
-    case .waiting: Text(camera.statusBadge).font(.caption).foregroundStyle(.orange).lineLimit(1)
-    case .noFolder: Text("No folder").font(.caption).foregroundStyle(.orange)
-    case .failed: Text("Recording stopped").font(.caption).foregroundStyle(.red).lineLimit(1)
-    case .ready: Text("Ready").font(.caption).foregroundStyle(.secondary)
+    case .saved: collapsedLabel("Saved", symbol: "checkmark.circle.fill", color: .green)
+    case .finishing: collapsedLabel("Finishing…")
+    case .stopped: collapsedLabel("Stopped")
+    case .waiting:
+      collapsedLabel(camera.statusBadge, symbol: camera.statusTone == .warning ? "exclamationmark.triangle.fill" : nil, color: .orange)
+    case .noFolder: collapsedLabel("No folder", symbol: "exclamationmark.triangle.fill", color: .orange)
+    case .failed:
+      collapsedLabel("Recording failed", symbol: "exclamationmark.triangle.fill", color: .orange)
+        .accessibilityElement(children: .combine)
+    case .ready: collapsedLabel("Ready")
     }
   }
 }

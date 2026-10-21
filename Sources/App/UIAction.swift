@@ -42,6 +42,10 @@ enum UIAction: Sendable, Equatable {
   case removeCamera(cameraID: String)
   case forgetLUT(cameraID: String)
   case renameCamera(cameraID: String, name: String)
+  /// Opens the one rename prompt (`uiRenameAlert`) for a camera; every entry point sends this.
+  case beginRename(cameraID: String)
+  /// Closes the rename prompt without renaming.
+  case endRename
 
   // Program
   case cut(cameraID: String)
@@ -59,6 +63,8 @@ enum UIAction: Sendable, Equatable {
   case recordAll
   case stopAllRecordings
   case pauseAll
+  /// Resumes every paused take (Pause All turns into Resume All when every take is paused).
+  case resumeAll
   case toggleRecordingSelected
   case chooseRecordingFolder(cameraID: String?)
   case useDefaultFolder(cameraID: String)
@@ -88,26 +94,49 @@ enum UIAction: Sendable, Equatable {
 
 extension UIAction {
   /// Actions that end a recording or interrupt an on-air camera need a confirmation first.
+  /// The message is the dialog's detail; `confirmationTitle(in:)` already asks the question.
   func needsConfirmation(in presentation: UISessionPresentation) -> String? {
     switch self {
     case .stopCamera(let id):
       guard let camera = presentation.cameras.first(where: { $0.id == id }), camera.stopNeedsConfirmation else { return nil }
       return camera.stopConfirmationMessage
-    case .removeCamera(let id):
-      let name = presentation.cameras.first { $0.id == id }?.name ?? "this camera"
-      return "Remove \(name)? Its settings are deleted. Recordings on disk are kept."
+    case .removeCamera:
+      return "Its settings are deleted. Recordings on disk are kept."
     case .resetAllSettings:
-      return "Reset all settings? Cameras, effects, folders, monitor tools and layout return to their defaults. Recordings are not touched. Ultracam quits when it's done."
+      return "Cameras, effects, folders, monitor tools and layout return to their defaults. Recordings are not touched. Ultracam quits when it's done."
     case .stopAllCameras:
       let recording = presentation.cameras.filter { $0.recordButtonActive || $0.pauseTitle == "Resume" }
       let onAir = presentation.cameras.contains { $0.tally == .onAir }
       guard !recording.isEmpty || onAir else { return nil }
       var parts: [String] = []
       if !recording.isEmpty { parts.append("\(recording.count == 1 ? "1 recording ends" : "\(recording.count) recordings end")") }
-      if onAir { parts.append("on-air video stops") }
-      return "Stop all cameras? " + parts.joined(separator: " and ") + "."
+      if onAir { parts.append(recording.isEmpty ? "On-air video stops" : "on-air video stops") }
+      return parts.joined(separator: " and ") + "."
     default:
       return nil
+    }
+  }
+
+  /// The confirmation dialog's title: the question the message answers.
+  func confirmationTitle(in presentation: UISessionPresentation) -> String {
+    let name: (String) -> String = { id in presentation.cameras.first { $0.id == id }?.name ?? "Camera" }
+    switch self {
+    case .stopCamera(let id): return "Stop \(name(id))?"
+    case .stopAllCameras: return "Stop All Cameras?"
+    case .removeCamera(let id): return "Remove \(name(id))?"
+    case .resetAllSettings: return "Reset All Settings?"
+    default: return "Are you sure?"
+    }
+  }
+
+  /// The destructive button of the confirmation dialog, named for what it does.
+  var confirmationButtonTitle: String {
+    switch self {
+    case .stopCamera: return "Stop Camera"
+    case .stopAllCameras: return "Stop All Cameras"
+    case .removeCamera: return "Remove Camera"
+    case .resetAllSettings: return "Reset and Quit"
+    default: return "Continue"
     }
   }
 }

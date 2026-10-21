@@ -200,6 +200,8 @@ struct UISessionSnapshot: Sendable, Equatable {
   var collapsed: Set<String> = []
   var sidebarVisible = true
   var inspectorOpen = false
+  /// The camera whose rename prompt is open, if any.
+  var renamingCameraID: String?
 }
 
 // MARK: - Presentation
@@ -218,6 +220,15 @@ enum UITally: Sendable, Equatable {
     case .onAir: return "ON AIR"
     case .program: return "PROGRAM"
     case .next: return "NEXT"
+    }
+  }
+  /// Sentence case for text outside the picture (strip, sidebar, menus, status).
+  var label: String? {
+    switch self {
+    case .none: return nil
+    case .onAir: return "On air"
+    case .program: return "Program"
+    case .next: return "Next"
     }
   }
 }
@@ -328,11 +339,24 @@ struct UISessionPresentation: Sendable, Equatable {
   var camerasControlTitle: String
   var cutButtons: [UICutButton]
   var autoSwitching: Bool
+  /// Program mode with a strategy that switches on its own (anything but Manual).
+  var canAutoSwitch: Bool
+  /// Hold Current Shot only reaches the natural talking head director.
+  var canHoldShot: Bool
+  /// Start/Stop can do something: a camera runs (Stop) or one can start.
+  var canStartAny: Bool
+  /// Show Recordings in Finder has a folder to open.
+  var canRevealRecordings: Bool
   var statusSegments: [UIStatusSegment]
   var outputSummary: String
   var outputInUse: Bool
   var recordingSummary: String
   var menuBarIcon: UIMenuBarIcon
+}
+
+extension UISessionPresentation {
+  /// The camera the menu bar preview shows: the one a meeting sees, if any, otherwise the selected one.
+  var previewCamera: UICameraPresentation? { cameras.first { $0.tally == .onAir } ?? selected }
 }
 
 enum UIMenuBarIcon: String, Sendable, Equatable {
@@ -347,7 +371,7 @@ enum UIMenuBarIcon: String, Sendable, Equatable {
   var accessibilityLabel: String {
     switch self {
     case .stopped: return "Ultracam, cameras stopped"
-    case .waiting: return "Ultracam, waiting for a camera app"
+    case .waiting: return "Ultracam, waiting for a meeting app"
     case .live: return "Ultracam, live with effects"
     case .bypass: return "Ultracam, live with complete bypass"
     case .recording: return "Ultracam, recording"
@@ -448,9 +472,14 @@ enum UIPresentationBuilder {
     let liveFormat: String? = { if case .live(let format) = camera.signal { return format }; return nil }()
 
     let (statusBadge, statusTone): (String, UITone) = {
-      if !camera.running { return camera.deviceAvailable ? ("Stopped", .neutral) : ("Input missing", .warning) }
+      if !camera.running {
+        // "No input" when none was ever chosen, as the picture says; "Input missing" when it's unplugged.
+        if !camera.deviceAvailable { return (camera.inputName == nil ? "No input" : "Input missing", .warning) }
+        // The picture offers Retry; the badge names the same problem instead of a neutral "Stopped".
+        return camera.automaticStartFailed ? ("Couldn't start", .warning) : ("Stopped", .neutral)
+      }
       switch camera.signal {
-      case .live(let format): return ("● \(format)", .positive)
+      case .live(let format): return (format, .positive)
       case .connecting, .none: return ("Starting…", .neutral)
       case .noSignal: return ("No signal", .warning)
       case .unsupported: return ("Unsupported format", .warning)
@@ -462,19 +491,24 @@ enum UIPresentationBuilder {
     var recordDetail = ""
     var recordTone: UITone = .neutral
     switch strip {
-    case .recording, .updating: recordTitle = "Recording"; recordDetail = UIFormat.elapsed(rec.elapsed); recordTone = .critical
+    // Every clock on screen uses the short form ("12:31", "1:02:47").
+    case .recording, .updating: recordTitle = "Recording"; recordDetail = UIFormat.shortElapsed(rec.elapsed); recordTone = .critical
     case .recordingNoSignal:
-      recordTitle = "Recording · no signal"; recordDetail = UIFormat.elapsed(rec.elapsed); recordTone = .warning
-    case .paused: recordTitle = "Paused"; recordDetail = UIFormat.elapsed(rec.elapsed); recordTone = .warning
+      recordTitle = "Recording · no signal"; recordDetail = UIFormat.shortElapsed(rec.elapsed); recordTone = .warning
+    case .paused: recordTitle = "Paused"; recordDetail = UIFormat.shortElapsed(rec.elapsed); recordTone = .warning
     case .finishing: recordTitle = "Finishing…"; recordDetail = "Writing the final fragment"
     case .saved:
       recordTitle = "Saved"; recordTone = .positive
       recordDetail = [rec.savedFileName, rec.savedDuration.map(UIFormat.shortElapsed)].compactMap { $0 }.joined(separator: " · ")
     case .noFolder: recordTitle = "No folder"; recordDetail = "Choose where \(camera.name) records"; recordTone = .warning
     case .failed:
-      recordTitle = "Recording stopped"; recordDetail = rec.error ?? "The recording ended with an error."; recordTone = .critical
+      // Orange, not red: red means recording or on air (D8), and a failed take is neither.
+      recordTitle = "Recording failed"; recordDetail = rec.error ?? "The recording ended with an error."; recordTone = .warning
     case .stopped: recordTitle = "Not recording"; recordDetail = "Start the camera to record"
-    case .waiting: recordTitle = "Waiting for HDMI"; recordDetail = "Record becomes available with a signal"
+    case .waiting:
+      // Name what is actually missing; the badge and picture already say which signal problem it is.
+      recordTitle = "Can't record yet"
+      recordDetail = rec.folderPath == nil ? "Needs a supported signal and a recording folder" : "Needs a supported signal"
     case .ready: recordTitle = "Ready to record"; recordDetail = [liveFormat, session.codecTitle].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -504,7 +538,7 @@ enum UIPresentationBuilder {
       if session.onAirID == camera.id {
         outputLine = session.programInUse ? "In Program · on air" : "In Program · no viewer yet"
       } else if session.pendingCutID == camera.id {
-        outputLine = "Cut pending"
+        outputLine = "Next"
       } else {
         outputLine = "Program source"
       }
@@ -514,7 +548,7 @@ enum UIPresentationBuilder {
 
     let elapsedShort = UIFormat.shortElapsed(rec.elapsed)
     var labelParts = [camera.name]
-    if let badge = tally.badge { labelParts.append(badge.capitalized) }
+    if let label = tally.label { labelParts.append(label) }
     if isRecording { labelParts.append(rec.status == .paused ? "recording paused at \(elapsedShort)" : "recording \(elapsedShort)") }
     if tile != .live { labelParts.append(statusBadge) }
 
@@ -528,7 +562,7 @@ enum UIPresentationBuilder {
       recordTitle: recordTitle, recordDetail: recordDetail, recordTone: recordTone,
       recordButtonActive: recordButtonActive, recordButtonEnabled: recordButtonEnabled, recordButtonHelp: recordHelp,
       pauseTitle: rec.status == .recording ? "Pause" : rec.status == .paused ? "Resume" : nil,
-      sizeLine: isRecording ? "\(UIFormat.bytes(rec.fileBytes)) · \(UIFormat.bitrate(rec.megabitsPerSecond))" : nil,
+      sizeLine: isRecording ? "\(rec.fileBytes > 0 ? UIFormat.bytes(rec.fileBytes) : "—") · \(UIFormat.bitrate(rec.megabitsPerSecond))" : nil,
       dropsLine: isRecording ? (rec.droppedFrames > 0 ? "\(rec.droppedFrames) dropped" : "0 dropped") : nil,
       dropsWarning: rec.droppedFrames > 0,
       folderLine: rec.folderPath.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "No recording folder",
@@ -569,16 +603,23 @@ enum UIPresentationBuilder {
     else { recordControl = .record(all: session.cameras.count > 1, enabled: anyRecordable) }
 
     let running = session.cameras.contains(where: \.running)
+    // Only the strategies other than Manual cut on their own; Auto never shows as on when it can't switch.
+    let canAutoSwitch = session.outputMode == .program && session.strategy != .manual
+    let autoSwitching = canAutoSwitch && session.autoSwitching
+    let canHoldShot = autoSwitching && session.strategy == .naturalTalkingHead
     let outputInUse: Bool
     let outputSummary: String
     switch session.outputMode {
     case .program:
       outputInUse = session.programInUse
-      outputSummary = "Ultracam · Program · \(session.programInUse ? "in use" : "not in use")"
+      outputSummary = "Ultracam · Program · \(session.programInUse ? "In use" : "Not in use")"
     case .separate:
+      // The published device names, as a meeting app lists them.
       let inUse = session.cameras.filter(\.inUse)
       outputInUse = !inUse.isEmpty
-      outputSummary = inUse.isEmpty ? "Virtual cameras not in use" : inUse.map { "Ultracam · \($0.name)" }.joined(separator: ", ") + " · in use"
+      if !inUse.isEmpty { outputSummary = inUse.map { "Ultracam · \($0.name)" }.joined(separator: ", ") + " · In use" }
+      else if session.cameras.count == 1 { outputSummary = "Ultracam · \(session.cameras[0].name) · Not in use" }
+      else { outputSummary = "Ultracam cameras not in use" }
     }
 
     let drivesLine = session.drives.compactMap { drive in drive.secondsLeft.map { "\(drive.name) \(UIFormat.duration($0))" } }
@@ -593,10 +634,13 @@ enum UIPresentationBuilder {
     }
 
     var segments = [UIStatusSegment(kind: .output, text: outputSummary, tone: outputInUse ? .positive : .neutral)]
+    let onAirName = session.cameras.first { $0.id == session.onAirID }?.name
     if session.outputMode == .program {
-      let onAir = session.cameras.first { $0.id == session.onAirID }?.name ?? "No camera"
-      let mode = session.autoSwitching ? (session.autoHold ? "Auto · hold" : "Auto") : "Manual"
-      segments.append(UIStatusSegment(kind: .program, text: "\(onAir) on air · \(mode)", tone: .neutral))
+      let onAir = onAirName ?? "No camera"
+      let mode = autoSwitching ? (canHoldShot && session.autoHold ? "Auto · hold" : "Auto") : "Manual"
+      // "On air" only while a meeting app shows Program, as in the window subtitle.
+      let state = session.programInUse ? "on air" : "in Program"
+      segments.append(UIStatusSegment(kind: .program, text: "\(onAir) \(state) · \(mode)", tone: .neutral))
     }
     segments.append(UIStatusSegment(kind: .recording, text: recordingSummary, tone: recording.isEmpty ? .neutral : .critical))
     // Audio can only be judged from a picture with a signal; a running camera without HDMI has none.
@@ -604,21 +648,31 @@ enum UIPresentationBuilder {
       if case .live = camera.signal { return camera.running }
       return false
     }
+    // No segment at all until a camera is live; "Audio OK" whenever every live camera has audio.
     let withAudio = live.filter(\.audio.present)
-    let audioText = live.isEmpty ? "Audio —" : live.count == 1 ? (withAudio.isEmpty ? "No embedded audio" : "Audio OK")
-      : "Audio: \(withAudio.count) of \(live.count)"
-    segments.append(UIStatusSegment(kind: .audio, text: audioText, tone: live.isEmpty || withAudio.count == live.count ? .neutral : .warning))
-    if let warning = warning(session) { segments.append(UIStatusSegment(kind: .warning, text: warning, tone: .warning)) }
+    if !live.isEmpty {
+      let audioText = withAudio.count == live.count ? "Audio OK"
+        : live.count == 1 ? "No embedded audio" : "Audio: \(withAudio.count) of \(live.count)"
+      segments.append(UIStatusSegment(kind: .audio, text: audioText, tone: withAudio.count == live.count ? .neutral : .warning))
+    }
+    // One camera's picture already says "No signal"; the menu bar icon still warns.
+    if let warning = warning(session, includingPlainNoSignal: session.cameras.count > 1) {
+      segments.append(UIStatusSegment(kind: .warning, text: warning, tone: .warning))
+    }
 
     let cutButtons = session.outputMode == .program ? cameras.map {
       UICutButton(id: $0.id, number: $0.number, name: $0.name, onAir: session.onAirID == $0.id,
         pending: session.pendingCutID == $0.id, enabled: $0.cutEnabled || session.onAirID == $0.id)
     } : []
 
-    let title = session.outputMode == .program ? (session.programInUse ? "Meeting" : "Program")
-      : (outputInUse ? "Meeting" : recording.isEmpty ? "Ultracam" : "Recording")
-    var subtitleParts = [outputSummary]
-    if !recording.isEmpty { subtitleParts.append("\(recording.count) recording") }
+    // The title stays "Ultracam". The subtitle carries only what the status bar's
+    // essential segments don't: the camera on Program (nothing in Separate mode).
+    let subtitle: String
+    if session.outputMode == .program, let onAirName {
+      subtitle = session.programInUse ? "\(onAirName) on air" : "\(onAirName) in Program"
+    } else {
+      subtitle = ""
+    }
 
     // One camera has one picture: every grid layout is the single layout.
     let available = UILayout.allCases.filter { session.outputMode == .program || $0 != .programView }
@@ -626,22 +680,27 @@ enum UIPresentationBuilder {
     let layout = layouts.contains(session.layout) ? session.layout : .single
 
     return UISessionPresentation(
-      title: title, subtitle: subtitleParts.joined(separator: " · "),
+      title: "Ultracam", subtitle: subtitle,
       cameras: cameras, selected: cameras.first(where: \.selected),
       outputMode: session.outputMode,
       layouts: layouts, layout: layout, recordControl: recordControl,
       camerasRunning: running,
       camerasControlTitle: session.cameras.count == 1 ? (running ? "Stop Camera" : "Start Camera") : (running ? "Stop Cameras" : "Start Cameras"),
-      cutButtons: cutButtons, autoSwitching: session.autoSwitching,
+      cutButtons: cutButtons, autoSwitching: autoSwitching,
+      canAutoSwitch: canAutoSwitch, canHoldShot: canHoldShot,
+      canStartAny: running || cameras.contains(where: \.canStart),
+      canRevealRecordings: session.defaultFolderPath != nil || session.cameras.contains { $0.recording.folderPath != nil },
       statusSegments: segments, outputSummary: outputSummary, outputInUse: outputInUse,
       recordingSummary: recordingSummary, menuBarIcon: menuBarIcon(session))
   }
 
   /// The single most important problem, if any, for the status bar and menu bar icon.
-  static func warning(_ session: UISessionSnapshot) -> String? {
+  /// `includingPlainNoSignal: false` skips a running camera that only lacks a signal
+  /// (the status bar with one camera, whose picture says so).
+  static func warning(_ session: UISessionSnapshot, includingPlainNoSignal: Bool = true) -> String? {
     for camera in session.cameras {
       if camera.recording.status == .recording, case .noSignal = camera.signal { return "\(camera.name): recording, no signal" }
-      if camera.recording.failed || camera.recording.error != nil { return "\(camera.name): recording stopped" }
+      if camera.recording.failed || camera.recording.error != nil { return "\(camera.name): recording failed" }
     }
     if let failed = session.cameras.first(where: \.automaticStartFailed) { return "\(failed.name): couldn't start" }
     if let low = session.drives.first(where: { ($0.secondsLeft ?? .infinity) < 30 * 60 }), let left = low.secondsLeft {
@@ -649,7 +708,7 @@ enum UIPresentationBuilder {
     }
     for camera in session.cameras where camera.running {
       switch camera.signal {
-      case .noSignal: return "\(camera.name): no signal"
+      case .noSignal: if includingPlainNoSignal { return "\(camera.name): no signal" }
       case .unsupported: return "\(camera.name): unsupported format"
       case .deviceMissing: return "\(camera.name): input disconnected"
       default: break

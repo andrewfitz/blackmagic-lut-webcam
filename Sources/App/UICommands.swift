@@ -44,13 +44,17 @@ struct UICommands: Commands {
     }
 
     CommandMenu("Camera") {
+      let several = presentation.cameras.count > 1
       if let selected {
         Section(selected.name) {
-          if selected.canStop {
-            Button("Stop \(selected.name)") { send(.stopCamera(cameraID: selected.id)) }
-          } else {
-            Button("Start \(selected.name)") { send(.startCamera(cameraID: selected.id)) }
-              .disabled(!selected.canStart)
+          // With one camera, the Start/Stop item below already does this.
+          if several {
+            if selected.canStop {
+              Button("Stop \(selected.name)") { send(.stopCamera(cameraID: selected.id)) }
+            } else {
+              Button("Start \(selected.name)") { send(.startCamera(cameraID: selected.id)) }
+                .disabled(!selected.canStart)
+            }
           }
           Toggle("Processing", isOn: Binding(get: { selected.processing },
             set: { send(.setProcessing(cameraID: selected.id, $0)) }))
@@ -58,30 +62,40 @@ struct UICommands: Commands {
           Toggle("Video Preview", isOn: Binding(get: { selectedSnapshot?.previewEnabled ?? true },
             set: { send(.setPreviewEnabled(cameraID: selected.id, $0)) }))
             .keyboardShortcut("p", modifiers: [.command, .shift])
-          Button("Show Inspector") { send(.showInspector(cameraID: selected.id)) }
-          Button("Rename \(selected.name)…") { send(.showInspector(cameraID: selected.id)) }
-            .disabled(!session.canEditTopology)
+          // The rename prompt lives in the main window, so bring it forward first.
+          Button("Rename \(selected.name)…") {
+            send(.openMainWindow)
+            send(.beginRename(cameraID: selected.id))
+          }
+          .disabled(!session.canEditTopology)
+          .help(session.canEditTopology ? "Rename this camera." : "Stop all cameras and recordings to rename.")
         }
       }
       Divider()
-      Button(presentation.camerasRunning ? "Stop All Cameras" : "Start All Cameras") {
+      Button(presentation.camerasControlTitle) {
         send(presentation.camerasRunning ? .stopAllCameras : .startAllCameras)
       }
       .keyboardShortcut(.return, modifiers: .command)
-      Divider()
-      Section("Select Camera") {
-        ForEach(Array(presentation.cameras.prefix(4))) { camera in
-          Toggle(camera.name, isOn: Binding(get: { camera.selected }, set: { _ in send(.select(cameraID: camera.id)) }))
-            .keyboardShortcut(KeyEquivalent(Character("\(camera.number)")), modifiers: .command)
+      .disabled(!presentation.canStartAny)
+      if several {
+        Divider()
+        Section("Select Camera") {
+          ForEach(Array(presentation.cameras.prefix(4))) { camera in
+            Toggle(camera.name, isOn: Binding(get: { camera.selected }, set: { _ in send(.select(cameraID: camera.id)) }))
+              .keyboardShortcut(KeyEquivalent(Character("\(camera.number)")), modifiers: .command)
+          }
         }
       }
       Divider()
       Button("Add Camera") { send(.addCamera) }
         .disabled(!session.canEditTopology)
+        .help(session.canEditTopology ? "Add a camera." : "Stop all cameras and recordings to add a camera.")
       if let selected {
         // The bridge asks for confirmation before removing.
         Button("Remove \(selected.name)…") { send(.removeCamera(cameraID: selected.id)) }
-          .disabled(!session.canEditTopology || presentation.cameras.count < 2)
+          .disabled(!session.canEditTopology || !several)
+          .help(!session.canEditTopology ? "Stop all cameras and recordings to remove a camera."
+            : !several ? "Ultracam needs at least one camera." : "Remove this camera and its settings.")
       }
     }
 
@@ -102,12 +116,21 @@ struct UICommands: Commands {
         Button("\(selected.pauseTitle == "Resume" ? "Resume" : "Pause") Recording \(selected.name)") {
           send(.pauseOrResume(cameraID: selected.id))
         }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
       }
-      Button("Pause All") { send(.pauseAll) }
-        .disabled(!session.cameras.contains { $0.recording.status == .recording })
+      // Pause All turns into Resume All once every take is paused.
+      let takes = session.cameras.filter { $0.recording.status == .recording || $0.recording.status == .paused }
+      if !takes.isEmpty && takes.allSatisfy({ $0.recording.status == .paused }) {
+        Button("Resume All") { send(.resumeAll) }
+      } else {
+        Button("Pause All") { send(.pauseAll) }
+          .disabled(takes.isEmpty)
+      }
       Divider()
       Button("Choose Default Folder…") { send(.chooseRecordingFolder(cameraID: nil)) }
       Button("Show Recordings in Finder") { send(.revealRecordings) }
+        .disabled(!presentation.canRevealRecordings)
+        .help(presentation.canRevealRecordings ? "Open the recording folder in Finder." : "Choose a recording folder first.")
       Button("Recover Interrupted Takes…") {
         // Settings › Recording lists every interrupted take with its own Recover button.
         send(.openSettings)
@@ -129,28 +152,43 @@ struct UICommands: Commands {
           .disabled(!camera.cutEnabled)
       }
       Divider()
-      Toggle("Automatic Switching", isOn: Binding(get: { session.autoSwitching }, set: { send(.setAutoSwitching($0)) }))
+      // Auto only acts with a strategy that switches on its own; Hold only reaches the natural talking head.
+      Toggle("Automatic Switching", isOn: Binding(get: { presentation.autoSwitching }, set: { send(.setAutoSwitching($0)) }))
         .keyboardShortcut("a", modifiers: [.control, .option])
-        .disabled(session.outputMode != .program)
+        .disabled(!presentation.canAutoSwitch)
+        .help(presentation.canAutoSwitch || session.outputMode != .program ? "Cut automatically using the chosen strategy."
+          : "Choose a switching strategy in Program › Strategy first.")
       Toggle("Hold Current Shot", isOn: Binding(get: { session.autoHold }, set: { send(.setAutoHold($0)) }))
-        .disabled(session.outputMode != .program || !session.autoSwitching)
-      Picker("Strategy", selection: Binding(get: { session.strategy }, set: { send(.setStrategy($0)) })) {
-        ForEach([SwitcherStrategy.manual, .fixedInterval, .naturalTalkingHead], id: \.self) { strategy in
-          Text(UIStrategy.title(strategy)).tag(strategy)
+        .disabled(!presentation.canHoldShot)
+      // A Picker's own submenu title doesn't grey out when disabled; a Menu's does.
+      Menu("Strategy") {
+        Picker("Strategy", selection: Binding(get: { session.strategy }, set: { send(.setStrategy($0)) })) {
+          ForEach([SwitcherStrategy.manual, .fixedInterval, .naturalTalkingHead], id: \.self) { strategy in
+            Text(UIStrategy.title(strategy)).tag(strategy)
+          }
         }
+        .pickerStyle(.inline)
+        .labelsHidden()
       }
       .disabled(session.outputMode != .program)
-      let directorEnabled = session.outputMode == .program && session.strategy == .naturalTalkingHead
-      Picker("Anchor", selection: Binding(get: { session.anchorID }, set: { send(.setAnchor(cameraID: $0)) })) {
-        Text("Automatic").tag(String?.none)
-        ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+      if session.outputMode == .program && session.strategy == .naturalTalkingHead {
+        Menu("Anchor") {
+          Picker("Anchor", selection: Binding(get: { session.anchorID }, set: { send(.setAnchor(cameraID: $0)) })) {
+            Text("Automatic").tag(String?.none)
+            ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+          }
+          .pickerStyle(.inline)
+          .labelsHidden()
+        }
+        Menu("Emphasis") {
+          Picker("Emphasis", selection: Binding(get: { session.emphasisID }, set: { send(.setEmphasis(cameraID: $0)) })) {
+            Text("Automatic").tag(String?.none)
+            ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+          }
+          .pickerStyle(.inline)
+          .labelsHidden()
+        }
       }
-      .disabled(!directorEnabled)
-      Picker("Emphasis", selection: Binding(get: { session.emphasisID }, set: { send(.setEmphasis(cameraID: $0)) })) {
-        Text("Automatic").tag(String?.none)
-        ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
-      }
-      .disabled(!directorEnabled)
     }
 
     CommandGroup(after: .toolbar) {
@@ -167,6 +205,8 @@ struct UICommands: Commands {
         send(.setAllCollapsed(!allCollapsed(session)))
       }
       .keyboardShortcut("s", modifiers: [.command, .option])
+      // Four Up and Program View always show collapsed strips.
+      .disabled(presentation.layout == .fourUp || presentation.layout == .programView)
       Button(session.inspectorOpen ? "Hide Inspector" : "Show Inspector") { send(.toggleInspector) }
         .keyboardShortcut("i", modifiers: [.command, .option])
       Divider()
@@ -182,13 +222,20 @@ struct UICommands: Commands {
       }
       Divider()
       if let selected {
-        Button("Freeze \(selected.name)") { send(.freeze(cameraID: selected.id)) }
+        // The picture only offers these tools while it shows video.
+        let showsPicture = selected.tileState.showsPicture
+        Toggle("Freeze \(selected.name)", isOn: Binding(get: { UIMonitorBridge.presenter(for: selected.id)?.isFrozen == true },
+          set: { _ in send(.freeze(cameraID: selected.id)) }))
           .keyboardShortcut("f", modifiers: [.control, .option])
-        Button("Clean View") { send(.toggleClean(cameraID: selected.id)) }
+          .disabled(!showsPicture)
+        Toggle("Clean View", isOn: Binding(get: { UICleanViewState.shared.clean.contains(selected.id) },
+          set: { _ in send(.toggleClean(cameraID: selected.id)) }))
           .keyboardShortcut("c", modifiers: [.control, .option])
+          .disabled(!showsPicture)
         Toggle("Show Scopes", isOn: Binding(get: { selected.activeTools.contains(.scopes) },
           set: { _ in send(.toggleTool(cameraID: selected.id, .scopes)) }))
           .keyboardShortcut("k", modifiers: [.command, .option])
+          .disabled(!showsPicture)
       }
       Divider()
     }
@@ -198,7 +245,7 @@ struct UICommands: Commands {
 
     // macOS lists every open window below; this one item brings back the main window with ⌘0.
     CommandGroup(before: .windowList) {
-      Button("Main Window") {
+      Button("Show Main Window") {
         openWindow(id: "main")
         NSApplication.shared.activate(ignoringOtherApps: true)
       }

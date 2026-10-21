@@ -50,10 +50,7 @@ struct UIMonitorToolButtons: View {
           }
       }
     }
-    .padding(.horizontal, 4)
-    .frame(height: 30)
-    .background(Color.black.opacity(0.72), in: Capsule())
-    .environment(\.colorScheme, .dark)
+    .uiPictureControls()
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Monitor tools for \(name)")
   }
@@ -70,7 +67,7 @@ private struct UIMonitorToolSplitButton: View {
     HStack(spacing: 0) {
       Button(action: toggle) {
         Image(systemName: tool.symbol)
-          .font(.system(size: 12, weight: .medium))
+          .font(.callout.weight(.medium))
           .frame(width: 24, height: 24)
           .foregroundStyle(.white)
           .background(isOn ? Color.white.opacity(0.24) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -82,10 +79,12 @@ private struct UIMonitorToolSplitButton: View {
       .accessibilityLabel(tool.title)
       .accessibilityValue(isOn ? "On" : "Off")
       .accessibilityAddTraits(isOn ? .isSelected : [])
+      // The settings half of the split button. A system split-button Menu can't
+      // host the settings form, so this stays a button, wide enough to hit.
       Button(action: openSettings) {
         Image(systemName: "chevron.down")
-          .font(.system(size: 7, weight: .bold))
-          .frame(width: 11, height: 24)
+          .font(.caption.weight(.bold)).imageScale(.small)
+          .frame(width: 16, height: 24)
           .foregroundStyle(.white.opacity(0.75))
           .contentShape(Rectangle())
       }
@@ -129,10 +128,10 @@ struct UIMonitorToolSettingsView: View {
       HStack {
         Label(tool.title, systemImage: tool.symbol).font(.headline)
         Spacer()
-        Text(cameraName).font(.caption).foregroundStyle(.secondary)
+        Text(cameraName).font(.uiMeta).foregroundStyle(.secondary)
       }
       if let reason = Self.unavailableReason(tool, isProgram: isProgram) {
-        Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(reason).font(.uiMeta).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       Form { settings }
         .formStyle(.grouped)
@@ -164,7 +163,7 @@ struct UIMonitorToolSettingsView: View {
         .disabled(configuration.zebra.mode != .band)
       slider("Opacity", value: $configuration.zebra.opacity, range: 0...1, percent: true)
       if configuration.falseColor.mode != .off {
-        Text("Zebra is bypassed while false color is on.").font(.caption).foregroundStyle(.secondary)
+        Text("Zebra is bypassed while false color is on.").font(.uiMeta).foregroundStyle(.secondary)
       }
     case .falseColor:
       falseColorSettings
@@ -179,7 +178,7 @@ struct UIMonitorToolSettingsView: View {
       slider("Noise rejection", value: $configuration.focus.noiseRejection, range: 0...1, percent: true)
       slider("Opacity", value: $configuration.focus.opacity, range: 0...1, percent: true)
       Text("Edges are found on the camera's source picture at full resolution.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.uiMeta).foregroundStyle(.secondary)
     case .scopes:
       Toggle("Scope", isOn: binding(\.scopes.enabled))
       Picker("Type", selection: $configuration.scopes.mode) {
@@ -195,7 +194,7 @@ struct UIMonitorToolSettingsView: View {
       }
       slider("Trace gain", value: $configuration.scopes.gain, range: 0.25...4, suffix: "×")
       Toggle("Graticule", isOn: $configuration.scopes.graticule)
-      Text("One scope per camera. Sampled signal, −10…110 IRE.").font(.caption).foregroundStyle(.secondary)
+      Text("One scope per camera. Sampled signal, −10…110 IRE.").font(.uiMeta).foregroundStyle(.secondary)
     }
   }
 
@@ -238,9 +237,9 @@ struct UIMonitorToolSettingsView: View {
       ? (elZoneAvailable ? "Public-chart mapping. Sony Monitor & Control match not tested." : "EL Zone needs a supported Sony S-Log3 source.")
       : sonySource ? "Sony source IRE thresholds are independent of EI and don't guarantee sensor clipping."
         : "Choose the Sony S-Log3 profile that matches the camera.")
-      .font(.caption).foregroundStyle(.secondary)
+      .font(.uiMeta).foregroundStyle(.secondary)
     Text("Match the actual camera output. These settings don't change the camera output.")
-      .font(.caption).foregroundStyle(.secondary)
+      .font(.uiMeta).foregroundStyle(.secondary)
   }
 
   /// Enabling a tool from its settings also turns the camera's tools on.
@@ -312,7 +311,7 @@ struct UIMonitorToolSettingsView: View {
       HStack {
         Slider(value: value, in: range).frame(minWidth: 110)
         Text(percent ? "\(Int((value.wrappedValue * 100).rounded()))%" : String(format: suffix == "×" ? "%.2f" : "%.0f", value.wrappedValue) + suffix)
-          .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+          .font(.uiMeta.monospacedDigit()).foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
       }
     } label: { Text(title) }
     .accessibilityElement(children: .combine)

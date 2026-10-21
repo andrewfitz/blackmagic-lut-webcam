@@ -1,6 +1,5 @@
 import AppKit
 import MonitorToolsCore
-import MonitorToolsUI
 import SwiftUI
 
 /// Diagnostics window: per-camera capture, drops, audio, encoder and
@@ -18,33 +17,40 @@ struct UIDiagnosticsView: View {
 
   var body: some View {
     let selected = tabs.contains { $0.id == tab } ? tab : (tabs.first?.id ?? "app")
-    VStack(spacing: 0) {
-      HStack {
+    Group {
+      switch selected {
+      case "app": UIDiagnosticsAppTab()
+      case "program": UIDiagnosticsProgramTab(model: model)
+      default: UIDiagnosticsCameraTab(model: model, cameraID: FeedID(rawValue: selected))
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .frame(minWidth: 760, minHeight: 560)
+    // The section picker and Copy live in the window toolbar, like other Mac windows.
+    .toolbar {
+      ToolbarItem(placement: .principal) {
         Picker("Section", selection: Binding(get: { selected }, set: { tab = $0 })) {
           ForEach(tabs, id: \.id) { Text($0.title).tag($0.id) }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(maxWidth: 520)
-        Spacer()
-        Button(copied ? "Copied" : "Copy Diagnostics", systemImage: "doc.on.doc") {
+        .fixedSize()
+      }
+      ToolbarItem(placement: .primaryAction) {
+        Button(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc") {
           UIDiagnosticsText.copy(model: model)
           copied = true
         }
+        .labelStyle(.titleAndIcon)
         .help("Copy a plain-text summary of these diagnostics")
       }
-      .padding(12)
-      Divider()
-      Group {
-        switch selected {
-        case "app": UIDiagnosticsAppTab()
-        case "program": UIDiagnosticsProgramTab(model: model)
-        default: UIDiagnosticsCameraTab(model: model, cameraID: FeedID(rawValue: selected))
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .frame(minWidth: 760, minHeight: 560)
+    // "Copied" confirms the copy briefly, then the button reads Copy Diagnostics again.
+    .task(id: copied) {
+      guard copied else { return }
+      try? await Task.sleep(for: .seconds(2))
+      copied = false
+    }
   }
 }
 
@@ -89,11 +95,14 @@ private struct UIDiagnosticsCameraTab: View {
     let target = MonitorTargetID(cameraID.rawValue)
     Form {
       if !running {
+        // Values from a stopped camera would be stale, so only the last take's encoder details stay.
         Section {
-          Text("This camera is stopped. Live diagnostics appear while it runs.").foregroundStyle(.secondary)
+          ContentUnavailableView("Camera Stopped", systemImage: "video.slash",
+            description: Text("Live capture, drops, audio and monitoring details appear while this camera runs."))
+            .frame(maxWidth: .infinity)
         }
       }
-      if let update {
+      if running, let update {
         Section("Capture") {
           UIDiagnosticsRow("Input", update.input)
           UIDiagnosticsRow("Output", update.output.isEmpty ? "—" : update.output)
@@ -140,11 +149,10 @@ private struct UIDiagnosticsCameraTab: View {
           Text("No take yet.").foregroundStyle(.secondary)
         }
       }
-      Section("Monitoring") {
-        MonitorDiagnosticsView(snapshot: model.monitorCoordinator.diagnostics(for: target),
-          surfaceScopeTiming: "—", presentationEstimate: "")
+      if running {
+        UIDiagnosticsMonitorSection(snapshot: model.monitorCoordinator.diagnostics(for: target))
       }
-      if let update {
+      if running, let update {
         Section("Messages") {
           UIDiagnosticsRow("Capture", update.message)
           UIDiagnosticsRow("Camera", update.cameraMessage)
@@ -153,6 +161,50 @@ private struct UIDiagnosticsCameraTab: View {
       }
     }
     .formStyle(.grouped)
+  }
+}
+
+/// The shared monitor target's rates, quality and budget, one value per row.
+private struct UIDiagnosticsMonitorSection: View {
+  let snapshot: MonitorDiagnostics
+
+  var body: some View {
+    let quality = snapshot.effectiveQuality
+    Section("Monitoring") {
+      UIDiagnosticsRow("Status", availability)
+      UIDiagnosticsRow("Source rate", "\(rate(snapshot.offeredFPS)) fps")
+      UIDiagnosticsRow("Picture rate · cap", "\(rate(snapshot.pictureFPS)) fps · \(rate(snapshot.requestedPictureHz)) Hz")
+      UIDiagnosticsRow("Scope rate · cap", "\(rate(snapshot.scopeFPS)) fps · \(quality.scopeRefreshHz) Hz")
+      UIDiagnosticsRow("Quality", quality.label)
+      UIDiagnosticsRow("Picture limit · scope stride", "\(quality.pictureHeightLimit)p · \(quality.scopeSamplingStride)")
+      UIDiagnosticsRow("Frames offered · admitted · skipped",
+        "\(UIDiagnosticsFormat.count(snapshot.offeredFrames)) · \(UIDiagnosticsFormat.count(snapshot.admittedFrames)) · \(UIDiagnosticsFormat.count(snapshot.skippedFrames))")
+      UIDiagnosticsRow("Rejected results", UIDiagnosticsFormat.count(snapshot.rejectedResults), warning: snapshot.rejectedResults > 0)
+      UIDiagnosticsRow("Monitor memory", "\(bytes(snapshot.retainedBytes)) retained · \(bytes(snapshot.retiredBytes)) retiring")
+      UIDiagnosticsRow("GPU deadline", deadline, warning: snapshot.softDeadlineStatus == .exceeded)
+    }
+  }
+
+  private func rate(_ value: Double) -> String { String(format: "%.1f", value) }
+  private func bytes(_ value: Int) -> String { String(format: "%.1f MiB", Double(value) / 1_048_576) }
+
+  private var deadline: String {
+    switch snapshot.softDeadlineStatus {
+    case .unavailable: return "Unavailable"
+    case .withinDeadline: return "Within limit"
+    case .exceeded: return "Exceeded · clean picture only"
+    }
+  }
+
+  private var availability: String {
+    switch snapshot.availability {
+    case .noSignal: return "No signal"
+    case .starting: return "Starting"
+    case .live: return "Live"
+    case .paused: return "Paused or hidden"
+    case .stale: return "Stale"
+    case .unsupported(let reason), .degraded(let reason), .failed(let reason): return reason
+    }
   }
 }
 
@@ -220,7 +272,7 @@ private struct UIDiagnosticsAppTab: View {
           ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .memory) } ?? "—",
           samples: history.map { Double($0.memoryBytes ?? 0) },
           help: "Process memory footprint, including bounded frame pools and the shared monitor budget.")
-      } header: { Text("Ultracam Total · last 60 s") } footer: {
+      } header: { Text("Ultracam Total · Last 60 s") } footer: {
         Text("Sampled once per second only while this tab is visible.").font(.caption).foregroundStyle(.secondary)
       }
     }
@@ -276,7 +328,7 @@ private struct UIDiagnosticsSparkline: View {
         }
       }
       .stroke(Color.accentColor, lineWidth: 1.5)
-      .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.08)))
+      .background(RoundedRectangle(cornerRadius: 6).fill(.fill.quaternary))
     }
     .accessibilityHidden(true)
   }

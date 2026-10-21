@@ -175,7 +175,7 @@ import SwiftUI
     try? dump.write(to: verifier.pngDirectory.deletingLastPathComponent().appendingPathComponent("accessibility-program-meeting.tsv"),
       atomically: true, encoding: .utf8)
     for label in ["Camera 1", "Camera 2", "On Air", "Stop Recording", "Stop Camera 1", "Processing", "LUT", "1080p",
-      "Ultracam · Program · in use", "Cut to Camera 2"] {
+      "Ultracam · Program · In use", "Cut to Camera 2"] {
       verifier.check("accessibility contains \"\(label)\"", contains(nodes, label), "", viewDependent: true)
     }
     verifier.check("no app names in accessibility text", !nodes.contains { node in
@@ -429,6 +429,11 @@ import SwiftUI
     bridge.perform(.setAutoHold(true))
     verifier.check("bridge: auto hold", model.switcherSettings.naturalTalkingHead.manualHold)
     bridge.perform(.setAutoHold(false))
+    // Auto can't switch with the Manual strategy, so it stays off until a strategy is chosen.
+    bridge.perform(.setStrategy(.manual))
+    bridge.perform(.setAutoSwitching(true))
+    verifier.check("bridge: auto stays off with the Manual strategy", !model.switcherSettings.automatic)
+    bridge.perform(.setStrategy(.fixedInterval))
     bridge.perform(.setAutoSwitching(true))
     verifier.check("bridge: auto switching", model.switcherSettings.automatic && bridge.snapshot().autoSwitching)
     bridge.perform(.setStrategy(.naturalTalkingHead))
@@ -479,13 +484,13 @@ import SwiftUI
     defaults.removeObject(forKey: "ui.collapsed.default")
 
     // Settings and Diagnostics with the real model.
-    render("settings-general", UISettingsGeneralPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-recording", UISettingsRecordingPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-camera", UISettingsCameraPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-switcher", UISettingsSwitcherPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-monitor", UISettingsMonitorPane(), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-advanced", UISettingsAdvancedPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
-    render("settings-window", UISettingsView(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
+    render("settings-general", UISettingsGeneralPane(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-recording", UISettingsRecordingPane(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-camera", UISettingsCameraPane(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-switcher", UISettingsSwitcherPane(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-monitor", UISettingsMonitorPane(), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-advanced", UISettingsAdvancedPane(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
+    render("settings-window", UISettingsView(model: model), size: CGSize(width: 640, height: 720)).forEach { $0.close() }
     render("diagnostics", UIDiagnosticsView(model: model), size: CGSize(width: 1100, height: 760)).forEach { $0.close() }
     interface.inspectorOpen = false
     interface.sidebarVisible = true

@@ -25,18 +25,46 @@ extension UITally {
   }
 }
 
-/// Glass on macOS 26 and later; a regular material before that, and an opaque
-/// fill when Reduce Transparency is on.
+/// The main window's type scale. On macOS `.caption` and `.caption2` are both
+/// 10 pt, so they're only used for badges; anything a person reads is 11 pt or
+/// larger. Use `.system(size:)` only for symbols inside fixed frames.
+extension Font {
+  /// Camera name in the strip (expanded and collapsed), popover titles. 13 pt bold.
+  static let uiTitle = Font.headline
+  /// Strip primary lines: record detail, folder, output, alert rows. 12 pt.
+  static let uiRow = Font.callout
+  /// Record title and alert titles in the strip. 12 pt semibold.
+  static let uiRowEmphasis = Font.callout.weight(.semibold)
+  /// Sizes, bitrates, drops, time left, shot timers. 12 pt.
+  static let uiValue = Font.callout.monospacedDigit()
+  /// Labels, subtitles, footnotes, the dB readout. 11 pt; pair with `.secondary`.
+  static let uiMeta = Font.subheadline
+  /// Badges and chips; the floor. 10 pt semibold.
+  static let uiBadge = Font.caption.weight(.semibold)
+  /// Text on the picture, in 24 pt capsules. 11 pt semibold.
+  static let uiOverlay = Font.subheadline.weight(.semibold)
+  /// The strip's recording clock. 17 pt.
+  static let uiClock = Font.title2.weight(.semibold).monospacedDigit()
+  /// Title inside a full-size picture placeholder. 15 pt.
+  static let uiPlaceholderTitle = Font.title3.weight(.semibold)
+}
+
+/// Glass on macOS 26 and later. Before that, the fallback fill or a regular
+/// material; with Reduce Transparency on, the fallback fill or an opaque
+/// window background.
 struct UIGlassBackground<S: Shape>: ViewModifier {
   var shape: S
   var tint: Color? = nil
+  var fallback: Color? = nil
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   func body(content: Content) -> some View {
     if reduceTransparency {
-      content.background(Color(nsColor: .windowBackgroundColor), in: shape)
+      content.background(fallback ?? Color(nsColor: .windowBackgroundColor), in: shape)
     } else if #available(macOS 26.0, *) {
       content.glassEffect(tint.map { Glass.regular.tint($0) } ?? .regular, in: shape)
+    } else if let fallback {
+      content.background(fallback, in: shape)
     } else {
       content.background(.regularMaterial, in: shape)
     }
@@ -44,31 +72,54 @@ struct UIGlassBackground<S: Shape>: ViewModifier {
 }
 
 extension View {
-  func uiGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View { modifier(UIGlassBackground(shape: shape, tint: tint)) }
+  func uiGlass<S: Shape>(in shape: S, tint: Color? = nil, fallback: Color? = nil) -> some View {
+    modifier(UIGlassBackground(shape: shape, tint: tint, fallback: fallback))
+  }
 
   /// Dark backing for text drawn over video, so it stays readable over bright pictures (≥ 4.5:1).
+  /// A caller's own `.font` wins; the default is the overlay style.
   func uiPictureOverlay() -> some View {
-    padding(.horizontal, 8).frame(height: 24)
+    font(.uiOverlay)
+      .padding(.horizontal, 8).frame(height: 24)
       .background(Color.black.opacity(0.72), in: Capsule())
       .foregroundStyle(.white)
       .environment(\.colorScheme, .dark)
   }
+
+  /// Backing for the interactive bars on the picture (monitor tools, view controls):
+  /// the same dark capsule as the other picture overlays, so the bar reads the same over
+  /// any video. (Glass here drew as a blank white panel in offscreen renders.)
+  func uiPictureControls() -> some View {
+    padding(.horizontal, 4).frame(height: 28)
+      .background(Color.black.opacity(0.72), in: Capsule())
+      .environment(\.colorScheme, .dark)
+  }
 }
 
-/// A small status badge. Tone sets the color; the text always carries the meaning.
+/// A small status badge. Tone sets a colored dot; the words stay in a label
+/// color so they read in light mode too (colored text at this size doesn't).
 struct UIBadge: View {
   let text: String
   var tone: UITone = .neutral
   var filled = false
 
+  /// The dot is drawn, never typed: VoiceOver would read a "●" aloud.
+  private var words: String { text.hasPrefix("● ") ? String(text.dropFirst(2)) : text }
+
   var body: some View {
-    Text(text)
-      .font(.caption2.weight(.semibold))
-      .lineLimit(1)
-      .padding(.horizontal, 6).frame(height: 18)
-      .foregroundStyle(filled ? .white : (tone == .neutral ? .secondary : tone.color))
-      .background(filled ? tone.color : tone.color.opacity(tone == .neutral ? 0.12 : 0.16), in: Capsule())
-      .accessibilityLabel(text)
+    HStack(spacing: 4) {
+      if tone != .neutral && !filled {
+        Circle().fill(tone.color).frame(width: 6, height: 6)
+      }
+      Text(words)
+    }
+    .font(.uiBadge)
+    .lineLimit(1)
+    .padding(.horizontal, 6).frame(height: 18)
+    .foregroundStyle(filled ? AnyShapeStyle(.white) : tone == .neutral ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+    .background(filled ? AnyShapeStyle(tone.color) : AnyShapeStyle(.fill.tertiary), in: Capsule())
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(words)
   }
 }
 
@@ -78,8 +129,8 @@ struct UITallyBadge: View {
   var body: some View {
     if let text = tally.badge {
       Text(text)
-        .font(.caption.weight(.bold))
-        .padding(.horizontal, 9).frame(height: 22)
+        .font(.subheadline.weight(.bold))
+        .padding(.horizontal, 9).frame(height: 24)
         .foregroundStyle(tally == .next ? Color.black : .white)
         .background(background, in: Capsule())
         .overlay(Capsule().strokeBorder(tally == .program ? Color.white.opacity(0.6) : .clear, lineWidth: 1.5))
@@ -96,21 +147,25 @@ struct UITallyBadge: View {
 }
 
 /// The single record control for a take: a round red button that becomes a stop square.
+/// Disabled, it turns gray like a system control instead of fading to pink.
 struct UIRecordButton: View {
   let active: Bool
   let enabled: Bool
   let help: String
   var size: CGFloat = 28
   let action: () -> Void
+  @Environment(\.isEnabled) private var parentEnabled
 
   var body: some View {
+    let on = enabled && parentEnabled
+    let mark: Color = on ? .red : Color.secondary.opacity(0.5)
     Button(action: action) {
       ZStack {
-        Circle().strokeBorder(Color.primary.opacity(0.75), lineWidth: 2)
+        Circle().strokeBorder(on ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.4), lineWidth: 2)
         if active {
-          RoundedRectangle(cornerRadius: size * 0.1).fill(.red).frame(width: size * 0.38, height: size * 0.38)
+          RoundedRectangle(cornerRadius: size * 0.1).fill(mark).frame(width: size * 0.38, height: size * 0.38)
         } else {
-          Circle().fill(.red).frame(width: size * 0.66, height: size * 0.66)
+          Circle().fill(mark).frame(width: size * 0.66, height: size * 0.66)
         }
       }
       .frame(width: size, height: size)
@@ -118,37 +173,28 @@ struct UIRecordButton: View {
     }
     .buttonStyle(.plain)
     .disabled(!enabled)
-    .opacity(enabled ? 1 : 0.35)
     .help(help)
     .accessibilityLabel(active ? "Stop Recording" : "Record")
   }
 }
 
-/// An effect toggle chip. State is shown with a checkmark, not color alone.
+/// An effect toggle chip: the system toggle button, so on/off, disabled,
+/// inactive-window and Increase Contrast rendering all come from the system.
+/// State is shown with a checkmark, not color alone.
 struct UIChipToggle: View {
   let chip: UIChip
-  var compact = false
-  let action: () -> Void
+  let set: (Bool) -> Void
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 3) {
-        if chip.isOn { Image(systemName: "checkmark").font(.system(size: compact ? 8 : 9, weight: .bold)) }
-        Text(chip.title)
-      }
-      .font((compact ? Font.caption2 : .caption).weight(.semibold))
-      .padding(.horizontal, compact ? 5 : 7).frame(height: compact ? 18 : 22)
-      .foregroundStyle(chip.isOn ? Color.primary : .secondary)
-      .background(chip.isOn ? Color.accentColor.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
-      .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(chip.isOn ? .clear : Color.secondary.opacity(0.35), lineWidth: 1))
+    Toggle(isOn: Binding(get: { chip.isOn }, set: { set($0) })) {
+      if chip.isOn { Label(chip.title, systemImage: "checkmark") } else { Text(chip.title) }
     }
-    .buttonStyle(.plain)
+    .toggleStyle(.button)
+    .buttonBorderShape(.capsule)
+    .controlSize(.small)
     .disabled(!chip.enabled)
-    .opacity(chip.enabled ? 1 : 0.45)
     .help(chip.help)
     .accessibilityLabel(chip.title)
-    .accessibilityValue(chip.isOn ? "On" : "Off")
-    .accessibilityAddTraits(chip.isOn ? .isSelected : [])
   }
 }
 
@@ -169,10 +215,15 @@ struct UILevelBar: View {
     GeometryReader { proxy in
       let width = proxy.size.width
       ZStack(alignment: .leading) {
-        Capsule().fill(Color.primary.opacity(0.12))
-        Capsule().fill(LinearGradient(colors: [.green, .green, .yellow, .orange, .red], startPoint: .leading, endPoint: .trailing))
-          .frame(width: max(2, width * UIAudioMath.normalized(rms)))
-        Capsule().fill(Color.primary).frame(width: 2).offset(x: max(0, width * UIAudioMath.normalized(peak) - 1))
+        Capsule().fill(.fill.tertiary)
+        // Nothing but the track at silence: a level or peak mark at zero reads as a glitch.
+        if rms > 0 {
+          Capsule().fill(LinearGradient(colors: [.green, .green, .yellow, .orange, .red], startPoint: .leading, endPoint: .trailing))
+            .frame(width: max(2, width * UIAudioMath.normalized(rms)))
+        }
+        if peak > 0 {
+          Capsule().fill(Color.primary).frame(width: 2).offset(x: max(0, width * UIAudioMath.normalized(peak) - 1))
+        }
       }
       .clipShape(Capsule())
     }
@@ -186,9 +237,16 @@ struct UIAudioMeter: View {
   var compact = false
   var body: some View {
     if compact {
-      VStack(spacing: 2) {
-        UILevelBar(rms: audio.rmsLeft, peak: audio.peakLeft).frame(height: 3)
-        UILevelBar(rms: audio.rmsRight, peak: audio.peakRight).frame(height: 3)
+      Group {
+        if audio.present {
+          VStack(spacing: 2) {
+            UILevelBar(rms: audio.rmsLeft, peak: audio.peakLeft).frame(height: 3)
+            UILevelBar(rms: audio.rmsRight, peak: audio.peakRight).frame(height: 3)
+          }
+        } else {
+          Image(systemName: "speaker.slash").imageScale(.small).foregroundStyle(.tertiary)
+            .help("No embedded audio")
+        }
       }
       .frame(width: 42)
       .accessibilityElement(children: .ignore)
@@ -196,12 +254,12 @@ struct UIAudioMeter: View {
       .accessibilityValue(audio.present ? UIAudioMath.decibels(max(audio.peakLeft, audio.peakRight)) : "No embedded audio")
     } else {
       HStack(spacing: 8) {
-        Text("L").font(.caption2.monospaced()).foregroundStyle(.secondary)
+        Text("L").font(.uiBadge).foregroundStyle(.secondary)
         UILevelBar(rms: audio.rmsLeft, peak: audio.peakLeft).frame(height: 6)
-        Text("R").font(.caption2.monospaced()).foregroundStyle(.secondary)
+        Text("R").font(.uiBadge).foregroundStyle(.secondary)
         UILevelBar(rms: audio.rmsRight, peak: audio.peakRight).frame(height: 6)
         Text(audio.present ? UIAudioMath.decibels(max(audio.peakLeft, audio.peakRight)) : "No audio")
-          .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 58, alignment: .trailing)
+          .font(.uiMeta.monospacedDigit()).foregroundStyle(.secondary).frame(width: 64, alignment: .trailing)
       }
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Embedded audio")

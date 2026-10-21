@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Main window toolbar: Program cuts and Auto, layout, collapse, cameras,
-/// the record control (always with a verb) and the inspector toggle.
+/// Main window toolbar: Program cuts and Auto, then cameras and the record control
+/// (always with a verb), layout and collapse, and the inspector toggle.
 struct UIToolbarContent: ToolbarContent {
   let context: UIContext
 
@@ -14,27 +14,30 @@ struct UIToolbarContent: ToolbarContent {
       }
     }
 
-    // Order matters: when the window narrows, macOS moves the trailing items into
-    // the overflow menu first. Cameras and the record control come first so they stay
-    // visible; layout, collapse and the inspector (all also in the View menu) go first.
-    ToolbarItem(placement: .primaryAction) {
+    // Grouped by function: transport (cameras, record), view (layout, collapse), then the
+    // inspector toggle on its own at the trailing edge. On macOS 26 each group gets its own
+    // glass; on macOS 15 the items sit side by side as before. Order matters: when the window
+    // narrows, macOS moves the trailing items into the overflow menu first, so the cameras and
+    // the record control stay visible; layout, collapse and the inspector are also in View.
+    ToolbarItemGroup(placement: .primaryAction) {
       Button {
         context.send(presentation.camerasRunning ? .stopAllCameras : .startAllCameras)
       } label: {
         Label(presentation.camerasControlTitle, systemImage: presentation.camerasRunning ? "stop.fill" : "play.fill")
           .labelStyle(.titleAndIcon)
       }
-      .help(presentation.camerasRunning
-        ? "Stop capture and output for every camera (⌘↩). Asks first if a recording or on-air camera is affected."
-        : "Start every camera (⌘↩).")
-    }
+      .disabled(!presentation.canStartAny)
+      .help(camerasHelp)
 
-    ToolbarItem(placement: .primaryAction) {
       UIToolbarRecordControl(context: context)
     }
 
-    if context.session.expandedFrom != nil {
-      ToolbarItem(placement: .primaryAction) {
+    if #available(macOS 26.0, *) {
+      ToolbarSpacer(.fixed, placement: .primaryAction)
+    }
+
+    ToolbarItemGroup(placement: .primaryAction) {
+      if context.session.expandedFrom != nil {
         Button {
           context.send(.restoreLayout)
         } label: {
@@ -43,11 +46,9 @@ struct UIToolbarContent: ToolbarContent {
         }
         .help("Return to the layout you expanded this picture from")
       }
-    }
 
-    // One camera has only the single layout, so the picker appears with a second camera.
-    if presentation.layouts.count > 1 {
-      ToolbarItem(placement: .primaryAction) {
+      // One camera has only the single layout, so the picker appears with a second camera.
+      if presentation.layouts.count > 1 {
         Picker("Layout", selection: layoutBinding) {
           ForEach(presentation.layouts, id: \.self) { layout in
             Label(layout.title, systemImage: layout.symbol).tag(layout)
@@ -57,9 +58,7 @@ struct UIToolbarContent: ToolbarContent {
         .labelStyle(.iconOnly)
         .help("Layout (⌥⌘1–⌥⌘4)")
       }
-    }
 
-    ToolbarItem(placement: .primaryAction) {
       Button {
         context.send(.setAllCollapsed(!allCollapsed))
       } label: {
@@ -70,14 +69,26 @@ struct UIToolbarContent: ToolbarContent {
       .disabled(presentation.layout == .fourUp || presentation.layout == .programView)
     }
 
+    if #available(macOS 26.0, *) {
+      ToolbarSpacer(.fixed, placement: .primaryAction)
+    }
+
     ToolbarItem(placement: .primaryAction) {
       Button {
         context.send(.toggleInspector)
       } label: {
-        Label("Inspector", systemImage: "sidebar.right")
+        Label("Inspector", systemImage: "sidebar.trailing")
       }
       .help("Show or hide the inspector for the selected camera (⌥⌘I)")
     }
+  }
+
+  private var camerasHelp: String {
+    if presentation.camerasRunning {
+      return "Stop capture and output for every camera (⌘↩). Asks first if a recording or on-air camera is affected."
+    }
+    if !presentation.canStartAny { return "No camera can start: connect its UltraStudio or choose another input in the inspector." }
+    return presentation.cameras.count == 1 ? "Start the camera (⌘↩)." : "Start every camera (⌘↩)."
   }
 
   private var allCollapsed: Bool {
@@ -104,7 +115,9 @@ struct UIToolbarCutGroup: View {
         Label("Auto", systemImage: "wand.and.sparkles")
       }
       .toggleStyle(.button)
-      .help("Automatic switching (⌃⌥A)")
+      .disabled(!context.presentation.canAutoSwitch)
+      .help(context.presentation.canAutoSwitch
+        ? "Automatic switching (⌃⌥A)" : "Choose a switching strategy in Program › Strategy first.")
     }
   }
 
@@ -117,9 +130,11 @@ struct UIToolbarCutGroup: View {
         .help("\(button.name) is on air")
         .accessibilityLabel("\(button.name), on air")
     } else {
+      // A pending cut is outlined in green; the capsule shape keeps the outline on the button's edge.
       Button { context.send(.cut(cameraID: button.id)) } label: { title }
         .buttonStyle(.bordered)
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(button.pending ? Color.green : .clear, lineWidth: 1.5))
+        .buttonBorderShape(.capsule)
+        .overlay(Capsule().strokeBorder(button.pending ? Color.green : .clear, lineWidth: 1.5).allowsHitTesting(false))
         .disabled(!button.enabled)
         .help(button.pending ? "Cut to \(button.name) is pending" : "Cut to \(button.name) (⌃\(button.number))")
         .accessibilityLabel(button.pending ? "\(button.name), cut pending" : "Cut to \(button.name)")

@@ -230,28 +230,9 @@ final class UIMenuCommandBox: NSObject {
     }
   }
 
+  /// The bridge asks for confirmation where needed, in the window in front or as a standard alert.
   private func run(_ action: UIAction) {
-    let bridge = bridge()
-    if let message = action.needsConfirmation(in: bridge.presentation()) {
-      let alert = NSAlert()
-      alert.messageText = message
-      alert.alertStyle = .warning
-      let confirm = alert.addButton(withTitle: Self.confirmTitle(for: action))
-      confirm.hasDestructiveAction = true
-      alert.addButton(withTitle: "Cancel")
-      NSApp.activate(ignoringOtherApps: true)
-      guard alert.runModal() == .alertFirstButtonReturn else { return }
-      bridge.send(action, confirmed: true)
-    } else {
-      bridge.send(action)
-    }
-  }
-
-  private static func confirmTitle(for action: UIAction) -> String {
-    switch action {
-    case .stopAllCameras: return "Stop All Cameras"
-    default: return "Stop Camera"
-    }
+    bridge().send(action)
   }
 
   static func commands(for item: NSMenuItem) -> [UIMenuCommand] {
@@ -303,89 +284,98 @@ final class UIMenuCommandBox: NSObject {
     }
     if !items.isEmpty && items.last !== previewItem || previewItem != nil { items.append(.separator()) }
 
-    // Program: cut rows (thumbnails never cut), automatic switching, hold.
-    if presentation.outputMode == .program {
-      for button in presentation.cutButtons {
-        let title = "Cut to \(button.name)"
-        let subtitle = button.onAir ? "On air" : button.pending ? "Next" : nil
-        items.append(row(title, action(.cut(cameraID: button.id)), key: button.number <= 4 ? "\(button.number)" : "",
-          modifiers: .control, checked: button.onAir, enabled: button.enabled && !button.onAir,
-          symbol: "tv", subtitle: subtitle, target: target))
-      }
-      items.append(row("Automatic Switching", action(.setAutoSwitching(!session.autoSwitching)), key: "a",
-        modifiers: [.control, .option], checked: session.autoSwitching, symbol: "wand.and.stars", target: target))
-      items.append(row("Hold Current Shot", action(.setAutoHold(!session.autoHold)), checked: session.autoHold,
-        enabled: session.autoSwitching, target: target))
-      items.append(.separator())
-    }
-
-    // Cameras: start/stop, processing and preview for the selected camera.
+    // Cameras: start/stop, and whether the selected camera starts with meeting apps.
     items.append(row(presentation.camerasControlTitle,
       action(presentation.camerasRunning ? .stopAllCameras : .startAllCameras), key: "\r", modifiers: .command,
-      enabled: presentation.camerasRunning || presentation.cameras.contains(where: \.canStart),
+      enabled: presentation.canStartAny,
       symbol: presentation.camerasRunning ? "stop.fill" : "play.fill", target: target))
-    if let selected {
-      items.append(row("Processing", action(.setProcessing(cameraID: selected.id, !selected.processing)), key: "b",
-        modifiers: [.command, .shift], checked: selected.processing, symbol: "square.stack.3d.up",
-        subtitle: presentation.cameras.count > 1 ? selected.name : nil, target: target))
-      if let snapshot = selectedSnapshot {
-        items.append(row("Video Preview", action(.setPreviewEnabled(cameraID: selected.id, !snapshot.previewEnabled)),
-          key: "p", modifiers: [.command, .shift], checked: snapshot.previewEnabled, symbol: "eye", target: target))
-      }
-    }
-
-    // One submenu per camera.
-    if !presentation.cameras.isEmpty {
-      items.append(.separator())
-      items.append(NSMenuItem.sectionHeader(title: presentation.cameras.count == 1 ? "Camera" : "Cameras"))
-      for camera in presentation.cameras {
-        items.append(cameraItem(camera, presentation: presentation, session: session, inputs: inputs, target: target))
-      }
-    }
-
-    // Recording.
-    items.append(.separator())
-    switch presentation.recordControl {
-    case .record(let all, let enabled):
-      items.append(row(all ? "Record All" : "Record", action(all ? .recordAll : .toggleRecordingSelected), key: "r",
-        modifiers: [.command, .option], enabled: enabled, symbol: "record.circle", target: target))
-    case .stop(let elapsed):
-      items.append(row("Stop Recording", action(.stopAllRecordings), key: "r", modifiers: [.command, .option],
-        symbol: "stop.circle", subtitle: elapsed, target: target))
-    case .stopAll(let count, let elapsed):
-      items.append(row("Stop All Recordings (\(count))", action(.stopAllRecordings), key: "r",
-        modifiers: [.command, .option], symbol: "stop.circle", subtitle: elapsed, target: target))
-    }
-    items.append(row("Show Recordings in Finder", action(.revealRecordings), symbol: "folder", target: target))
     if let selected, let snapshot = selectedSnapshot {
       items.append(row("Start with Camera Apps", action(.setAutomaticStart(cameraID: selected.id, !snapshot.automaticStart)),
         checked: snapshot.automaticStart, symbol: "wand.and.rays",
         subtitle: presentation.cameras.count > 1 ? selected.name : nil, target: target))
     }
 
-    // App.
+    // Recording. ⌘R records the selected camera, as in the Record menu; ⌥⌘R is for all of them.
     items.append(.separator())
+    switch presentation.recordControl {
+    case .record(let all, let enabled):
+      items.append(row(all ? "Record All" : "Record", action(all ? .recordAll : .toggleRecordingSelected), key: "r",
+        modifiers: all ? [.command, .option] : .command, enabled: enabled, symbol: "record.circle", target: target))
+    case .stop(let elapsed):
+      items.append(row("Stop Recording", action(.stopAllRecordings), key: "r", modifiers: .command,
+        symbol: "stop.circle", subtitle: elapsed, target: target))
+    case .stopAll(let count, let elapsed):
+      items.append(row("Stop All Recordings (\(count))", action(.stopAllRecordings), key: "r",
+        modifiers: [.command, .option], symbol: "stop.circle", subtitle: elapsed, target: target))
+    }
+
+    // Program: cut rows (thumbnails never cut), automatic switching, hold.
+    if presentation.outputMode == .program {
+      items.append(.separator())
+      for button in presentation.cutButtons {
+        let title = "Cut to \(button.name)"
+        let subtitle = button.onAir ? UITally.onAir.label : button.pending ? UITally.next.label : nil
+        items.append(row(title, action(.cut(cameraID: button.id)), key: button.number <= 4 ? "\(button.number)" : "",
+          modifiers: .control, checked: button.onAir, enabled: button.enabled && !button.onAir,
+          symbol: "tv", subtitle: subtitle, target: target))
+      }
+      let auto = row("Automatic Switching", action(.setAutoSwitching(!presentation.autoSwitching)), key: "a",
+        modifiers: [.control, .option], checked: presentation.autoSwitching, enabled: presentation.canAutoSwitch,
+        symbol: "wand.and.stars", target: target)
+      if !presentation.canAutoSwitch { auto.toolTip = "Choose a switching strategy in Program › Strategy first." }
+      items.append(auto)
+      items.append(row("Hold Current Shot", action(.setAutoHold(!session.autoHold)), checked: session.autoHold,
+        enabled: presentation.canHoldShot, target: target))
+    }
+
+    // Cameras: processing and preview for the selected camera, then one submenu per camera.
+    if !presentation.cameras.isEmpty {
+      items.append(.separator())
+      if presentation.cameras.count > 1 { items.append(NSMenuItem.sectionHeader(title: "Cameras")) }
+      if let selected {
+        items.append(row("Processing", action(.setProcessing(cameraID: selected.id, !selected.processing)), key: "b",
+          modifiers: [.command, .shift], checked: selected.processing, symbol: "square.stack.3d.up",
+          subtitle: presentation.cameras.count > 1 ? selected.name : nil, target: target))
+        if let snapshot = selectedSnapshot {
+          items.append(row("Video Preview", action(.setPreviewEnabled(cameraID: selected.id, !snapshot.previewEnabled)),
+            key: "p", modifiers: [.command, .shift], checked: snapshot.previewEnabled, symbol: "eye", target: target))
+        }
+      }
+      for camera in presentation.cameras {
+        items.append(cameraItem(camera, presentation: presentation, session: session, inputs: inputs, target: target))
+      }
+    }
+
+    // App, with Quit last.
+    items.append(.separator())
+    let reveal = row("Show Recordings in Finder", action(.revealRecordings), enabled: presentation.canRevealRecordings,
+      symbol: "folder", target: target)
+    if !presentation.canRevealRecordings { reveal.toolTip = "Choose a recording folder first." }
+    items.append(reveal)
     items.append(row("Open Ultracam", action(.openMainWindow), key: "0", modifiers: .command, symbol: "macwindow", target: target))
     items.append(row("Settings…", action(.openSettings), key: ",", modifiers: .command, symbol: "gearshape", target: target))
-    items.append(row("Quit Ultracam", action(.quit), key: "q", modifiers: .command, target: target))
+    items.append(.separator())
     if let stats {
       let item = NSMenuItem(title: stats, action: nil, keyEquivalent: "")
       item.isEnabled = false
       items.append(item)
     }
+    items.append(row("Quit Ultracam", action(.quit), key: "q", modifiers: .command, target: target))
     return items
   }
 
   private static func cameraItem(_ camera: UICameraPresentation, presentation: UISessionPresentation,
     session: UISessionSnapshot, inputs: [UIInput], target: AnyObject?) -> NSMenuItem {
     var status: [String] = []
-    if let badge = camera.tally.badge { status.append(badge.capitalized) }
+    if let label = camera.tally.label { status.append(label) }
     switch camera.stripState {
     case .recording, .updating: status.append("REC \(UIFormat.shortElapsed(session.cameras.first { $0.id == camera.id }?.recording.elapsed ?? 0))")
     case .recordingNoSignal: status.append("Recording, no signal")
     case .paused: status.append("Paused")
-    case .stopped: status.append("Stopped")
-    case .waiting: status.append(camera.statusBadge)
+    case .failed: status.append("Recording failed")
+    case .noFolder: status.append("No folder")
+    // "Stopped", "Couldn't start" or "Input missing", as on the camera's own badge.
+    case .stopped, .waiting: status.append(camera.statusBadge)
     default: if camera.tileState == .live { status.append("Live") }
     }
     let item = NSMenuItem(title: camera.name, action: nil, keyEquivalent: "")
@@ -439,7 +429,7 @@ final class UIMenuCommandBox: NSObject {
     if running { inputItem.toolTip = "Stop the camera to change its input." }
     submenu.addItem(inputItem)
     submenu.addItem(.separator())
-    submenu.addItem(row("Open Inspector", [.action(.showInspector(cameraID: camera.id)), .action(.openMainWindow)],
+    submenu.addItem(row("Show Inspector", [.action(.showInspector(cameraID: camera.id)), .action(.openMainWindow)],
       symbol: "sidebar.right", target: target))
     submenu.addItem(camera.canStop
       ? row("Stop \(camera.name)", action(.stopCamera(cameraID: camera.id)), symbol: "stop.fill", target: target)
@@ -475,7 +465,6 @@ struct UIMenuPreviewContent: View {
   let pictures: any UIPictureProviding
   var showLive = false
 
-  private var selected: UICameraPresentation? { presentation.selected }
   private var waiting: Bool {
     !presentation.camerasRunning && session.cameras.first { $0.id == session.selectedID }?.automaticStart == true
   }
@@ -486,17 +475,17 @@ struct UIMenuPreviewContent: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Group {
-        if !presentation.camerasRunning && !(waiting && showLive) {
+        if showsPlaceholder {
           placeholder
         } else if presentation.outputMode == .program {
           programPicture
-        } else if session.cameras.count >= 2 && !presentation.outputInUse {
+        } else if twoUp {
           HStack(spacing: 6) {
             ForEach(presentation.cameras.prefix(2)) { camera in miniPicture(camera) }
           }
           .frame(height: 104)
-        } else if let selected {
-          cameraPicture(selected)
+        } else if let shown = presentation.previewCamera {
+          cameraPicture(shown)
         }
       }
       if presentation.outputMode == .program && presentation.camerasRunning {
@@ -505,11 +494,14 @@ struct UIMenuPreviewContent: View {
         }
         .frame(height: 64)
       }
-      Text(statusLine)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .padding(.horizontal, 2)
+      // Only the two-picture layout has nothing on it that says whether a meeting uses Ultracam.
+      if twoUp && !showsPlaceholder {
+        Text(presentation.outputSummary)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .padding(.horizontal, 2)
+      }
     }
     .padding(10)
     .frame(width: 330)
@@ -517,16 +509,9 @@ struct UIMenuPreviewContent: View {
     .accessibilityLabel("Ultracam preview")
   }
 
-  private var statusLine: String {
-    if waiting && !presentation.camerasRunning { return "Automatic · idle · starts when a camera app opens Ultracam" }
-    if !presentation.camerasRunning { return presentation.cameras.count == 1 ? "Camera stopped" : "Cameras stopped" }
-    var parts = [presentation.outputSummary]
-    if !recordingCameras.isEmpty {
-      let paused = recordingCameras.filter { $0.recording.status == .paused }.count
-      parts.append(paused > 0 && paused == recordingCameras.count ? "Paused" : "Recording \(recordingCameras.count - paused) of \(session.cameras.count)")
-    }
-    return parts.joined(separator: " · ")
-  }
+  private var showsPlaceholder: Bool { !presentation.camerasRunning && !(waiting && showLive) }
+  /// Two small pictures side by side while no meeting uses either camera.
+  private var twoUp: Bool { presentation.outputMode == .separate && session.cameras.count >= 2 && !presentation.outputInUse }
 
   private var placeholder: some View {
     RoundedRectangle(cornerRadius: 10).fill(Color.black)
@@ -534,9 +519,9 @@ struct UIMenuPreviewContent: View {
       .overlay {
         VStack(spacing: 6) {
           Image(systemName: "video").font(.system(size: 26, weight: .light))
-          Text(waiting ? "Waiting for a camera app" : presentation.cameras.count == 1 ? "Camera stopped" : "Cameras stopped")
+          Text(waiting ? "Waiting to start" : presentation.cameras.count == 1 ? "Camera stopped" : "Cameras stopped")
             .font(.callout.weight(.semibold))
-          Text(waiting ? "Ultracam starts when a meeting app opens its camera." : "Start the camera to see its HDMI input.")
+          Text(waiting ? "Starts when a meeting app opens Ultracam." : "Start the camera to see its HDMI input.")
             .font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
         }
         .foregroundStyle(.white)

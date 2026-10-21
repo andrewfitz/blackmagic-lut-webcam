@@ -27,6 +27,8 @@ final class UIInterfaceState {
   var alertsDisabled = false
   /// A pending confirmation: the message and the action to run when confirmed.
   var confirmation: (message: String, action: UIAction)?
+  /// The camera whose rename prompt is open (`uiRenameAlert`), if any.
+  var renamingCameraID: String?
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -199,6 +201,7 @@ struct UISessionBridge {
     session.collapsed = interface.collapsed
     session.sidebarVisible = interface.sidebarVisible
     session.inspectorOpen = interface.inspectorOpen
+    session.renamingCameraID = interface.renamingCameraID
     return session
   }
 
@@ -213,24 +216,35 @@ struct UISessionBridge {
 
   /// Runs an action, asking for confirmation first when it would end a recording or on-air output.
   func send(_ action: UIAction, confirmed: Bool = false) {
-    if !confirmed, let message = action.needsConfirmation(in: presentation()) {
-      // The main window shows the confirmation. Without a visible main window
-      // (menus or the menu bar item), ask with a standard alert instead.
-      let mainVisible = NSApplication.shared.windows.contains {
-        $0.isVisible && ($0.identifier?.rawValue.hasPrefix("main") ?? false)
-      }
-      if mainVisible || interface.alertsDisabled {
-        interface.confirmation = (message, action)
-        return
-      }
-      let alert = NSAlert()
-      alert.messageText = message
-      alert.alertStyle = .warning
-      alert.addButton(withTitle: UISessionBridge.confirmTitle(for: action))
-      alert.addButton(withTitle: "Cancel")
-      if #available(macOS 11.0, *) { alert.buttons.first?.hasDestructiveAction = true }
-      guard alert.runModal() == .alertFirstButtonReturn else { return }
+    let presentation = presentation()
+    guard !confirmed, let message = action.needsConfirmation(in: presentation) else {
+      perform(action)
+      return
     }
+    // Ask in the window in front: the main window shows its own dialog, any
+    // other key window (Settings, Diagnostics) gets a sheet, and without a key
+    // window (menus while the app is in the background, the menu bar item) a
+    // standard alert.
+    let key = NSApplication.shared.keyWindow
+    if interface.alertsDisabled || key?.identifier?.rawValue.hasPrefix("main") == true {
+      interface.confirmation = (message, action)
+      return
+    }
+    let alert = NSAlert()
+    alert.messageText = action.confirmationTitle(in: presentation)
+    alert.informativeText = message
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: UISessionBridge.confirmTitle(for: action)).hasDestructiveAction = true
+    alert.addButton(withTitle: "Cancel")
+    if let key, key.isVisible, key.attachedSheet == nil {
+      let bridge = self
+      alert.beginSheetModal(for: key) { response in
+        if response == .alertFirstButtonReturn { bridge.perform(action) }
+      }
+      return
+    }
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
     perform(action)
   }
 
@@ -291,18 +305,24 @@ struct UISessionBridge {
     case .addCamera:
       if let id = model.addFeed(), interface.defaultCollapsed { interface.collapsed.insert(id.rawValue) }
     case .removeCamera(let id): _ = model.removeFeed(feedID(id))
-    case .renameCamera(let id, let name): _ = model.renameFeed(feedID(id), name: name)
+    case .renameCamera(let id, let name):
+      _ = model.renameFeed(feedID(id), name: name)
+      interface.renamingCameraID = nil
+    case .beginRename(let id): interface.renamingCameraID = id
+    case .endRename: interface.renamingCameraID = nil
     case .cut(let id): _ = model.requestProgramCut(to: feedID(id))
     case .cutNumber(let number): if let id = cameraID(number: number) { _ = model.requestProgramCut(to: id) }
     case .setAutoSwitching(let on):
       var settings = model.switcherSettings
-      settings.automatic = on
+      // Manual never switches on its own, so Auto stays off with it (the controls are disabled too).
+      settings.automatic = on && settings.strategy != .manual
       settings.naturalTalkingHead.enabled = on && settings.strategy == .naturalTalkingHead
       model.updateSwitcher(settings)
     case .setAutoHold(let hold): model.setAutoHold(hold)
     case .setStrategy(let strategy):
       var settings = model.switcherSettings
       settings.strategy = strategy
+      if strategy == .manual { settings.automatic = false }
       settings.naturalTalkingHead.enabled = settings.automatic && strategy == .naturalTalkingHead
       model.updateSwitcher(settings)
     case .setOutputMode(let mode): model.setOutputMode(mode == .program ? .program : .separateCameras)
@@ -330,6 +350,8 @@ struct UISessionBridge {
     case .recordAll: recording.recordAll()
     case .stopAllRecordings: recording.stopAll()
     case .pauseAll: recording.pauseAll()
+    case .resumeAll:
+      for feed in recording.feeds where feed.status == .paused { recording.resume(feedID: feed.id) }
     case .toggleRecordingSelected: perform(.toggleRecording(cameraID: model.selectedFeedID.rawValue))
     case .chooseRecordingFolder(let id): UIPanels.chooseFolder(model: model, cameraID: id.map(feedID))
     case .useDefaultFolder(let id): recording.setOutputFolder(nil, for: feedID(id))
@@ -364,12 +386,8 @@ struct UISessionBridge {
 }
 
 extension UISessionBridge {
-  static func confirmTitle(for action: UIAction) -> String {
-    switch action {
-    case .stopAllCameras: return "Stop All Cameras"
-    default: return "Stop Camera"
-    }
-  }
+  /// The destructive button of a confirmation, shared by every place that asks.
+  static func confirmTitle(for action: UIAction) -> String { action.confirmationButtonTitle }
 }
 
 enum UIStrategy {

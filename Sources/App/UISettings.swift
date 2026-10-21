@@ -22,8 +22,8 @@ struct UISettingsView: View {
       UISettingsAdvancedPane(model: model)
         .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
     }
+    // Each pane sets its own height, so the window resizes to fit the tab like other Settings windows.
     .frame(width: 640)
-    .frame(minHeight: 460)
   }
 }
 
@@ -62,13 +62,19 @@ struct UISettingsGeneralPane: View {
           set: { setOpenAtLogin($0) }))
         .help("Starts Ultracam in the menu bar when you log in, so automatic start can work.")
         if loginStatus == .requiresApproval {
-          HStack {
-            UISettingsFootnote("Approve Ultracam in System Settings → General → Login Items.")
-            Spacer()
-            Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+          LabeledContent {
+            Button("Open System Settings") { SMAppService.openSystemSettingsLoginItems() }
+          } label: {
+            Text("Needs approval")
+            Text("System Settings › General › Login Items & Extensions")
           }
         }
-        if let loginError { Text(loginError).font(.caption).foregroundStyle(.orange) }
+        if let loginError {
+          Label { Text(loginError).foregroundStyle(.secondary) } icon: {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+          }
+          .font(.callout)
+        }
       } header: { Text("App") } footer: {
         UISettingsFootnote("Quitting waits for active recordings to finish writing. The menu bar icon shows a dot while recording and a triangle when something needs attention.")
       }
@@ -93,6 +99,8 @@ struct UISettingsGeneralPane: View {
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 400)
     .onAppear { loginStatus = SMAppService.mainApp.status }
   }
 
@@ -159,9 +167,9 @@ struct UISettingsRecordingPane: View {
               if let custom = recording.customOutputFolder(for: descriptor.id) {
                 Text((custom.path as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
                 Button("Change…") { UIPanels.chooseFolder(model: model, cameraID: descriptor.id) }
-                Button("Use Default") { recording.setOutputFolder(nil, for: descriptor.id) }
+                Button("Use Default Folder") { recording.setOutputFolder(nil, for: descriptor.id) }
               } else {
-                Text("Uses default").foregroundStyle(.secondary)
+                Text("Default folder").foregroundStyle(.secondary)
                 Button("Choose…") { UIPanels.chooseFolder(model: model, cameraID: descriptor.id) }
               }
             }
@@ -198,9 +206,6 @@ struct UISettingsRecordingPane: View {
       }
 
       Section {
-        LabeledContent("Fragmented QuickTime movies") {
-          Text("Always on").foregroundStyle(.secondary)
-        }
         LabeledContent("Interrupted takes") {
           HStack {
             Text(recording.interruptedRecordings.isEmpty ? "None found in saved folders"
@@ -213,10 +218,12 @@ struct UISettingsRecordingPane: View {
           Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
       } header: { Text("Crash Recovery") } footer: {
-        UISettingsFootnote("The first fragment is written after 1 s, then every 10 s. Hidden .partial files and journals sit beside each take until it finishes. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original.")
+        UISettingsFootnote("Takes are always written as fragmented QuickTime movies. The first fragment is written after 1 s, then every 10 s. Hidden .partial files and journals sit beside each take until it finishes. Recovery copies complete fragments into a separate _Recovered.mov without re-encoding and keeps the original.")
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 700)
     .sheet(isPresented: $showingRecovery) { UISettingsRecoverySheet(model: model) }
     // Record › Recover Interrupted Takes… opens Settings and asks for this sheet.
     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIShowRecovery"))) { _ in
@@ -276,6 +283,8 @@ private struct UISettingsRecoverySheet: View {
 
 struct UISettingsCameraPane: View {
   let model: AppModel
+  /// The installer's status before any request; the footer shows only what a request reported since.
+  private static let readyStatus = ExtensionInstallPreflight.current().readyStatus
 
   var body: some View {
     let installer = model.installer
@@ -284,34 +293,33 @@ struct UISettingsCameraPane: View {
     Form {
       Section {
         LabeledContent {
-          if installer.pending { ProgressView().controlSize(.small) }
+          HStack {
+            if installer.pending { ProgressView().controlSize(.small) }
+            Button("Install Camera Extension…") { installer.install() }
+            Button("Remove Camera Extension…") { installer.uninstall() }
+          }
+          .disabled(!installer.canRequestChanges || installer.pending || model.running)
+          .help(installHelp)
         } label: {
           Text("Ultracam camera")
-          Text(installer.unavailableReason ?? installer.status)
-            .fixedSize(horizontal: false, vertical: true)
+          Text(extensionStatus(needsApproval: needsApproval))
         }
         if needsApproval {
-          HStack {
-            Label("Approve Ultracam Camera in System Settings → General → Login Items & Extensions → Camera Extensions.",
-              systemImage: "exclamationmark.circle")
-              .foregroundStyle(.orange).font(.callout)
-            Spacer()
+          LabeledContent {
             Button("Open System Settings") {
               if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
                 NSWorkspace.shared.open(url)
               }
             }
+          } label: {
+            Label { Text("Needs approval") } icon: {
+              Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+            }
+            Text("System Settings › General › Login Items & Extensions › Camera Extensions")
           }
         }
-        HStack {
-          Spacer()
-          Button("Install Camera") { installer.install() }
-          Button("Remove Camera") { installer.uninstall() }
-        }
-        .disabled(!installer.canRequestChanges || installer.pending || model.running)
-        .help(installHelp)
       } header: { Text("Camera Extension") } footer: {
-        UISettingsFootnote("Install and Remove need a signed build and go through System Settings. They're unavailable while a request is pending or a camera is running. Capture, preview and recording work without the extension.")
+        UISettingsFootnote(extensionFooter(needsApproval: needsApproval))
       }
 
       Section {
@@ -323,11 +331,9 @@ struct UISettingsCameraPane: View {
         .disabled(!model.canEditFeedTopology)
         .help(model.canEditFeedTopology ? "Separate cameras publishes one virtual camera per camera. Program publishes one switched camera."
           : "Change while all cameras are stopped and nothing is recording.")
-        if !model.canEditFeedTopology {
-          UISettingsFootnote("Change while all cameras are stopped and nothing is recording.")
-        }
       } header: { Text("Output") } footer: {
-        UISettingsFootnote("After changing the output mode, choose the new camera in your meeting app.")
+        UISettingsFootnote(model.canEditFeedTopology ? "After changing the output mode, choose the new camera in your meeting app."
+          : "Change while all cameras are stopped and nothing is recording. Then choose the new camera in your meeting app.")
       }
 
       Section("Published Cameras") {
@@ -343,13 +349,35 @@ struct UISettingsCameraPane: View {
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 430)
+  }
+
+  /// A short state under "Ultracam camera"; the footer carries the long explanation.
+  private func extensionStatus(needsApproval: Bool) -> String {
+    let installer = model.installer
+    if installer.unavailableReason != nil { return "Needs a signed build" }
+    if installer.pending { return "Waiting for macOS…" }
+    if needsApproval { return "Needs approval" }
+    return UIExtensionDetector.isInstalled() ? "Installed" : "Not installed"
+  }
+
+  private func extensionFooter(needsApproval: Bool) -> String {
+    let installer = model.installer
+    let general = "Installing and removing go through System Settings and are unavailable while a camera is running. Capture, preview and recording work without the extension."
+    // The approval row already shows where to approve; the reason or last result otherwise leads.
+    let detail = installer.unavailableReason
+      ?? (needsApproval || installer.pending || installer.status == Self.readyStatus ? nil : installer.status)
+    guard let detail else { return general }
+    // Reasons and failures already end with "Capture and preview still work."
+    return detail.localizedCaseInsensitiveContains("still work") ? detail : "\(detail) \(general)"
   }
 
   private var installHelp: String {
     if let reason = model.installer.unavailableReason { return reason }
     if model.installer.pending { return "A camera extension request is pending." }
     if model.running { return "Stop the cameras before installing or removing the camera extension." }
-    return "Install or remove the Ultracam camera extension."
+    return "Install or remove the Ultracam camera extension. This doesn't add or remove your cameras."
   }
 }
 
@@ -372,22 +400,29 @@ struct UISettingsSwitcherPane: View {
       draft.mode = value
       commitDirector()
     })
+    // Director mode, shot timing and cut decisions only drive Natural talking head;
+    // they stay visible but disabled under the other strategies.
+    let natural = model.switcherSettings.strategy == .naturalTalkingHead
     Form {
       Section {
         Picker("Automatic strategy", selection: strategy) {
           Text("Manual").tag(SwitcherStrategy.manual)
           Text("Fixed interval").tag(SwitcherStrategy.fixedInterval)
           Text("Natural talking head").tag(SwitcherStrategy.naturalTalkingHead)
-          Text("Dynamic analysis (later)").tag(SwitcherStrategy.dynamicAnalysis).disabled(true)
+          Text("Dynamic analysis (Coming later)").tag(SwitcherStrategy.dynamicAnalysis).disabled(true)
         }
-        UISettingsSlider(title: "Fixed interval", value: $interval, range: 1...30, step: 0.5, unit: "s") { commitInterval() }
-          .disabled(model.switcherSettings.strategy != .fixedInterval)
+        if model.switcherSettings.strategy == .fixedInterval {
+          UISettingsSlider(title: "Fixed interval", value: $interval, range: 1...30, step: 0.5, unit: "s") { commitInterval() }
+        }
         Picker("Director mode", selection: mode) {
           Text("Low latency").tag(TalkingHeadDirectorMode.lowLatency)
           Text("Transcript assisted").tag(TalkingHeadDirectorMode.transcriptAssisted)
         }
+        .disabled(!natural)
       } header: { Text("Strategy") } footer: {
-        UISettingsFootnote("Transcript assisted needs an external transcript source; without one it cuts on audio alone. Low latency cuts on audio cues without waiting for a transcript.")
+        UISettingsFootnote(natural
+          ? "Transcript assisted needs an external transcript source; without one it cuts on audio alone. Low latency cuts on audio cues without waiting for a transcript."
+          : "Director mode, shot timing and cut decisions are used by Natural talking head.")
       }
 
       Section {
@@ -399,7 +434,10 @@ struct UISettingsSwitcherPane: View {
         UISettingsSlider(title: "Cooldown", value: $draft.cooldown, range: 0...10, step: 0.5, unit: "s") { commitDirector() }
         UISettingsSlider(title: "Emphasis hold", value: $draft.emphasisHold, range: 0...30, step: 0.5, unit: "s") { commitDirector() }
         UISettingsSlider(title: "Forced-cut grace", value: $draft.forcedCutGracePeriod, range: 0...10, step: 0.5, unit: "s") { commitDirector() }
-      } header: { Text("Shot Timing") }
+      } header: { Text("Shot Timing") } footer: {
+        if !natural { UISettingsFootnote("Used by Natural talking head.") }
+      }
+      .disabled(!natural)
 
       Section {
         DisclosureGroup("Advanced cut decisions") {
@@ -412,14 +450,19 @@ struct UISettingsSwitcherPane: View {
           UISettingsSlider(title: "Forced boundary lookback", value: $draft.forcedBoundaryLookback, range: 0...5, step: 0.1, unit: "s") { commitDirector() }
           UISettingsSlider(title: "Transcript output delay", value: $draft.transcriptOutputDelay, range: 0...2, step: 0.01, unit: "s") { commitDirector() }
         }
+        .disabled(!natural)
+        // Restores the fixed interval too, so it stays available under every strategy.
         HStack {
-          UISettingsFootnote("Decisions apply at Program frame boundaries. A timeline sidecar is written to the recording folder.")
           Spacer()
           Button("Restore Defaults") { restoreDefaults() }
         }
+      } footer: {
+        UISettingsFootnote("Decisions apply at Program frame boundaries. A timeline sidecar is written to the recording folder.")
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 660)
     .onAppear {
       guard !loaded else { return }
       loaded = true
@@ -471,9 +514,10 @@ struct UISettingsSlider: View {
   let step: Double
   let unit: String
   let onCommit: () -> Void
+  @Environment(\.isEnabled) private var isEnabled
 
   var body: some View {
-    LabeledContent(title) {
+    LabeledContent {
       HStack {
         // Rounded through the binding: a stepped Slider draws a tick for every step.
         Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range) { editing in
@@ -481,8 +525,11 @@ struct UISettingsSlider: View {
         }
           .accessibilityLabel(title)
           .accessibilityValue(formatted)
-        Text(formatted).monospacedDigit().foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
+        Text(formatted).monospacedDigit().foregroundStyle(isEnabled ? .secondary : .tertiary).frame(width: 56, alignment: .trailing)
       }
+    } label: {
+      // A disabled form label doesn't dim by itself; this shows the row doesn't apply.
+      Text(title).foregroundStyle(isEnabled ? .primary : .tertiary)
     }
   }
 
@@ -493,68 +540,118 @@ struct UISettingsSlider: View {
 }
 
 /// Visual of the shot limits: minimum, soft maximum, maximum and the forced-cut grace.
+/// Bands: before the minimum no cut happens, then cuts are allowed (green), encouraged
+/// after the soft maximum (yellow) and forced within the grace after the maximum (gray).
+/// No red: red means on air or recording (D8).
 struct UISettingsShotTimeline: View {
   let minimum: Double
   let softMaximum: Double
   let maximum: Double
   let grace: Double
+  @Environment(\.isEnabled) private var isEnabled
 
   var body: some View {
     let span = max(maximum + grace, 1)
-    GeometryReader { proxy in
-      let width = proxy.size.width
-      ZStack(alignment: .leading) {
-        Capsule().fill(Color.secondary.opacity(0.18)).frame(height: 8)
-        Capsule().fill(LinearGradient(colors: [.green, .green, .yellow], startPoint: .leading, endPoint: .trailing))
-          .frame(width: width * minimum / span, height: 8)
-        marker("min \(Int(minimum)) s", at: width * minimum / span, color: .secondary)
-        marker("soft max \(Int(softMaximum)) s", at: width * softMaximum / span, color: .secondary)
-        marker("max \(Int(maximum)) s", at: width * maximum / span, color: .red)
+    let fraction = { (value: Double) in CGFloat(min(max(value / span, 0), 1)) }
+    VStack(spacing: 3) {
+      GeometryReader { proxy in
+        let width = proxy.size.width
+        ZStack(alignment: .leading) {
+          ZStack(alignment: .leading) {
+            Rectangle().fill(.fill.tertiary)
+            band(from: fraction(minimum), to: fraction(softMaximum), width: width, color: .green)
+            band(from: fraction(softMaximum), to: fraction(maximum), width: width, color: .yellow)
+            band(from: fraction(maximum), to: 1, width: width, color: .gray)
+          }
+          .frame(height: 8)
+          .clipShape(Capsule())
+          tick(at: width * fraction(minimum), color: .secondary)
+          tick(at: width * fraction(softMaximum), color: .secondary)
+          tick(at: width * fraction(maximum), color: .primary)
+        }
       }
+      .frame(height: 14)
+      UIShotTimelineLabels(positions: [fraction(minimum), fraction(softMaximum), fraction(maximum)]) {
+        Text("min \(Int(minimum)) s")
+        Text("soft max \(Int(softMaximum)) s")
+        Text("max \(Int(maximum)) s")
+      }
+      .font(.caption2)
+      .foregroundStyle(.secondary)
     }
-    .frame(height: 30)
+    .opacity(isEnabled ? 1 : 0.5)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Shot limits")
     .accessibilityValue("Minimum \(Int(minimum)) seconds, soft maximum \(Int(softMaximum)) seconds, maximum \(Int(maximum)) seconds plus \(Int(grace)) seconds grace")
   }
 
-  private func marker(_ text: String, at x: CGFloat, color: Color) -> some View {
-    VStack(spacing: 2) {
-      Rectangle().fill(color).frame(width: 1.5, height: 14)
-      Text(text).font(.system(size: 9)).foregroundStyle(.secondary).fixedSize()
+  private func band(from start: CGFloat, to end: CGFloat, width: CGFloat, color: Color) -> some View {
+    Rectangle().fill(color.opacity(0.75))
+      .frame(width: max(0, end - start) * width)
+      .offset(x: start * width)
+  }
+
+  private func tick(at x: CGFloat, color: Color) -> some View {
+    Rectangle().fill(color).frame(width: 1.5, height: 14).offset(x: x - 0.75)
+  }
+}
+
+/// Places each label centered under its position, pushed apart so they don't overlap
+/// and kept inside the row so the last one never runs past the trailing inset.
+private struct UIShotTimelineLabels: Layout {
+  let positions: [CGFloat]
+  var spacing: CGFloat = 8
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+    return CGSize(width: proposal.width ?? 0, height: height)
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+    var origins = sizes.indices.map { index in
+      bounds.width * (positions.indices.contains(index) ? positions[index] : 0) - sizes[index].width / 2
     }
-    .offset(x: x - 1, y: 8)
+    // Left to right: stay inside the leading edge and clear of the previous label.
+    for index in origins.indices {
+      let floor = index == 0 ? 0 : origins[index - 1] + sizes[index - 1].width + spacing
+      origins[index] = max(origins[index], floor)
+    }
+    // Right to left: stay inside the trailing edge, pushing earlier labels back if needed.
+    for index in origins.indices.reversed() {
+      let ceiling = index == origins.count - 1 ? bounds.width - sizes[index].width
+        : origins[index + 1] - spacing - sizes[index].width
+      origins[index] = max(0, min(origins[index], ceiling))
+    }
+    for (index, subview) in subviews.enumerated() {
+      subview.place(at: CGPoint(x: bounds.minX + origins[index], y: bounds.minY), proposal: ProposedViewSize(sizes[index]))
+    }
   }
 }
 
 // MARK: - Monitor
 
+/// Monitor tools are set per camera under its picture; this pane only explains them.
 struct UISettingsMonitorPane: View {
   var body: some View {
     Form {
       Section {
-        LabeledContent("Monitor tools") { Text("Off for new cameras").foregroundStyle(.secondary) }
-        LabeledContent("Scopes") { Text("RGB parade or luma waveform, one per camera").foregroundStyle(.secondary) }
-        LabeledContent("Zebra") { Text("95 IRE above-threshold by default").foregroundStyle(.secondary) }
-        LabeledContent("Picture signal") { Text("Processed output by default").foregroundStyle(.secondary) }
-      } header: { Text("Defaults for New Cameras") } footer: {
-        UISettingsFootnote("Settings are per camera: use each picture's tool buttons. Right-click a picture to copy its tools to another camera.")
-      }
-
-      Section {
-        LabeledContent("False color") { Text("Off · Sony S-Log3 · EL Zone").foregroundStyle(.secondary) }
-        LabeledContent("Source declarations") { Text("Camera/Log, input code range, Log transport mapping").foregroundStyle(.secondary) }
-      } header: { Text("False Color") } footer: {
-        UISettingsFootnote("False color is available when a Sony S-Log3 input is declared. Match the actual camera output: these declarations don't calibrate the capture device or change camera output. Older ARRI selections show as an unsupported saved mode.")
-      }
-
-      Section {
-        LabeledContent("Reduce quality under load") { Text("Always on").foregroundStyle(.secondary) }
-      } header: { Text("Under Load") } footer: {
-        UISettingsFootnote("If processing misses a source-frame deadline, new monitor analysis pauses while the clean picture continues. One healthy second allows reduced analysis; five more restore full quality. Hidden or covered monitors do no GPU work. Camera output and recordings are never affected.")
+        Label("Each camera has its own scopes, zebra, false color and picture signal. Use the tool buttons under its picture.",
+          systemImage: "waveform.path.ecg")
+        Label("New cameras start with monitor tools off. Zebra starts at 95 IRE, and the picture shows the processed output.",
+          systemImage: "plus.rectangle.on.rectangle")
+        Label("Right-click a picture to copy its tools to another camera.", systemImage: "doc.on.doc")
+        Label("Monitor tools never change camera output or recordings.", systemImage: "checkmark.shield")
+      } header: { Text("Monitor Tools") } footer: {
+        VStack(alignment: .leading, spacing: 6) {
+          UISettingsFootnote("False color works when a camera's source is declared as Sony S-Log3. Declare what the camera actually sends: declarations don't calibrate the capture device or change camera output.")
+          UISettingsFootnote("Under heavy load, new monitor analysis pauses while the clean picture continues, then returns to full quality once processing keeps up. Hidden or covered monitors do no GPU work.")
+        }
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 360)
   }
 }
 
@@ -568,22 +665,20 @@ struct UISettingsAdvancedPane: View {
 
   var body: some View {
     Form {
-      Section("Diagnostics") {
+      Section {
         LabeledContent {
-          Button("Open") { openWindow(id: "diagnostics") }
-        } label: {
-          Text("Diagnostics window")
-          Text("Drops per stage, audio, encoder and monitoring details").font(.caption).foregroundStyle(.secondary)
-        }
-        LabeledContent {
-          Button(copied ? "Copied" : "Copy") {
-            UIDiagnosticsText.copy(model: model)
-            copied = true
+          HStack {
+            Button("Open Diagnostics") { openWindow(id: "diagnostics") }
+            Button(copied ? "Copied" : "Copy Diagnostics") {
+              UIDiagnosticsText.copy(model: model)
+              copied = true
+            }
           }
         } label: {
-          Text("Copy diagnostics")
-          Text("Plain-text summary for support, no image data").font(.caption).foregroundStyle(.secondary)
+          Text("Drops per stage, audio, encoder and monitoring details")
         }
+      } header: { Text("Diagnostics") } footer: {
+        UISettingsFootnote("Copy Diagnostics puts a plain-text summary on the clipboard for support. It has no image data.")
       }
 
       Section {
@@ -616,6 +711,14 @@ struct UISettingsAdvancedPane: View {
       }
     }
     .formStyle(.grouped)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: 430)
+    // "Copied" confirms the copy briefly, then the button reads Copy Diagnostics again.
+    .task(id: copied) {
+      guard copied else { return }
+      try? await Task.sleep(for: .seconds(2))
+      copied = false
+    }
     .confirmationDialog("Forget saved LUTs?", isPresented: $confirmForgetLUTs) {
       Button("Forget Saved LUTs", role: .destructive) { forgetLUTs() }
     } message: {

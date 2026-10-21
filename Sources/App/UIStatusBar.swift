@@ -6,31 +6,47 @@ struct UIStatusBarView: View {
   let context: UIContext
   @State private var open: UIStatusSegment.Kind?
   @State private var resourcesOpen = false
-
-  @State private var width: CGFloat = 1320
+  @State private var usage = AppResourceUsage()
 
   var body: some View {
-    // Width decides the density so the bar is never empty: full text when there is
-    // room, short text on narrower windows, and only output, recording and warning
-    // (plus no resource readout) at the minimum window width.
-    let compact = width < 1200
-    let essentialOnly = width < 900
-    HStack(spacing: 2) {
-      segmentsRow(compact: compact, essentialOnly: essentialOnly)
-        .layoutPriority(1)
-      Spacer(minLength: 8)
-      if width >= 1040 {
-        UIResourceReadout(open: $resourcesOpen, context: context)
-      }
+    // What fits decides the density, so the bar is never empty: full text with the full
+    // resource readout when there is room, then a shorter readout, no readout, short
+    // segment text, and finally only output, recording and warning. The bar sits in the
+    // detail column, so its width depends on the side columns, not just the window.
+    ViewThatFits(in: .horizontal) {
+      bar(compact: false, readout: .full)
+      bar(compact: false, readout: .short)
+      bar(compact: false, readout: nil)
+      bar(compact: true, readout: .short)
+      bar(compact: true, readout: nil)
+      bar(compact: true, essentialOnly: true, readout: nil)
     }
     .padding(.horizontal, 8)
     .frame(maxWidth: .infinity)
     .frame(height: 30)
     .background(.bar)
     .overlay(alignment: .top) { Divider() }
-    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Status")
+    .task {
+      // Sampled here rather than in the readout, which ViewThatFits may swap for another variant.
+      var sampler = AppResourceSampler()
+      while !Task.isCancelled {
+        usage = sampler.sample()
+        do { try await Task.sleep(for: .seconds(1)) } catch { break }
+      }
+    }
+  }
+
+  private func bar(compact: Bool, essentialOnly: Bool = false, readout: UIResourceReadout.Density?) -> some View {
+    HStack(spacing: 2) {
+      segmentsRow(compact: compact, essentialOnly: essentialOnly)
+        .layoutPriority(1)
+      Spacer(minLength: 8)
+      if let readout {
+        UIResourceReadout(open: $resourcesOpen, usage: usage, density: readout, context: context)
+      }
+    }
   }
 
   private func segmentsRow(compact: Bool, essentialOnly: Bool = false) -> some View {
@@ -61,16 +77,17 @@ struct UIStatusBarView: View {
 
   private func segmentButton(_ segment: UIStatusSegment, compact: Bool) -> some View {
     Button { open = segment.kind } label: {
+      // The tone colors the symbol only; the words stay in a label color so they stay readable.
       HStack(spacing: 5) {
         if segment.kind == .recording && segment.tone == .critical {
           Circle().fill(.red).frame(width: 7, height: 7)
         } else {
-          Image(systemName: symbol(segment.kind)).imageScale(.small)
+          Image(systemName: symbol(segment.kind)).imageScale(.small).foregroundStyle(symbolColor(segment))
         }
         Text(compact ? shortText(segment) : segment.text).lineLimit(1).truncationMode(.tail)
+          .foregroundStyle(segment.tone == .neutral ? .secondary : .primary)
       }
-      .font(.caption)
-      .foregroundStyle(color(segment))
+      .font(.subheadline)
       .padding(.horizontal, 7).frame(height: 22)
       .contentShape(Rectangle())
     }
@@ -93,7 +110,7 @@ struct UIStatusBarView: View {
     }
   }
 
-  private func color(_ segment: UIStatusSegment) -> Color {
+  private func symbolColor(_ segment: UIStatusSegment) -> Color {
     switch segment.tone {
     case .positive: return .green
     case .warning: return .orange
@@ -106,33 +123,48 @@ struct UIStatusBarView: View {
   /// Shorter text for narrow windows; the full text stays in the tooltip and popover.
   private func shortText(_ segment: UIStatusSegment) -> String {
     switch segment.kind {
-    case .output: return context.presentation.outputInUse ? "In use" : "Not in use"
+    case .output: return shortOutputText
     case .program: return segment.text.components(separatedBy: " · ").first ?? segment.text
     case .recording: return segment.text.components(separatedBy: " · ").prefix(2).joined(separator: " · ")
     case .audio, .warning: return segment.text
+    }
+  }
+
+  /// The short output text still names what is (not) in use.
+  private var shortOutputText: String {
+    let session = context.session
+    switch session.outputMode {
+    case .program:
+      return session.programInUse ? "Program in use" : "Program not in use"
+    case .separate:
+      if session.cameras.count == 1, let camera = session.cameras.first {
+        return camera.inUse ? "\(camera.name) in use" : "\(camera.name) not in use"
+      }
+      let inUse = session.cameras.filter(\.inUse).count
+      return inUse > 0 ? "\(inUse) of \(session.cameras.count) in use" : "Cameras not in use"
     }
   }
 }
 
 // MARK: - Resources
 
-/// App CPU, combined GPU video busy time and memory. Samples once per second only while visible.
+/// App CPU, combined GPU video busy time and memory. The status bar samples once per second while visible.
 struct UIResourceReadout: View {
+  enum Density { case full, short }
+
   @Binding var open: Bool
+  let usage: AppResourceUsage
+  var density: Density = .full
   let context: UIContext
-  @State private var usage = AppResourceUsage()
 
   var body: some View {
     Button { open = true } label: {
-      ViewThatFits(in: .horizontal) {
-        Text(fullText)
-        Text(shortText)
-      }
-      .font(.caption.monospacedDigit())
-      .foregroundStyle(.secondary)
-      .lineLimit(1)
-      .padding(.horizontal, 7).frame(height: 22)
-      .contentShape(Rectangle())
+      Text(density == .full ? fullText : shortText)
+        .font(.subheadline.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 7).frame(height: 22)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .help("Total Ultracam process CPU across all threads (100% is one core). GPU (video) is the combined busy time of Ultracam's Metal video processing and copy queues; it excludes the hardware media encoder and the system display compositor.")
@@ -147,9 +179,9 @@ struct UIResourceReadout: View {
           GridRow { Text("Memory"); Text(memory).monospacedDigit() }
         }
         Text("CPU counts all Ultracam threads; 100% is one core, so it can exceed 100%. System encoder services run outside this process.")
-          .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Text("GPU (video) unions completed Metal processing and copy intervals, so overlapping work counts once. It excludes the hardware media encoder and the display compositor, and is not a whole-machine reading.")
-          .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         HStack {
           Spacer()
           Button("Open Diagnostics") { open = false; context.send(.openDiagnostics) }
@@ -157,13 +189,6 @@ struct UIResourceReadout: View {
       }
       .padding(14)
       .frame(width: 320)
-    }
-    .task {
-      var sampler = AppResourceSampler()
-      while !Task.isCancelled {
-        usage = sampler.sample()
-        do { try await Task.sleep(for: .seconds(1)) } catch { break }
-      }
     }
   }
 
@@ -190,7 +215,7 @@ struct UIStatusPopover: View {
       case .recording: recording
       case .audio: audio
       case .warning:
-        Label(segment.text, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        Label { Text(segment.text) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
           .fixedSize(horizontal: false, vertical: true)
       }
     }
@@ -213,7 +238,7 @@ struct UIStatusPopover: View {
         }
       }
       Text("Video only — select your microphone in your meeting app.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.subheadline).foregroundStyle(.secondary)
     }
   }
 
@@ -222,8 +247,8 @@ struct UIStatusPopover: View {
       Image(systemName: "video.badge.checkmark").foregroundStyle(positive ? Color.green : .secondary)
       VStack(alignment: .leading, spacing: 1) {
         Text(title).lineLimit(1).truncationMode(.middle)
-        Text([detail, format].compactMap { $0 }.joined(separator: " · ")).font(.caption)
-          .foregroundStyle(positive ? Color.green : .secondary)
+        Text([detail, format].compactMap { $0 }.joined(separator: " · ")).font(.subheadline)
+          .foregroundStyle(.secondary)
       }
     }
     .accessibilityElement(children: .combine)
@@ -234,16 +259,20 @@ struct UIStatusPopover: View {
       Text("Program").font(.headline)
       Text(segment.text)
       if context.session.programFormatMismatch {
-        Label("Program cameras use different formats. Each cut updates the output briefly.",
-          systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-          .fixedSize(horizontal: false, vertical: true)
+        Label {
+          Text("Program cameras use different formats. Each cut updates the output briefly.")
+        } icon: {
+          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        }
+        .font(.subheadline)
+        .fixedSize(horizontal: false, vertical: true)
       }
       if !context.session.recentCuts.isEmpty {
         Divider()
         Text("Recent cuts").font(.subheadline.weight(.semibold))
         ForEach(context.session.recentCuts.prefix(5)) { cut in
           HStack {
-            Text(cut.at.formatted(date: .omitted, time: .standard)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text(cut.at.formatted(date: .omitted, time: .standard)).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
             Text(cut.cameraName)
             Spacer()
             UIBadge(text: cut.automatic ? "Auto" : "Manual")
@@ -267,9 +296,14 @@ struct UIStatusPopover: View {
             Text(camera.name).fontWeight(.medium)
             Text("\(camera.recordTitle) · \(camera.recordDetail)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
           }
-          Text([camera.sizeLine, camera.dropsLine, camera.timeLeftLine].compactMap { $0 }.joined(separator: " · "))
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(camera.dropsWarning ? Color.orange : .secondary)
+          HStack(spacing: 4) {
+            if camera.dropsWarning {
+              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).imageScale(.small)
+            }
+            Text([camera.sizeLine, camera.dropsLine, camera.timeLeftLine].compactMap { $0 }.joined(separator: " · "))
+              .foregroundStyle(.secondary)
+          }
+          .font(.subheadline.monospacedDigit())
         }
         .accessibilityElement(children: .combine)
       }
@@ -297,7 +331,7 @@ struct UIStatusPopover: View {
         }
       }
       Text("48 kHz stereo from each input. Not sent through the virtual camera.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.subheadline).foregroundStyle(.secondary)
     }
   }
 }

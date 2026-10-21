@@ -4,11 +4,19 @@ import SwiftUI
 /// inspector and the status bar. Every change goes through `context.send`.
 struct UIMainWindowView: View {
   let context: UIContext
+  /// Measured channel-strip height per camera, so the pictures are fitted to what the strips
+  /// really take (the strip's height changes with its contents and when it collapses).
+  @State private var stripHeights: [String: CGFloat] = [:]
+
+  /// Space between a picture and its strip (`UICameraColumnView`) and between grid cells.
+  private let columnSpacing: CGFloat = 10
+  private let cellSpacing: CGFloat = 12
+  private let margin: CGFloat = 12
 
   var body: some View {
     NavigationSplitView(columnVisibility: columnVisibility) {
       UISessionSidebarView(context: context)
-        .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 300)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 236, max: 300)
     } detail: {
       detail
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -25,7 +33,7 @@ struct UIMainWindowView: View {
     .navigationSubtitle(context.presentation.subtitle)
     .inspector(isPresented: inspectorBinding) {
       UIInspectorView(context: context)
-        .inspectorColumnWidth(min: 300, ideal: 340, max: 460)
+        .inspectorColumnWidth(min: 280, ideal: 320, max: 460)
     }
     .confirmationDialog(confirmationTitle, isPresented: confirmationBinding, titleVisibility: .visible) {
       Button(confirmationButton, role: .destructive) { context.confirm() }
@@ -33,6 +41,8 @@ struct UIMainWindowView: View {
     } message: {
       Text(context.confirmation?.message ?? "")
     }
+    // The one rename prompt; the strip, inspector and Camera menu only ask for it.
+    .uiRenameAlert(context)
     // 680 pt is the window minimum; the content sits below the ~52 pt toolbar.
     .frame(minWidth: 980, minHeight: 620)
   }
@@ -58,46 +68,83 @@ struct UIMainWindowView: View {
         if let camera = context.presentation.selected ?? cameras.first {
           // Size the picture so the picture and its strip fit the window height.
           GeometryReader { proxy in
-            let stripHeight: CGFloat = camera.collapsed ? 56 : 230
-            let fitted = (proxy.size.height - stripHeight - 24) * 16 / 9
-            let width = max(420, min(proxy.size.width - 24, fitted))
+            let fitted = (proxy.size.height - stripHeight(camera) - columnSpacing - margin * 2) * 16 / 9
+            // Never wider than the column; a short window scrolls rather than shrinking it below 420 pt.
+            let width = min(proxy.size.width - margin * 2, max(420, fitted))
             ScrollView {
-              UICameraColumnView(camera: camera, context: context)
+              column(camera)
                 .frame(width: width)
                 .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .contentMargins(12, for: .scrollContent)
+            .contentMargins(margin, for: .scrollContent)
           }
         }
       case .sideBySide, .fourUp:
-        ScrollView {
-          if cameras.count <= 2 && context.presentation.layout == .sideBySide {
-            HStack(alignment: .top, spacing: 12) {
-              ForEach(cameras) { camera in
-                UICameraColumnView(camera: camera, context: context)
-                  .frame(maxWidth: .infinity)
-              }
-            }
-          } else {
-            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-              ForEach(Array(stride(from: 0, to: cameras.count, by: 2)), id: \.self) { start in
-                GridRow(alignment: .top) {
-                  UICameraColumnView(camera: cameras[start], context: context)
-                  if start + 1 < cameras.count {
-                    UICameraColumnView(camera: cameras[start + 1], context: context)
-                  } else {
-                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+        // Fit the cells to the height as well as the width, so every picture and its strip
+        // (collapsed in Four Up) is on screen at the default window size.
+        GeometryReader { proxy in
+          let width = cellWidth(in: proxy.size, cameras: cameras)
+          ScrollView {
+            Group {
+              if cameras.count <= 2 && context.presentation.layout == .sideBySide {
+                HStack(alignment: .top, spacing: cellSpacing) {
+                  ForEach(cameras) { camera in
+                    column(camera).frame(width: width)
+                  }
+                }
+              } else {
+                Grid(horizontalSpacing: cellSpacing, verticalSpacing: cellSpacing) {
+                  ForEach(Array(stride(from: 0, to: cameras.count, by: 2)), id: \.self) { start in
+                    GridRow(alignment: .top) {
+                      column(cameras[start]).frame(width: width)
+                      if start + 1 < cameras.count {
+                        column(cameras[start + 1]).frame(width: width)
+                      } else {
+                        Color.clear.frame(width: width, height: 1)
+                      }
+                    }
                   }
                 }
               }
             }
+            .frame(maxWidth: .infinity)
           }
+          .scrollBounceBehavior(.basedOnSize)
+          .contentMargins(margin, for: .scrollContent)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .contentMargins(12, for: .scrollContent)
       }
     }
+  }
+
+  // MARK: Fitting
+
+  /// A camera's picture and strip. Reports the strip's height (the column minus its 16:9 picture).
+  private func column(_ camera: UICameraPresentation) -> some View {
+    UICameraColumnView(camera: camera, context: context)
+      .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+        // Round and ignore sub-point changes so fitting the width to the strip can't oscillate.
+        let rounded = max(0, (size.height - size.width * 9 / 16 - columnSpacing).rounded())
+        if abs((stripHeights[camera.id] ?? -1) - rounded) >= 1 { stripHeights[camera.id] = rounded }
+      }
+  }
+
+  /// The measured strip height, or an estimate until the first layout pass.
+  private func stripHeight(_ camera: UICameraPresentation) -> CGFloat {
+    stripHeights[camera.id] ?? (camera.collapsed ? 56 : 190)
+  }
+
+  /// The widest cell that fits two columns across and every row (picture and strip) down.
+  private func cellWidth(in size: CGSize, cameras: [UICameraPresentation]) -> CGFloat {
+    let rows = CGFloat((cameras.count + 1) / 2)
+    let strip = cameras.map(stripHeight).max() ?? 0
+    let byWidth = (size.width - margin * 2 - cellSpacing) / 2
+    let rowHeight = (size.height - margin * 2 - cellSpacing * (rows - 1)) / rows
+    let byHeight = (rowHeight - strip - columnSpacing) * 16 / 9
+    // A short window scrolls rather than shrinking cells below what their strips need
+    // (an expanded strip's controls don't fit under about 400 pt and would spill out of the cell).
+    let narrowest: CGFloat = cameras.contains { !$0.collapsed } ? 400 : 260
+    return max(0, min(byWidth, max(narrowest, byHeight))).rounded(.down)
   }
 
   // MARK: Bindings
