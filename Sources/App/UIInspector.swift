@@ -145,17 +145,22 @@ struct UIInspectorViewContent: View {
   private func lutSection(camera: UICameraPresentation, snapshot: UICameraSnapshot) -> some View {
     Section("LUT") {
       // Label and value like the Input gamut row below; the section header already says LUT.
-      LabeledContent("File") {
-        HStack(spacing: 6) {
-          if snapshot.lutLoading { ProgressView().controlSize(.small) }
-          Text(snapshot.lutLoading ? "Loading…" : snapshot.lutName ?? "None")
-            .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-            .help(snapshot.lutName ?? "")
-          Button(snapshot.lutName == nil ? "Load…" : "Change…") { context.send(.chooseLUT(cameraID: camera.id)) }
-            .disabled(snapshot.lutLoading)
-            .help("Choose a .cube LUT. Your selection is remembered between launches. ⌘O")
-        }
+      // One row whatever the file name's length: the name gives way (truncating in the middle)
+      // before the label or the button. LabeledContent would drop a long name onto a second line.
+      HStack(spacing: 6) {
+        Text("File").layoutPriority(2)
+        Spacer(minLength: 8)
+        if snapshot.lutLoading { ProgressView().controlSize(.small) }
+        Text(snapshot.lutLoading ? "Loading…" : snapshot.lutName.map { ($0 as NSString).deletingPathExtension } ?? "None")
+          .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+          .help(snapshot.lutName ?? "")
+        Button(snapshot.lutName == nil ? "Load…" : "Change…") { context.send(.chooseLUT(cameraID: camera.id)) }
+          .layoutPriority(2)
+          .disabled(snapshot.lutLoading)
+          .help("Choose a .cube LUT. Your selection is remembered between launches. ⌘O")
       }
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("LUT file")
       if let error = snapshot.lutError {
         Label { Text(error).foregroundStyle(.secondary) } icon: {
           Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
