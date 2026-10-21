@@ -188,6 +188,25 @@ enum UIFixtures {
     return session
   }
 
+  /// Problems: a preview error on Camera 1, a LUT that couldn't be restored and a
+  /// failed automatic start on Camera 2, and the camera extension not installed.
+  static func problems() -> UISessionSnapshot {
+    var session = baseSession()
+    var one = camera(1, recording: .idle)
+    one.previewError = "The preview stopped responding."
+    var two = camera(2, recording: .idle)
+    two.running = false
+    two.signal = .none
+    two.automaticStart = true
+    two.automaticStartFailed = true
+    two.automaticStatus = "Couldn't start: the UltraStudio is in use by another app."
+    two.lutError = "Saved LUT could not be restored: the file was moved."
+    session.cameras = [one, two]
+    session.selectedID = "camera-2"
+    session.install = UIInstallState(canRequestChanges: true, pending: false, status: "", unavailableReason: nil, installed: false)
+    return session
+  }
+
   /// Nothing running yet.
   static func stopped() -> UISessionSnapshot {
     var session = baseSession()

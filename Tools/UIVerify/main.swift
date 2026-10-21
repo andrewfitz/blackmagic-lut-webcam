@@ -94,7 +94,7 @@ import SwiftUI
   func screens() {
     let fixtures: [(String, UISessionSnapshot)] = [("program-meeting", UIFixtures.programMeeting()),
       ("single-meeting", UIFixtures.singleMeeting()), ("standalone", UIFixtures.standalone()),
-      ("four-up", UIFixtures.fourUp()), ("stopped", UIFixtures.stopped())]
+      ("four-up", UIFixtures.fourUp()), ("stopped", UIFixtures.stopped()), ("problems", UIFixtures.problems())]
     for (name, session) in fixtures {
       for size in [CGSize(width: 1320, height: 860), CGSize(width: 980, height: 680)] {
         let hosts = render("main-\(name)-\(Int(size.width))", mainWindow(.fixture(session)), size: size, titled: true)
@@ -139,6 +139,8 @@ import SwiftUI
       }
     }
     render("component-sidebar", UISessionSidebarView(context: meeting), size: CGSize(width: 260, height: 860)).forEach { $0.close() }
+    render("component-sidebar-problems", UISessionSidebarView(context: .fixture(UIFixtures.problems())),
+      size: CGSize(width: 260, height: 860)).forEach { $0.close() }
     render("component-inspector", UIInspectorView(context: meeting), size: CGSize(width: 320, height: 860)).forEach { $0.close() }
     render("component-status-bar", UIStatusBarView(context: meeting), size: CGSize(width: 1320, height: 40)).forEach { $0.close() }
     render("component-program-view", UIProgramView(context: meeting), size: CGSize(width: 1060, height: 800)).forEach { $0.close() }
@@ -181,6 +183,49 @@ import SwiftUI
     let stoppedNodes = Accessibility.nodes(in: stopped.host)
     verifier.check("stopped window offers Start Camera", contains(stoppedNodes, "Start Camera") || contains(stoppedNodes, "Start Camera 1"),
       "", viewDependent: true)
+
+    // Problem states offer their one recovery action, and pressing it sends the right action.
+    let log = ActionLog()
+    let problems = HostedView(mainWindow(.fixture(UIFixtures.problems()) { log.append($0) }), size: CGSize(width: 1320, height: 860),
+      dark: false, titled: true)
+    defer { problems.close() }
+    let problemNodes = Accessibility.nodes(in: problems.host)
+    try? problemNodes.map { "\($0.role)\t\($0.text)" }.joined(separator: "\n")
+      .write(to: verifier.pngDirectory.deletingLastPathComponent().appendingPathComponent("accessibility-problems.tsv"), atomically: true, encoding: .utf8)
+    for label in ["Retry Preview", "Locate…"] {
+      verifier.check("problems window offers \"\(label)\"", contains(problemNodes, label), "", viewDependent: true)
+    }
+    // Sidebar List rows aren't exposed to accessibility offscreen (the render
+    // component-sidebar-problems shows the banner), so check the banner's state and its view directly.
+    let problemsSession = UIFixtures.problems()
+    if case .notInstalled? = UIExtensionBanner.state(problemsSession.install) {
+      verifier.check("sidebar shows the Install banner when the camera isn't installed", true)
+    } else {
+      verifier.check("sidebar shows the Install banner when the camera isn't installed", false,
+        "\(String(describing: UIExtensionBanner.state(problemsSession.install)))")
+    }
+    let sidebar = HostedView(UIExtensionBannerView(state: .notInstalled, context: .fixture(problemsSession) { log.append($0) }),
+      size: CGSize(width: 260, height: 160), dark: false)
+    defer { sidebar.close() }
+    let sidebarNodes = Accessibility.nodes(in: sidebar.host)
+    try? sidebarNodes.map { "\($0.role)\t\($0.text)" }.joined(separator: "\n")
+      .write(to: verifier.pngDirectory.deletingLastPathComponent().appendingPathComponent("accessibility-sidebar-problems.tsv"), atomically: true, encoding: .utf8)
+    verifier.check("problems sidebar offers \"Install Camera\"", contains(sidebarNodes, "Install Camera"), "", viewDependent: true)
+    if let install = sidebarNodes.first(where: { $0.text == "Install Camera" && $0.enabled }) {
+      log.clear()
+      _ = Accessibility.press(install)
+      verifier.check("pressing Install Camera sends its action", log.actions.contains(.installCameraExtension), "\(log.actions)",
+        viewDependent: true)
+    }
+    verifier.check("problems window offers Retry for the failed start", problemNodes.contains { $0.text.hasPrefix("Retry") && $0.text != "Retry Preview" },
+      "", viewDependent: true)
+    for (label, expected) in [("Retry Preview", UIAction.retryPreview)] {
+      if let node = problemNodes.first(where: { $0.text == label && $0.enabled }) {
+        log.clear()
+        _ = Accessibility.press(node)
+        verifier.check("pressing \(label) sends its action", log.actions.contains(expected), "\(log.actions)", viewDependent: true)
+      }
+    }
   }
 
   func interactions() {
@@ -377,6 +422,49 @@ import SwiftUI
     verifier.check("bridge: strategy", bridge.snapshot().strategyTitle == "Natural talking head")
     bridge.perform(.setAutoSwitching(false))
 
+    // Conformance-review additions: swap, expand/restore, anchor/emphasis, forget LUT,
+    // confirmations for remove, default strip density for new cameras.
+    bridge.perform(.swapPictures)
+    verifier.check("bridge: swap pictures", bridge.snapshot().cameras.map(\.id) == [beta.rawValue, alpha.rawValue])
+    bridge.perform(.swapPictures)
+    verifier.check("bridge: swap back", bridge.snapshot().cameras.map(\.id) == [alpha.rawValue, beta.rawValue])
+    bridge.perform(.setLayout(.sideBySide))
+    bridge.perform(.expandPicture(cameraID: beta.rawValue))
+    verifier.check("bridge: expand picture", interface.layout == .single && model.selectedFeedID == beta
+      && bridge.snapshot().expandedFrom == .sideBySide)
+    bridge.perform(.restoreLayout)
+    verifier.check("bridge: restore layout", interface.layout == .sideBySide && bridge.snapshot().expandedFrom == nil)
+    bridge.perform(.select(cameraID: alpha.rawValue))
+    bridge.perform(.setStrategy(.naturalTalkingHead))
+    bridge.perform(.setAnchor(cameraID: alpha.rawValue))
+    bridge.perform(.setEmphasis(cameraID: beta.rawValue))
+    verifier.check("bridge: anchor and emphasis", bridge.snapshot().anchorID == alpha.rawValue && bridge.snapshot().emphasisID == beta.rawValue)
+    bridge.perform(.setAnchor(cameraID: nil))
+    bridge.perform(.setEmphasis(cameraID: nil))
+    verifier.check("bridge: automatic anchor and emphasis", bridge.snapshot().anchorID == nil && bridge.snapshot().emphasisID == nil)
+    model.updateCamera(beta) { $0.lutBookmark = Data([1, 2, 3]); $0.applyLUT = true }
+    bridge.perform(.forgetLUT(cameraID: beta.rawValue))
+    verifier.check("bridge: forget LUT on another camera", model.descriptor(for: beta)?.lutBookmark == nil
+      && model.descriptor(for: beta)?.applyLUT == false)
+    verifier.check("bridge: forget LUT persists",
+      AppSettingsStore(defaults: defaults).loadSnapshot().feeds.first { $0.id == beta }?.lutBookmark == nil)
+    bridge.send(.removeCamera(cameraID: beta.rawValue))
+    verifier.check("bridge: remove asks first", interface.confirmation != nil && model.feedDescriptors.count == 2)
+    interface.confirmation = nil
+    defaults.set("collapsed", forKey: "ui.collapsed.default")
+    let collapsedInterface = UIInterfaceState(defaults: defaults)
+    collapsedInterface.alertsDisabled = true
+    UISessionBridge(model: model, interface: collapsedInterface).perform(.addCamera)
+    if let added = model.feedDescriptors.last?.id, model.feedDescriptors.count == 3 {
+      verifier.check("bridge: new camera starts collapsed when that is the default", collapsedInterface.collapsed.contains(added.rawValue))
+      verifier.check("bridge: new cameras are named Camera N", model.descriptor(for: added)?.name == "Camera 3",
+        model.descriptor(for: added)?.name ?? "")
+      bridge.perform(.removeCamera(cameraID: added.rawValue))
+    } else {
+      verifier.check("bridge: add camera for default density", false, "\(model.feedDescriptors.count)")
+    }
+    defaults.removeObject(forKey: "ui.collapsed.default")
+
     // Settings and Diagnostics with the real model.
     render("settings-general", UISettingsGeneralPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
     render("settings-recording", UISettingsRecordingPane(model: model), size: CGSize(width: 640, height: 640)).forEach { $0.close() }
@@ -401,7 +489,7 @@ import SwiftUI
   func menuBar() {
     let fixtures: [(String, UISessionSnapshot)] = [("program-meeting", UIFixtures.programMeeting()),
       ("single-meeting", UIFixtures.singleMeeting()), ("standalone", UIFixtures.standalone()),
-      ("four-up", UIFixtures.fourUp()), ("stopped", UIFixtures.stopped())]
+      ("four-up", UIFixtures.fourUp()), ("stopped", UIFixtures.stopped()), ("problems", UIFixtures.problems())]
     for (name, session) in fixtures {
       let presentation = UIPresentationBuilder.session(session)
       let topLevel = UIMenuBarController.buildItems(presentation: presentation, session: session, inputs: UIFixtures.inputs,
@@ -412,6 +500,10 @@ import SwiftUI
       try? titles.joined(separator: "\n").write(to: verifier.pngDirectory.deletingLastPathComponent()
         .appendingPathComponent("menubar-\(name).txt"), atomically: true, encoding: .utf8)
       verifier.check("menu bar \(name): has rows", items.count > 5, "\(items.count)")
+      if name == "problems" {
+        verifier.check("menu bar problems: Retry Camera Start row", titles.contains { $0.hasPrefix("Retry Camera Start") }, titles.joined(separator: " | "))
+        verifier.check("menu bar problems: warning banner", titles.contains { $0.contains("couldn't start") || $0.contains("LUT unavailable") }, titles.joined(separator: " | "))
+      }
       for required in ["Settings…", "Quit Ultracam"] {
         verifier.check("menu bar \(name): \(required)", titles.contains { $0.hasPrefix(required) }, titles.joined(separator: " | "))
       }

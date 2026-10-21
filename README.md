@@ -53,8 +53,8 @@ must accept the selected format. Installed-service format changes still need
 qualification with a signed extension.
 
 Settings and read-only scoped LUT bookmarks persist between launches. Capture
-starts manually by default. Enable **Start when camera is in use** in the window,
-menu bar panel or Feed menu to let Zoom and other camera apps manage it:
+starts manually by default. Enable **Start with camera apps** for a camera (its
+inspector, or the Camera menu) to let Zoom and other camera apps manage it:
 opening the virtual camera starts capture with your saved effects, and closing
 the last camera client stops capture, video processing and preview rendering.
 This works with preview hidden and with the main window closed. Keep the app
@@ -78,23 +78,69 @@ video drop counters. If the source carries no audio or timecode, the UI says so
 instead of fabricating values.
 
 A missing or invalid saved LUT leaves capture usable and keeps
-the saved choice for recovery. The menu bar popover shares the window's controls
-and includes its own native mini preview; closing the window does not stop capture.
+the saved choice for recovery.
 
-The Feed menu provides **⌘Return** to start/stop, **⇧⌘B** to enable/bypass
-processing, and **⇧⌘P** to show/hide previews. The tray keeps feed and processing
-controls above its scrolling details. Diagnostics expand separately from the
-everyday controls. LUTs display their actual filename, and failed loads remain
-visible without replacing a working LUT. Start is unavailable when the selected
-device is missing. Preview errors include a retry action that leaves camera
-output running.
+## Interface
+
+The main window is a native macOS window in light or dark appearance:
+
+- **Sidebar:** the session panel. It shows the published output, the Program
+  summary and shot timer, recording drives with time left, recent takes,
+  interrupted takes (Recover) and automation.
+- **Camera columns:** each camera has its picture, then its channel strip.
+  - The strip holds that camera's own recording (record, pause, folder, time left)
+    and output (cut, effects, Processing, audio).
+  - Each strip collapses to one line; collapse all with ⌥⌘S.
+- **Selection:** clicking a picture selects that camera (blue ring); it never cuts.
+- **Program mode tally:** the camera on Program shows a red ON AIR ring once a
+  meeting app is using "Ultracam · Program" (PROGRAM before that), and NEXT while
+  a cut is pending.
+- **Inspector (⌥⌘I):** deeper per-camera settings, opened on demand.
+- **Status bar:** output, Program, recording, audio and resources.
+- **Settings (⌘,):** General, Recording, Camera, Switcher, Monitor and Advanced.
+- **Diagnostics:** engineering detail lives in its own window.
+
+The menu bar item is a native menu. Its live preview row shows what is
+published, followed by the camera, recording and Program commands. Closing the
+window does not stop capture.
+
+Shortcuts:
+
+| Shortcut | Command |
+|---|---|
+| ⌘↩ | Start or stop the cameras |
+| ⇧⌘B | Processing (selected camera) |
+| ⇧⌘P | Video preview |
+| ⌘R / ⌥⌘R | Record or stop the selected camera / all cameras |
+| ⌃1–⌃4 | Cut Program to a camera |
+| ⌃⌥A | Automatic switching |
+| ⌘1–⌘4 | Select a camera |
+| ⌥⌘1–⌥⌘4 | Layout |
+| ⌃⌘S | Sidebar |
+| ⌥⌘S | Collapse all strips |
+| ⌥⌘K | Scopes |
+| ⌥⌘I | Inspector |
+| ⌃⌥F / ⌃⌥C | Freeze / Clean view (selected picture) |
+| ⌘0 | Main window |
+
+Stopping a camera that is recording or on air asks first. Changing Downscale,
+Color, Frame rate or Processing while a meeting app is connected renegotiates
+the camera format, so its video updates briefly; the LUT doesn't change the
+format. Preview errors offer Retry Preview, which leaves camera output running.
+
+Verification: `bash scripts/ui-verify.sh` renders every screen and state
+offscreen in light and dark, and checks accessibility, interactions and the
+real model. `bash scripts/app-self-test.sh` runs checks inside the real app;
+`LIVE=1` also starts and stops the selected camera on the real input. See
+[Tools/UIVerify/README.md](Tools/UIVerify/README.md).
 
 ## Monitor tools
 
-The main preview offers **Single**, resizable **Side by Side**, and **Four Up**
-layouts. Choose a feed independently in each tile, or detach it into another
-window. The tray has its own feed choice. Tools are off by default, and each
-feed retains its own settings.
+The main window offers **Single**, **Side by Side**, **Four Up** and, in Program
+mode, **Program View** layouts. Expand a picture from its context menu, swap the
+first two, or detach a camera into its own window. Tools are off by default, and
+each camera retains its own settings. Each tool is a split button on the picture:
+click it to toggle the tool, or use its chevron for settings.
 
 Enable **Monitor tools** for thirds/center/safe-area guides, IRE zebras, red or
 other colored source-focus highlights, RGB parade and luma waveform. Picture and
@@ -319,7 +365,7 @@ reported while the detector waits for a supported signal. The build
 fetches checksum-pinned, permissively licensed Blackmagic headers and dispatch
 source from official OBS upstream; Blackmagic Desktop Video supplies the runtime.
 
-With Monitor Tools off, the selected main/tray processed preview receives the
+With Monitor Tools off, the selected camera's processed preview receives the
 same final pixel buffer and timing as camera output. AVSampleBufferDisplayLayer
 renders it through native video hardware without CGImage readback or per-frame
 SwiftUI state. Preview sample attachments are independent from camera transport;

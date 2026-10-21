@@ -18,6 +18,17 @@ import SwiftUI
   }
 }
 
+/// Which pictures are in Clean View. The presenter owns the clean state; the
+/// picture's overlays (name, tally, REC, tool chips) read it here so Clean View
+/// hides them too. Fixtures never set it, so their pictures stay decorated.
+@MainActor @Observable final class UICleanViewState {
+  static let shared = UICleanViewState()
+  private(set) var clean: Set<String> = []
+  func set(_ isClean: Bool, for targetID: String) {
+    if isClean { clean.insert(targetID) } else { clean.remove(targetID) }
+  }
+}
+
 /// Monitor settings stored per camera by the MonitorCoordinator.
 @MainActor struct UIAppMonitorSettings: UIMonitorSettingsProviding {
   let model: AppModel
@@ -53,6 +64,7 @@ private struct UIAppSurfacePicture: View {
   let surfaceID: UUID
   let target: MonitorTargetID
   let compact: Bool
+  @State private var hovering = false
 
   private var isProgram: Bool { target.rawValue == "program" }
   private var configuration: MonitorConfiguration { coordinator.configuration(for: target) }
@@ -104,14 +116,31 @@ private struct UIAppSurfacePicture: View {
         }
       }
     }
+    .overlay(alignment: .topTrailing) {
+      // Program's tool bar lives with its picture (camera pictures draw theirs in the overlay).
+      if isProgram && !compact && hovering && previewEnabled {
+        UIMonitorToolButtons(targetID: target.rawValue, name: "Program",
+          activeTools: UIMonitorTool.allCases.filter { UIMonitorBridge.activeTools(configuration).contains($0) },
+          isProgram: true,
+          toggle: { [coordinator, target] tool in UIMonitorBridge.toggle(tool, for: target.rawValue, coordinator: coordinator) },
+          monitor: UIAppMonitorSettings(model: model))
+          .padding(10)
+      }
+    }
     .clipped()
+    .onHover { hovering = $0 }
     .onAppear {
       register()
       if !isProgram && !compact { UIMonitorBridge.register(presenter, cameraID: target.rawValue) }
+      if !compact { UICleanViewState.shared.set(presenter.isClean, for: target.rawValue) }
     }
     .onDisappear {
       coordinator.unregisterSurface(id: surfaceID, target: target)
       UIMonitorBridge.unregister(cameraID: target.rawValue, presenter: presenter)
+      if !compact { UICleanViewState.shared.set(false, for: target.rawValue) }
+    }
+    .onChange(of: presenter.isClean) { _, isClean in
+      if !compact { UICleanViewState.shared.set(isClean, for: target.rawValue) }
     }
     .onChange(of: usesNativePreview) { _, _ in register() }
     .onChange(of: previewEnabled) { _, _ in register() }

@@ -477,4 +477,37 @@ import XCTest
     XCTAssertEqual(UIPresentationBuilder.session(program([camera(1)], inUse: false)).title, "Program")
     XCTAssertEqual(UILayout.allCases.map(\.title), ["Single", "Side by Side", "Program View", "Four Up"])
   }
+
+  // MARK: Conformance-review additions
+
+  func testAutomaticStartFailureAndLUTWarnings() {
+    var failed = camera(1, running: false)
+    failed.automaticStart = true
+    failed.automaticStartFailed = true
+    let session = separate([failed])
+    XCTAssertEqual(UIPresentationBuilder.warning(session), "Camera 1: couldn't start")
+    XCTAssertEqual(UIPresentationBuilder.menuBarIcon(session), .attention)
+    XCTAssertTrue(UIPresentationBuilder.session(session).cameras[0].automaticStartFailed)
+
+    var lut = camera(1)
+    lut.lutError = "Saved LUT could not be restored: file moved"
+    XCTAssertEqual(UIPresentationBuilder.warning(separate([lut])), "Camera 1: LUT unavailable")
+    XCTAssertEqual(UIPresentationBuilder.session(separate([lut])).cameras[0].lutError, lut.lutError)
+
+    // A recording problem still outranks a LUT problem.
+    var recordingNoSignal = camera(2, signal: .noSignal, recording: .recording)
+    recordingNoSignal.lutError = "x"
+    XCTAssertEqual(UIPresentationBuilder.warning(separate([lut, recordingNoSignal])), "Camera 2: recording, no signal")
+  }
+
+  func testRemoveAndResetNeedConfirmation() {
+    let presentation = UIPresentationBuilder.session(separate([camera(1), camera(2)]))
+    let remove = UIAction.removeCamera(cameraID: "camera-2").needsConfirmation(in: presentation)
+    XCTAssertEqual(remove, "Remove Camera 2? Its settings are deleted. Recordings on disk are kept.")
+    XCTAssertNotNil(UIAction.resetAllSettings.needsConfirmation(in: presentation))
+    XCTAssertTrue(UIAction.resetAllSettings.needsConfirmation(in: presentation)?.contains("Recordings are not touched") == true)
+    XCTAssertNil(UIAction.swapPictures.needsConfirmation(in: presentation))
+    XCTAssertNil(UIAction.expandPicture(cameraID: "camera-1").needsConfirmation(in: presentation))
+    XCTAssertNil(UIAction.forgetLUT(cameraID: "camera-1").needsConfirmation(in: presentation))
+  }
 }

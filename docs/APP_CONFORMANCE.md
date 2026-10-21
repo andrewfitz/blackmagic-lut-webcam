@@ -170,3 +170,50 @@
 13. **#19** Clean View leaves the name, tally and REC overlays (P3).
 14. **#67 / #68** "Zoom" and "Feed" leak through backend strings (P3).
 15. **#10 / #27 / #39** Lost or missing monitor-workspace extras: expand/swap, copy settings to Program, tools on the Program picture (P3).
+
+## Resolution (2026-10-21)
+
+Every item above that was MISSING, NOT WIRED or WRONG has been either fixed or deferred:
+
+| # | Resolution |
+|---|---|
+| 3 | Status bar density follows its width and always shows output, recording and the warning; content minimum height 620 so it isn't clipped at 980×680. |
+| 5, 6 | Toolbar order: cameras, record control and Restore Layout first; the layout picker and collapse overflow first. Stop/Start Cameras shows its title. |
+| 10 | Expand Picture, Restore Layout and Swap Pictures (picture context menu and View menu). A resizable split stays deferred (P3). |
+| 12 | The inspector's Signal row sets its accessibility value explicitly. The live self-test checks the picture's own label. |
+| 19 | Clean View hides the camera name, tally, REC pill and tool chips (`UICleanViewState`). |
+| 21 | Preview error card with Retry Preview on the picture. |
+| 23 | In Program mode the narrow output row says On air or In Program. |
+| 26 | Remove Camera always asks first (one bridge confirmation, from the ⋯ menu, the Camera menu and the inspector). |
+| 27 | Copy Settings To includes Program in Program mode. |
+| 33 | Selecting a camera while a LUT restores works; the stale load is invalidated. |
+| 39 | Program picture has the monitor tool split buttons; source-only tools are disabled with the reason. |
+| 40 | Anchor and Emphasis pickers in the Program menu and the Program View cut bar. |
+| 44 | No duplicate Window menu entries; "Main Window ⌘0" sits above the automatic window list. |
+| 45 | Help › Ultracam Help (⌘?) opens an in-app help window: getting started, good-to-know, all shortcuts. |
+| 46 | Recover Interrupted Takes… opens Settings › Recording's recovery list. |
+| 48 | Record menu has Pause/Resume Recording for the selected camera. |
+| 51 | A failed automatic start shows Retry on the picture, strip, inspector and menu bar item, and a status bar warning. |
+| 54 | Reset All Settings works: confirm, reset, quit. Disabled while cameras run or recordings finish. |
+| 55 | Forget Saved LUTs clears every camera, including the selected one (`AppModel.forgetLUT`). |
+| 56 | New-camera strip density is read for cameras added afterwards. |
+| 57 | Relabelled "Layout" (it is the main window's layout, the same as View › Layout). |
+| 59 | Sidebar banner "Install the Ultracam camera…" with Install Camera when no Ultracam device exists. |
+| 65 | LUT errors appear on the strip (Locate…) and in the status bar and menu bar warning. |
+| 66 | The automatic status line shows in the sidebar's Automation section and the inspector. |
+| 67, 68 | Backend messages no longer name a meeting app or say "Feed". |
+| 69 | Recent takes show their duration (read in the background, cached). |
+
+**Deferred (P3 polish, by decision):**
+- resizable split ratio between two pictures
+- Hold Clean press-and-hold
+- the scope drawn as a card under the strip rather than over the picture's lower area
+- the brief "Updating output…" when selecting a running camera re-applies its saved LUT; the camera format doesn't change, so a meeting isn't interrupted
+
+**Deferred by design** (shown as "Coming later" where they appear):
+- backup recording automation (D6)
+- consumer count
+- the full director timeline
+- lid-close notice
+- the publish-as-camera toggle
+- drop sparklines

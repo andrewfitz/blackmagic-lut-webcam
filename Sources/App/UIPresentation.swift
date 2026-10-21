@@ -224,6 +224,8 @@ enum UITally: Sendable, Equatable {
 
 enum UITileState: Sendable, Equatable {
   case live, connecting, noSignal, unsupported(String), deviceMissing, stopped, previewHidden, updating
+  /// True when the picture area shows video (tool chips and overlays only make sense then).
+  var showsPicture: Bool { self == .live || self == .updating }
 }
 
 enum UIStripState: String, Sendable, Equatable {

@@ -131,7 +131,7 @@ import XCTest
     callbacks()
     XCTAssertFalse(installer.pending)
     XCTAssertNil(activation.delegate)
-    XCTAssertTrue(installer.status.contains("Zoom"))
+    XCTAssertTrue(installer.status.contains("meeting app"))
     installer.uninstall()
     XCTAssertEqual(harness.submitted.count, 2)
     XCTAssertTrue(harness.changes.last == .remove)

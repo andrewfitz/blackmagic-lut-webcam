@@ -40,7 +40,8 @@ private struct UISettingsFootnote: View {
 struct UISettingsGeneralPane: View {
   @Bindable var model: AppModel
   @AppStorage("ui.layout") private var defaultLayout = UILayout.sideBySide.rawValue
-  @AppStorage("ui.collapsed.default") private var collapsedByDefault = false
+  /// "collapsed" or "expanded"; the app reads it when a new camera is added.
+  @AppStorage("ui.collapsed.default") private var stripDensity = "expanded"
   @State private var loginStatus = SMAppService.mainApp.status
   @State private var loginError: String?
 
@@ -73,18 +74,18 @@ struct UISettingsGeneralPane: View {
       }
 
       Section("Window") {
-        Picker("Default layout", selection: $defaultLayout) {
+        Picker("Layout", selection: $defaultLayout) {
           ForEach(UILayout.allCases, id: \.rawValue) { layout in
             Text(layout.title).tag(layout.rawValue)
           }
         }
-        .help("Program View is available only in Program mode.")
-        Picker("Camera strips", selection: $collapsedByDefault) {
-          Text("Expanded").tag(false)
-          Text("Collapsed").tag(true)
+        .help("The main window's layout; the same as View › Layout. Program View is available only in Program mode.")
+        Picker("New camera strips", selection: $stripDensity) {
+          Text("Expanded").tag("expanded")
+          Text("Collapsed").tag("collapsed")
         }
         .pickerStyle(.segmented)
-        .help("Collapse or expand any strip at any time (⌥⌘S collapses all).")
+        .help("How a newly added camera's strip starts. Collapse or expand any strip at any time (⌥⌘S collapses all).")
         LabeledContent("Video preview") {
           Text("Each camera's picture can be hidden from its menu. Hidden previews do no rendering work (⇧⌘P).")
             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
@@ -224,6 +225,10 @@ struct UISettingsRecordingPane: View {
     }
     .formStyle(.grouped)
     .sheet(isPresented: $showingRecovery) { UISettingsRecoverySheet(model: model) }
+    // Record › Recover Interrupted Takes… opens Settings and asks for this sheet.
+    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIShowRecovery"))) { _ in
+      showingRecovery = true
+    }
   }
 
   private var fileNamePreview: String {
@@ -606,13 +611,20 @@ struct UISettingsAdvancedPane: View {
 
       Section {
         LabeledContent {
-          Button("Reset…", role: .destructive) {}.disabled(true)
+          Button("Reset…", role: .destructive) {
+            // The bridge asks for confirmation (in the main window, or as an alert), then resets and quits.
+            UISessionBridge.live(model: model, interface: UIAppEnvironment.interface).send(.resetAllSettings)
+          }
+          .disabled(!model.canEditFeedTopology)
+          .help(model.canEditFeedTopology ? "Reset every saved preference and quit."
+            : "Stop all cameras and let recordings finish before resetting.")
         } label: {
           Text("Reset all settings")
-          Text("Coming later").font(.caption).foregroundStyle(.secondary)
+          Text(model.canEditFeedTopology ? "Cameras, effects, folders, monitor tools and layout"
+            : "Stop all cameras and let recordings finish first").font(.caption).foregroundStyle(.secondary)
         }
       } header: { Text("Reset") } footer: {
-        UISettingsFootnote("Recordings are never touched. Reset will ask for confirmation and is unavailable while cameras run or recordings finish.")
+        UISettingsFootnote("Recordings are never touched. Reset asks for confirmation, then Ultracam quits so it starts fresh next time.")
       }
     }
     .formStyle(.grouped)
@@ -624,12 +636,8 @@ struct UISettingsAdvancedPane: View {
   }
 
   private func forgetLUTs() {
-    for descriptor in model.feedDescriptors {
-      model.updateCamera(descriptor.id) { camera in
-        camera.lutBookmark = nil
-        camera.applyLUT = false
-      }
-    }
+    // forgetLUT also clears the selected camera's loaded LUT, which updateCamera can't.
+    for descriptor in model.feedDescriptors { model.forgetLUT(descriptor.id) }
   }
 }
 

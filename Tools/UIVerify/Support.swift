@@ -123,8 +123,11 @@ struct AXNode {
         enabled: (read(object, "isAccessibilityEnabled") as? NSNumber)?.boolValue ?? true,
         object: object))
       guard depth < 60 else { continue }
-      for child in read(object, "accessibilityChildren") as? [Any] ?? [] {
-        if let child = child as? NSObject { queue.append((child, depth + 1)) }
+      // Outlines and tables (the sidebar List) expose their content as rows, not children.
+      for key in ["accessibilityChildren", "accessibilityRows", "accessibilityChildrenInNavigationOrder"] {
+        for child in read(object, key) as? [Any] ?? [] {
+          if let child = child as? NSObject { queue.append((child, depth + 1)) }
+        }
       }
     }
     return result

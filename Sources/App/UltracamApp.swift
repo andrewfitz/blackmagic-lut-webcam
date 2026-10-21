@@ -46,12 +46,19 @@ struct UltracamApp: App {
     }
     .defaultSize(width: 1320, height: 860)
     .windowToolbarStyle(.unified)
+    // Window › Ultracam (⌘0) brings the main window back.
     .commands { UICommands(model: model, interface: interface) }
 
     Window("Diagnostics", id: "diagnostics") {
       UIDiagnosticsView(model: model)
     }
     .defaultSize(width: 1100, height: 760)
+
+    Window("Ultracam Help", id: "help") {
+      UIHelpView()
+    }
+    .defaultSize(width: 560, height: 640)
+    .windowResizability(.contentSize)
 
     Settings {
       UISettingsView(model: model)

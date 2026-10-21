@@ -127,6 +127,24 @@ struct UIProgramCutBar: View {
           .help("Keep the current shot: Auto stays on but makes no cuts")
         Spacer()
       }
+      if session.strategy == .naturalTalkingHead {
+        HStack(spacing: 14) {
+          Picker("Anchor", selection: Binding(get: { session.anchorID }, set: { context.send(.setAnchor(cameraID: $0)) })) {
+            Text("Automatic").tag(String?.none)
+            ForEach(context.presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+          }
+          .fixedSize()
+          .help("The camera the director returns to between emphasis shots")
+          Picker("Emphasis", selection: Binding(get: { session.emphasisID }, set: { context.send(.setEmphasis(cameraID: $0)) })) {
+            Text("Automatic").tag(String?.none)
+            ForEach(context.presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+          }
+          .fixedSize()
+          .help("The camera the director cuts to for emphasis")
+          Spacer()
+        }
+        .disabled(!session.autoSwitching)
+      }
       TimelineView(.periodic(from: .now, by: 1)) { timeline in
         shotTimer(now: timeline.date)
       }

@@ -38,6 +38,9 @@ struct UICameraPictureView: View {
   }
   private var snapshot: UICameraSnapshot? { context.snapshot(camera.id) }
   private var isProgramMode: Bool { context.presentation.outputMode == .program }
+  /// Clean View hides every overlay on the picture, tally included; hover still
+  /// reveals the view controls so Clean View can be turned off again.
+  private var isClean: Bool { !compact && UICleanViewState.shared.clean.contains(camera.id) }
 
   var body: some View {
     ZStack {
@@ -50,12 +53,13 @@ struct UICameraPictureView: View {
         .accessibilityAction(named: "Select \(camera.name)") { context.send(.select(cameraID: camera.id)) }
         .modifier(UICutAccessibilityAction(camera: camera, context: context))
       placeholder
+      previewErrorNotice
       overlays
     }
     .aspectRatio(16 / 9, contentMode: .fit)
     .clipShape(RoundedRectangle(cornerRadius: compact ? 10 : 14))
     .overlay {
-      if let color = camera.tally.ringColor {
+      if let color = camera.tally.ringColor, !isClean {
         RoundedRectangle(cornerRadius: compact ? 10 : 14).strokeBorder(color, lineWidth: camera.tally == .onAir ? 4 : 3)
           .allowsHitTesting(false)
       }
@@ -97,6 +101,11 @@ struct UICameraPictureView: View {
         detail: "Reconnect \(camera.inputName) or choose another input.") {
         Button("Refresh Inputs") { context.send(.refreshInputs) }
       }
+    case .stopped where camera.automaticStartFailed:
+      UIPicturePlaceholder(symbol: "exclamationmark.triangle", title: "Couldn't start \(camera.name)",
+        detail: startFailureDetail) {
+        Button("Retry", systemImage: "arrow.clockwise") { context.send(.retryAutomaticStart) }
+      }
     case .stopped:
       UIPicturePlaceholder(symbol: "video", title: "Camera stopped", detail: "Start the camera to see its HDMI input.") {
         Button("Start Camera", systemImage: "play.fill") { context.send(.startCamera(cameraID: camera.id)) }
@@ -115,12 +124,37 @@ struct UICameraPictureView: View {
     }
   }
 
+  private var startFailureDetail: String {
+    let status = snapshot?.automaticStatus ?? snapshot?.message ?? ""
+    return status.isEmpty ? "Automatic start tries once per camera session. Retry to try again." : status
+  }
+
+  /// Preview rendering failed; camera output is unaffected and keeps running.
+  @ViewBuilder private var previewErrorNotice: some View {
+    if !compact, let error = snapshot?.previewError, !error.isEmpty {
+      VStack(spacing: 6) {
+        Label("Preview error — camera output continues", systemImage: "exclamationmark.triangle.fill")
+          .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+        Text(error).font(.caption2).foregroundStyle(.white.opacity(0.7)).lineLimit(2).multilineTextAlignment(.center)
+        Button("Retry Preview") { context.send(.retryPreview) }
+          .controlSize(.small)
+          .help("Restart preview rendering. Camera output keeps running.")
+      }
+      .padding(10)
+      .frame(maxWidth: 360)
+      .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 10))
+      .environment(\.colorScheme, .dark)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Preview error")
+    }
+  }
+
   // MARK: Overlays
 
   private var overlays: some View {
     VStack(spacing: 0) {
       HStack(alignment: .top, spacing: 6) {
-        if isProgramMode {
+        if isProgramMode && !isClean {
           Text("\(camera.number)")
             .font(.caption.weight(.bold).monospacedDigit())
             .frame(width: 20, height: 20)
@@ -128,16 +162,18 @@ struct UICameraPictureView: View {
             .foregroundStyle(.white)
             .accessibilityHidden(true)
         }
-        Text(camera.name)
-          .font(.caption.weight(.semibold))
-          .lineLimit(1).truncationMode(.tail)
-          .uiPictureOverlay()
-          .help(camera.name)
-        UITallyBadge(tally: camera.tally)
+        if !isClean {
+          Text(camera.name)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1).truncationMode(.tail)
+            .uiPictureOverlay()
+            .help(camera.name)
+          UITallyBadge(tally: camera.tally)
+        }
         Spacer(minLength: 4)
         if revealed {
           UIMonitorToolButtons(camera: camera, context: context)
-        } else if !camera.activeTools.isEmpty && !compact {
+        } else if !camera.activeTools.isEmpty && !compact && !isClean && camera.tileState.showsPicture {
           HStack(spacing: 3) {
             ForEach(camera.activeTools, id: \.self) { tool in
               Image(systemName: tool.symbol).font(.system(size: 10, weight: .semibold))
@@ -161,7 +197,7 @@ struct UICameraPictureView: View {
         Spacer(minLength: 4)
         if revealed { viewControls }
         Spacer(minLength: 4)
-        recordingPill
+        if !isClean { recordingPill }
       }
     }
     .padding(compact ? 6 : 10)
@@ -231,7 +267,8 @@ struct UICameraPictureView: View {
   private var viewControls: some View {
     HStack(spacing: 2) {
       overlayButton("snowflake", help: "Freeze (⌃⌥F)", label: "Freeze") { context.send(.freeze(cameraID: camera.id)) }
-      overlayButton("rectangle.dashed", help: "Clean View (⌃⌥C)", label: "Clean View") { context.send(.toggleClean(cameraID: camera.id)) }
+      overlayButton(isClean ? "rectangle.inset.filled" : "rectangle.dashed", help: isClean ? "Show Overlays (⌃⌥C)" : "Clean View (⌃⌥C)",
+        label: isClean ? "Show Overlays" : "Clean View") { context.send(.toggleClean(cameraID: camera.id)) }
       Menu {
         Picker("Zoom", selection: $zoom) {
           Text("Fit").tag(1.0)
@@ -268,20 +305,44 @@ struct UICameraPictureView: View {
 
   @ViewBuilder private var pictureMenu: some View {
     Button("Freeze") { context.send(.freeze(cameraID: camera.id)) }
-    Button("Clean View") { context.send(.toggleClean(cameraID: camera.id)) }
+    Button(isClean ? "Show Overlays" : "Clean View") { context.send(.toggleClean(cameraID: camera.id)) }
     Button("Reset Monitor Tools") { context.send(.resetMonitorTools(cameraID: camera.id)) }
-    let others = context.presentation.cameras.filter { $0.id != camera.id }
-    if !others.isEmpty {
-      Menu("Copy Settings To") {
-        ForEach(others) { other in
-          Button(other.name) { context.send(.copyMonitorSettings(from: camera.id, to: other.id)) }
-        }
-      }
+    UICopySettingsMenu(camera: camera, context: context, title: "Copy Settings To")
+    Divider()
+    if context.session.expandedFrom != nil {
+      Button("Restore Layout") { context.send(.restoreLayout) }
+    } else if context.presentation.cameras.count > 1 {
+      Button("Expand Picture") { context.send(.expandPicture(cameraID: camera.id)) }
+    }
+    if context.presentation.cameras.count > 1 {
+      Button("Swap Pictures") { context.send(.swapPictures) }
     }
     Divider()
     Button("Detach to Window") { context.send(.detachMonitor(cameraID: camera.id)) }
     Button("Hide Preview") { context.send(.setPreviewEnabled(cameraID: camera.id, false)) }
     Button("Show Inspector") { context.send(.showInspector(cameraID: camera.id)) }
+  }
+}
+
+/// "Copy Settings To" with every other camera, plus Program in Program mode.
+private struct UICopySettingsMenu: View {
+  let camera: UICameraPresentation
+  let context: UIContext
+  let title: String
+  var body: some View {
+    let others = context.presentation.cameras.filter { $0.id != camera.id }
+    let program = context.presentation.outputMode == .program
+    if !others.isEmpty || program {
+      Menu(title) {
+        ForEach(others) { other in
+          Button(other.name) { context.send(.copyMonitorSettings(from: camera.id, to: other.id)) }
+        }
+        if program {
+          if !others.isEmpty { Divider() }
+          Button("Program") { context.send(.copyMonitorSettings(from: camera.id, to: "program")) }
+        }
+      }
+    }
   }
 }
 
@@ -391,12 +452,39 @@ struct UIChannelStripView: View {
       Divider()
       recordRow
       folderRow
+      alertRows
       Divider()
       outputRow
       HStack(spacing: 8) {
         Text("AUDIO").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).frame(width: 42, alignment: .leading)
         UIAudioMeter(audio: camera.audio)
       }
+    }
+  }
+
+  /// Problems that need one action: a failed automatic start, an unavailable LUT.
+  @ViewBuilder private var alertRows: some View {
+    if camera.automaticStartFailed {
+      HStack(spacing: 6) {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+        Text("Couldn't start \(camera.name)").font(.caption.weight(.medium)).foregroundStyle(.orange)
+        Text(snapshot?.automaticStatus ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+        Spacer(minLength: 4)
+        Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.small)
+          .help("Automatic start tries once per camera session. Retry tries again.")
+      }
+      .accessibilityElement(children: .contain)
+    }
+    if let error = camera.lutError {
+      HStack(spacing: 6) {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+        Text("LUT unavailable").font(.caption.weight(.medium)).foregroundStyle(.orange)
+        Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail).help(error)
+        Spacer(minLength: 4)
+        Button("Locate…") { context.send(.chooseLUT(cameraID: camera.id)) }.controlSize(.small)
+          .help("Choose the .cube file again. Capture keeps working without it.")
+      }
+      .accessibilityElement(children: .contain)
     }
   }
 
@@ -479,14 +567,7 @@ struct UIChannelStripView: View {
       if snapshot?.recording.folderIsCustom == true {
         Button("Use Default Folder") { context.send(.useDefaultFolder(cameraID: camera.id)) }
       }
-      let others = context.presentation.cameras.filter { $0.id != camera.id }
-      if !others.isEmpty {
-        Menu("Copy Monitor Settings To") {
-          ForEach(others) { other in
-            Button(other.name) { context.send(.copyMonitorSettings(from: camera.id, to: other.id)) }
-          }
-        }
-      }
+      UICopySettingsMenu(camera: camera, context: context, title: "Copy Monitor Settings To")
       Divider()
       Button(context.session.canEditTopology ? "Rename…" : "Rename… (stop all cameras first)") {
         nameDraft = camera.name
@@ -665,13 +746,21 @@ struct UIChannelStripView: View {
       HStack(spacing: 5) {
         Image(systemName: context.presentation.outputMode == .program ? "dot.radiowaves.left.and.right" : "video.badge.checkmark")
           .font(.caption)
-        Text(full ? camera.outputLine : (camera.outputInUse ? "In use" : "Not in use"))
+        Text(full ? camera.outputLine : compactOutputLine)
           .font(.caption).lineLimit(1).truncationMode(.middle)
       }
       .foregroundStyle(camera.outputInUse ? .green : .secondary)
       .help(camera.outputLine)
       .accessibilityElement(children: .combine)
     }
+  }
+
+  /// Short output wording for narrow strips. Program mode never says "In use".
+  private var compactOutputLine: String {
+    if context.presentation.outputMode == .program {
+      return camera.tally == .onAir ? "On air" : "In Program"
+    }
+    return camera.outputInUse ? "In use" : "Not in use"
   }
 
   // MARK: Collapsed
@@ -682,6 +771,15 @@ struct UIChannelStripView: View {
       Text(camera.name).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
       tallyBadge
       collapsedState
+      if camera.automaticStartFailed {
+        Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.mini)
+          .help("Couldn't start \(camera.name). Automatic start tries once per camera session.")
+      }
+      if camera.lutError != nil {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+          .help(camera.lutError ?? "")
+          .accessibilityLabel("LUT unavailable")
+      }
       Spacer(minLength: 4)
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 6) {

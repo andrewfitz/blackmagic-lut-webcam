@@ -302,11 +302,13 @@ enum UIExtensionBanner: Equatable {
   case unavailable(String)
   case pending(String)
   case needsApproval(String)
+  case notInstalled
 
   static func state(_ install: UIInstallState) -> UIExtensionBanner? {
     if install.needsApproval { return .needsApproval(install.status) }
     if install.pending { return .pending(install.status.isEmpty ? "Requesting camera activation…" : install.status) }
     if let reason = install.unavailableReason, !install.canRequestChanges { return .unavailable(reason) }
+    if install.canRequestChanges && !install.installed { return .notInstalled }
     return nil
   }
 }
@@ -327,6 +329,13 @@ struct UIExtensionBannerView: View {
           ProgressView().controlSize(.small)
           Text(status).font(.callout).lineLimit(3)
         }
+      case .notInstalled:
+        Label("Install the Ultracam camera", systemImage: "video.badge.plus").font(.callout.weight(.semibold)).lineLimit(2)
+        Text("Install the Ultracam camera to use it in your meeting app. macOS asks you to approve it in System Settings.")
+          .font(.caption).foregroundStyle(.secondary).lineLimit(4)
+        Button("Install Camera") { context.send(.installCameraExtension) }
+          .controlSize(.small)
+          .help("Request installation of the Ultracam camera extension.")
       case .needsApproval(let status):
         Label("Approve the Ultracam camera", systemImage: "exclamationmark.triangle.fill").lineLimit(2)
           .font(.callout.weight(.semibold)).foregroundStyle(.orange)

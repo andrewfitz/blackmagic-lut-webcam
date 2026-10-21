@@ -14,7 +14,38 @@ struct UIToolbarContent: ToolbarContent {
       }
     }
 
-    ToolbarItemGroup(placement: .primaryAction) {
+    // Order matters: when the window narrows, macOS moves the trailing items into
+    // the overflow menu first. Cameras and the record control come first so they stay
+    // visible; layout, collapse and the inspector (all also in the View menu) go first.
+    ToolbarItem(placement: .primaryAction) {
+      Button {
+        context.send(presentation.camerasRunning ? .stopAllCameras : .startAllCameras)
+      } label: {
+        Label(presentation.camerasControlTitle, systemImage: presentation.camerasRunning ? "stop.fill" : "play.fill")
+          .labelStyle(.titleAndIcon)
+      }
+      .help(presentation.camerasRunning
+        ? "Stop capture and output for every camera (⌘↩). Asks first if a recording or on-air camera is affected."
+        : "Start every camera (⌘↩).")
+    }
+
+    ToolbarItem(placement: .primaryAction) {
+      UIToolbarRecordControl(context: context)
+    }
+
+    if context.session.expandedFrom != nil {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          context.send(.restoreLayout)
+        } label: {
+          Label("Restore Layout", systemImage: "arrow.down.right.and.arrow.up.left")
+            .labelStyle(.titleAndIcon)
+        }
+        .help("Return to the layout you expanded this picture from")
+      }
+    }
+
+    ToolbarItem(placement: .primaryAction) {
       Picker("Layout", selection: layoutBinding) {
         ForEach(presentation.layouts, id: \.self) { layout in
           Label(layout.title, systemImage: layout.symbol).tag(layout)
@@ -23,7 +54,9 @@ struct UIToolbarContent: ToolbarContent {
       .pickerStyle(.segmented)
       .labelStyle(.iconOnly)
       .help("Layout (⌥⌘1–⌥⌘4)")
+    }
 
+    ToolbarItem(placement: .primaryAction) {
       Button {
         context.send(.setAllCollapsed(!allCollapsed))
       } label: {
@@ -32,18 +65,9 @@ struct UIToolbarContent: ToolbarContent {
       }
       .help(allCollapsed ? "Expand All Strips (⌥⌘S)" : "Collapse All Strips (⌥⌘S)")
       .disabled(presentation.layout == .fourUp || presentation.layout == .programView)
+    }
 
-      Button {
-        context.send(presentation.camerasRunning ? .stopAllCameras : .startAllCameras)
-      } label: {
-        Label(presentation.camerasControlTitle, systemImage: presentation.camerasRunning ? "stop.fill" : "play.fill")
-      }
-      .help(presentation.camerasRunning
-        ? "Stop capture and output for every camera (⌘↩). Asks first if a recording or on-air camera is affected."
-        : "Start every camera (⌘↩).")
-
-      UIToolbarRecordControl(context: context)
-
+    ToolbarItem(placement: .primaryAction) {
       Button {
         context.send(.toggleInspector)
       } label: {

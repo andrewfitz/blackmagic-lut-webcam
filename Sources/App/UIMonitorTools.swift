@@ -4,23 +4,49 @@ import SwiftUI
 /// Split-button monitor tools for one camera: the icon toggles the tool, the
 /// chevron opens that tool's settings. Settings are remembered per camera.
 struct UIMonitorToolButtons: View {
-  let camera: UICameraPresentation
-  let context: UIContext
+  let targetID: String
+  let name: String
+  let activeTools: [UIMonitorTool]
+  /// Program has no source correspondence, so source-only tools are disabled there.
+  let isProgram: Bool
+  let toggle: @MainActor (UIMonitorTool) -> Void
+  let monitor: any UIMonitorSettingsProviding
   @State private var openTool: UIMonitorTool?
 
-  private var isProgram: Bool { camera.id == "program" }
+  /// A camera's tools; toggles go through the interface's actions.
+  init(camera: UICameraPresentation, context: UIContext) {
+    targetID = camera.id
+    name = camera.name
+    activeTools = camera.activeTools
+    isProgram = camera.id == "program"
+    let send = context.send
+    let id = camera.id
+    toggle = { send(.toggleTool(cameraID: id, $0)) }
+    monitor = context.monitor
+  }
+
+  /// Any monitor target, for example "program".
+  init(targetID: String, name: String, activeTools: [UIMonitorTool], isProgram: Bool,
+    toggle: @escaping @MainActor (UIMonitorTool) -> Void, monitor: any UIMonitorSettingsProviding) {
+    self.targetID = targetID
+    self.name = name
+    self.activeTools = activeTools
+    self.isProgram = isProgram
+    self.toggle = toggle
+    self.monitor = monitor
+  }
 
   var body: some View {
     HStack(spacing: 2) {
       ForEach(UIMonitorTool.allCases, id: \.self) { tool in
-        UIMonitorToolSplitButton(tool: tool, isOn: camera.activeTools.contains(tool),
+        UIMonitorToolSplitButton(tool: tool, isOn: activeTools.contains(tool),
           unavailableReason: UIMonitorToolSettingsView.unavailableReason(tool, isProgram: isProgram),
-          toggle: { context.send(.toggleTool(cameraID: camera.id, tool)) },
+          toggle: { toggle(tool) },
           openSettings: { openTool = tool })
           .popover(isPresented: Binding(get: { openTool == tool }, set: { if !$0 { openTool = nil } }),
             arrowEdge: .bottom) {
-            UIMonitorToolSettingsView(tool: tool, cameraID: camera.id, cameraName: camera.name,
-              isProgram: isProgram, provider: context.monitor)
+            UIMonitorToolSettingsView(tool: tool, cameraID: targetID, cameraName: name,
+              isProgram: isProgram, provider: monitor)
           }
       }
     }
@@ -29,7 +55,7 @@ struct UIMonitorToolButtons: View {
     .background(Color.black.opacity(0.72), in: Capsule())
     .environment(\.colorScheme, .dark)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Monitor tools for \(camera.name)")
+    .accessibilityLabel("Monitor tools for \(name)")
   }
 }
 

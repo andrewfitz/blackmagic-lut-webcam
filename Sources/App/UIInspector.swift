@@ -11,7 +11,6 @@ struct UIInspectorViewContent: View {
   let context: UIContext
   @State private var renaming = false
   @State private var nameDraft = ""
-  @State private var confirmingRemove = false
 
   private static let gamuts = ["S-Gamut3.Cine / S-Log3", "S-Gamut3 / S-Log3"]
 
@@ -40,7 +39,8 @@ struct UIInspectorViewContent: View {
             .disabled(!context.session.canEditTopology)
             .help(context.session.canEditTopology ? "Rename this camera." : "Stop all cameras and recordings to rename.")
           Spacer()
-          Button("Remove Camera…", role: .destructive) { confirmingRemove = true }
+          // The bridge asks for confirmation before removing.
+          Button("Remove Camera…", role: .destructive) { context.send(.removeCamera(cameraID: camera.id)) }
             .disabled(!context.session.canEditTopology || context.presentation.cameras.count < 2)
             .help(!context.session.canEditTopology ? "Stop all cameras and recordings to remove a camera."
               : context.presentation.cameras.count < 2 ? "Ultracam needs at least one camera." : "Remove this camera and its settings.")
@@ -57,11 +57,6 @@ struct UIInspectorViewContent: View {
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("Its virtual camera becomes \u{201C}Ultracam · <name>\u{201D}.")
-    }
-    .confirmationDialog("Remove \(camera.name)?", isPresented: $confirmingRemove) {
-      Button("Remove Camera", role: .destructive) { context.send(.removeCamera(cameraID: camera.id)) }
-    } message: {
-      Text("Its settings and virtual camera are removed. Recordings stay on disk.")
     }
   }
 
@@ -87,6 +82,9 @@ struct UIInspectorViewContent: View {
       LabeledContent("Signal") {
         Text(signalText(snapshot)).foregroundStyle(camera.statusTone == .warning ? Color.orange : .secondary)
       }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Signal")
+      .accessibilityValue(signalText(snapshot))
       LabeledContent("Timecode") { Text(camera.timecode).font(.body.monospacedDigit()).textSelection(.enabled) }
       Toggle("Video Preview", isOn: Binding(get: { snapshot.previewEnabled },
         set: { context.send(.setPreviewEnabled(cameraID: camera.id, $0)) }))
@@ -190,8 +188,14 @@ struct UIInspectorViewContent: View {
       }
       if let status = snapshot.automaticStatus {
         Text(status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        if status.localizedCaseInsensitiveContains("retry") {
+      }
+      if snapshot.automaticStartFailed {
+        HStack {
+          Label("Couldn't start \(camera.name)", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption).foregroundStyle(.orange)
+          Spacer()
           Button("Retry") { context.send(.retryAutomaticStart) }.controlSize(.small)
+            .help("Try starting the camera once more. There is no background retry loop.")
         }
       }
     }

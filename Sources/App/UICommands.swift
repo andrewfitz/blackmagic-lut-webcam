@@ -78,6 +78,11 @@ struct UICommands: Commands {
       Divider()
       Button("Add Camera") { send(.addCamera) }
         .disabled(!session.canEditTopology)
+      if let selected {
+        // The bridge asks for confirmation before removing.
+        Button("Remove \(selected.name)…") { send(.removeCamera(cameraID: selected.id)) }
+          .disabled(!session.canEditTopology || presentation.cameras.count < 2)
+      }
     }
 
     CommandMenu("Record") {
@@ -93,15 +98,22 @@ struct UICommands: Commands {
         Button("Stop All Recordings") { send(.stopAllRecordings) }
           .keyboardShortcut("r", modifiers: [.command, .option])
       }
+      if let selected, selected.pauseTitle != nil {
+        Button("\(selected.pauseTitle == "Resume" ? "Resume" : "Pause") Recording \(selected.name)") {
+          send(.pauseOrResume(cameraID: selected.id))
+        }
+      }
       Button("Pause All") { send(.pauseAll) }
         .disabled(!session.cameras.contains { $0.recording.status == .recording })
       Divider()
       Button("Choose Default Folder…") { send(.chooseRecordingFolder(cameraID: nil)) }
       Button("Show Recordings in Finder") { send(.revealRecordings) }
       Button("Recover Interrupted Takes…") {
-        if let take = session.interruptedTakes.first { send(.recover(id: take.id)) }
+        // Settings › Recording lists every interrupted take with its own Recover button.
+        send(.openSettings)
+        NotificationCenter.default.post(name: Notification.Name("UIShowRecovery"), object: nil)
       }
-      .disabled(session.interruptedTakes.isEmpty || session.recoveringID != nil)
+      .disabled(session.interruptedTakes.isEmpty)
     }
 
     CommandMenu("Program") {
@@ -128,6 +140,17 @@ struct UICommands: Commands {
         }
       }
       .disabled(session.outputMode != .program)
+      let directorEnabled = session.outputMode == .program && session.strategy == .naturalTalkingHead
+      Picker("Anchor", selection: Binding(get: { session.anchorID }, set: { send(.setAnchor(cameraID: $0)) })) {
+        Text("Automatic").tag(String?.none)
+        ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+      }
+      .disabled(!directorEnabled)
+      Picker("Emphasis", selection: Binding(get: { session.emphasisID }, set: { send(.setEmphasis(cameraID: $0)) })) {
+        Text("Automatic").tag(String?.none)
+        ForEach(presentation.cameras) { camera in Text(camera.name).tag(String?.some(camera.id)) }
+      }
+      .disabled(!directorEnabled)
     }
 
     CommandGroup(after: .toolbar) {
@@ -147,6 +170,17 @@ struct UICommands: Commands {
       Button(session.inspectorOpen ? "Hide Inspector" : "Show Inspector") { send(.toggleInspector) }
         .keyboardShortcut("i", modifiers: [.command, .option])
       Divider()
+      Button("Swap Pictures") { send(.swapPictures) }
+        .disabled(presentation.cameras.count < 2 || presentation.layout == .single || presentation.layout == .programView)
+      if session.expandedFrom != nil {
+        Button("Restore Layout") { send(.restoreLayout) }
+      } else {
+        Button(selected.map { "Expand \($0.name)" } ?? "Expand Picture") {
+          if let selected { send(.expandPicture(cameraID: selected.id)) }
+        }
+        .disabled(selected == nil || presentation.cameras.count < 2 || presentation.layout == .single)
+      }
+      Divider()
       if let selected {
         Button("Freeze \(selected.name)") { send(.freeze(cameraID: selected.id)) }
           .keyboardShortcut("f", modifiers: [.control, .option])
@@ -159,11 +193,22 @@ struct UICommands: Commands {
       Divider()
     }
 
+    // SwiftUI lists the Ultracam and Diagnostics windows in the Window menu itself;
+    // ⌘0 is attached to the main Window scene in UltracamApp.
+
+    // macOS lists every open window below; this one item brings back the main window with ⌘0.
     CommandGroup(before: .windowList) {
-      Button("Ultracam") { send(.openMainWindow) }
-        .keyboardShortcut("0")
-      Button("Diagnostics") { send(.openDiagnostics) }
+      Button("Main Window") {
+        openWindow(id: "main")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+      }
+      .keyboardShortcut("0", modifiers: .command)
       Divider()
+    }
+
+    CommandGroup(replacing: .help) {
+      Button("Ultracam Help") { openWindow(id: "help") }
+        .keyboardShortcut("?", modifiers: .command)
     }
   }
 

@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CoreMediaIO
 import MonitorToolsCore
 import MonitorToolsUI
@@ -69,7 +70,7 @@ enum UIRecordingLibrary {
       }
       for url in candidates where url.pathExtension.lowercased() == "mov" {
         let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-        takes.append(UITake(url: url, name: url.lastPathComponent, date: date, duration: nil))
+        takes.append(UITake(url: url, name: url.lastPathComponent, date: date, duration: UITakeDurations.duration(for: url)))
       }
     }
     return Array(takes.sorted { $0.date > $1.date }.prefix(limit))
@@ -228,5 +229,30 @@ enum UIExtensionDetector {
       let name = value?.takeRetainedValue() as String? ?? ""
       return name.hasPrefix(VideoContract.cameraName)
     }
+  }
+}
+
+/// Durations of finished takes, read from the movie files in the background and
+/// cached. The first lookup returns nil; the next refresh shows the duration.
+enum UITakeDurations {
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var known: [URL: TimeInterval] = [:]
+  nonisolated(unsafe) private static var loading: Set<URL> = []
+
+  static func duration(for url: URL) -> TimeInterval? {
+    lock.lock()
+    if let value = known[url] { lock.unlock(); return value }
+    let start = loading.insert(url).inserted
+    lock.unlock()
+    if start {
+      Task.detached(priority: .utility) {
+        let seconds = try? await AVURLAsset(url: url).load(.duration).seconds
+        lock.withLock {
+          if let seconds, seconds.isFinite, seconds > 0 { known[url] = seconds }
+          loading.remove(url)
+        }
+      }
+    }
+    return nil
   }
 }

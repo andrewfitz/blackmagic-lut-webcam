@@ -32,7 +32,8 @@ struct UIMainWindowView: View {
       Text(context.confirmation?.message ?? "")
     }
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-    .frame(minWidth: 980, minHeight: 680)
+    // 680 pt is the window minimum; the content sits below the ~52 pt toolbar.
+    .frame(minWidth: 980, minHeight: 620)
   }
 
   // MARK: Detail
@@ -135,6 +136,8 @@ struct UIMainWindowView: View {
     switch context.confirmation?.action {
     case .stopCamera(let id): return "Stop \(context.camera(id)?.name ?? "Camera")?"
     case .stopAllCameras: return "Stop All Cameras?"
+    case .removeCamera(let id): return "Remove \(context.camera(id)?.name ?? "Camera")?"
+    case .resetAllSettings: return "Reset All Settings?"
     default: return "Are you sure?"
     }
   }
@@ -143,6 +146,8 @@ struct UIMainWindowView: View {
     switch context.confirmation?.action {
     case .stopCamera: return "Stop Camera"
     case .stopAllCameras: return "Stop All Cameras"
+    case .removeCamera: return "Remove Camera"
+    case .resetAllSettings: return "Reset and Quit"
     default: return "Continue"
     }
   }

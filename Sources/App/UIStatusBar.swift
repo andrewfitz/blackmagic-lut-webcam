@@ -7,20 +7,28 @@ struct UIStatusBarView: View {
   @State private var open: UIStatusSegment.Kind?
   @State private var resourcesOpen = false
 
+  @State private var width: CGFloat = 1320
+
   var body: some View {
+    // Width decides the density so the bar is never empty: full text when there is
+    // room, short text on narrower windows, and only output, recording and warning
+    // (plus no resource readout) at the minimum window width.
+    let compact = width < 1200
+    let essentialOnly = width < 900
     HStack(spacing: 2) {
-      ViewThatFits(in: .horizontal) {
-        segmentsRow(compact: false)
-        segmentsRow(compact: true)
-        segmentsRow(compact: true, essentialOnly: true)
-      }
+      segmentsRow(compact: compact, essentialOnly: essentialOnly)
+        .layoutPriority(1)
       Spacer(minLength: 8)
-      UIResourceReadout(open: $resourcesOpen, context: context)
+      if width >= 1040 {
+        UIResourceReadout(open: $resourcesOpen, context: context)
+      }
     }
     .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity)
     .frame(height: 30)
     .background(.bar)
     .overlay(alignment: .top) { Divider() }
+    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Status")
   }
@@ -30,9 +38,19 @@ struct UIStatusBarView: View {
       ForEach(Array(visibleSegments(essentialOnly: essentialOnly).enumerated()), id: \.element.id) { index, segment in
         if index > 0 { Divider().frame(height: 14) }
         segmentButton(segment, compact: compact)
+          .layoutPriority(priority(segment.kind))
       }
     }
-    .fixedSize()
+  }
+
+  /// Under pressure the warning and recording keep their text longest.
+  private func priority(_ kind: UIStatusSegment.Kind) -> Double {
+    switch kind {
+    case .warning: return 3
+    case .recording: return 2
+    case .output: return 1
+    case .program, .audio: return 0
+    }
   }
 
   private func visibleSegments(essentialOnly: Bool) -> [UIStatusSegment] {
@@ -49,7 +67,7 @@ struct UIStatusBarView: View {
         } else {
           Image(systemName: symbol(segment.kind)).imageScale(.small)
         }
-        Text(compact ? shortText(segment) : segment.text).lineLimit(1)
+        Text(compact ? shortText(segment) : segment.text).lineLimit(1).truncationMode(.tail)
       }
       .font(.caption)
       .foregroundStyle(color(segment))
