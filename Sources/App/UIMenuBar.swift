@@ -397,7 +397,7 @@ final class UIMenuCommandBox: NSObject {
         action(.pauseOrResume(cameraID: camera.id)), symbol: pause == "Pause" ? "pause" : "play", target: target))
     }
     if presentation.outputMode == .program && camera.showsCut {
-      submenu.addItem(row("Cut to \(camera.name)", action(.cut(cameraID: camera.id)), key: camera.number <= 4 ? "\(camera.number)" : "",
+      submenu.addItem(row("Cut to \(camera.name)", action(.cut(cameraID: camera.id)), key: "",
         modifiers: .control, enabled: camera.cutEnabled, symbol: "tv", target: target))
     }
     submenu.addItem(.separator())

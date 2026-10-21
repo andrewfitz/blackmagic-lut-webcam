@@ -234,7 +234,7 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
   var enabled = true
   var monitorConfiguration = MonitorConfiguration()
 
-  init(id: FeedID = .primary, name: String = "Feed 1", selectedDevice: String = "",
+  init(id: FeedID = .primary, name: String = "Camera 1", selectedDevice: String = "",
     applyLUT: Bool = false, downscale: Bool = true, convertTo420: Bool = true,
     reduceFrameRate: Bool = false, gamut: String = "S-Gamut3.Cine / S-Log3",
     pipelineEnabled: Bool = true, previewEnabled: Bool = true, lutBookmark: Data? = nil,
@@ -256,7 +256,7 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
     self.monitorConfiguration = monitorConfiguration
   }
 
-  init(legacy settings: AppSettings, id: FeedID = .primary, name: String = "Feed 1") {
+  init(legacy settings: AppSettings, id: FeedID = .primary, name: String = "Camera 1") {
     self.init(id: id, name: name, selectedDevice: settings.selectedDevice,
       applyLUT: settings.applyLUT, downscale: settings.downscale,
       convertTo420: settings.convertTo420, reduceFrameRate: settings.reduceFrameRate,
@@ -297,7 +297,10 @@ struct FeedDescriptor: Codable, Equatable, Sendable, Identifiable {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
     id = try values.decodeIfPresent(FeedID.self, forKey: .id) ?? .primary
-    name = try values.decodeIfPresent(String.self, forKey: .name) ?? "Feed 1"
+    let savedName = try values.decodeIfPresent(String.self, forKey: .name) ?? "Camera 1"
+    // Untouched default names from before the interface used "Camera" become "Camera N".
+    if savedName.hasPrefix("Feed "), let number = Int(savedName.dropFirst(5)) { name = "Camera \(number)" }
+    else { name = savedName }
     selectedDevice = try values.decodeIfPresent(String.self, forKey: .selectedDevice) ?? ""
     applyLUT = try values.decodeIfPresent(Bool.self, forKey: .applyLUT) ?? false
     downscale = try values.decodeIfPresent(Bool.self, forKey: .downscale) ?? true

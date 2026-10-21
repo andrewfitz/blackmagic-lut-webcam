@@ -29,7 +29,13 @@ struct UICameraPictureView: View {
   @State private var zoom = 1.0
   @FocusState private var focused: Bool
 
-  private var revealed: Bool { (hovering || focused) && !compact }
+  private var revealed: Bool {
+    guard (hovering || focused) && !compact else { return false }
+    switch camera.tileState {
+    case .live, .updating: return true
+    default: return false
+    }
+  }
   private var snapshot: UICameraSnapshot? { context.snapshot(camera.id) }
   private var isProgramMode: Bool { context.presentation.outputMode == .program }
 
@@ -573,8 +579,7 @@ struct UIChannelStripView: View {
       }
       .controlSize(.small)
     case .stopped:
-      Button("Start Camera", systemImage: "play.fill") { context.send(.startCamera(cameraID: camera.id)) }
-        .controlSize(.small).disabled(!camera.canStart)
+      EmptyView()
     case .finishing:
       Text("Saving…").font(.caption).foregroundStyle(.secondary)
     case .ready, .waiting:

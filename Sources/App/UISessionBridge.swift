@@ -210,6 +210,8 @@ struct UISessionBridge {
       interface.collapsed = collapsed ? Set(model.feedDescriptors.map(\.id.rawValue)) : []
     case .toggleSidebar: interface.sidebarVisible.toggle()
     case .toggleInspector: interface.inspectorOpen.toggle()
+    case .setInspectorOpen(let open): if interface.inspectorOpen != open { interface.inspectorOpen = open }
+    case .setSidebarVisible(let visible): if interface.sidebarVisible != visible { interface.sidebarVisible = visible }
     case .showInspector(let id): _ = model.selectFeed(feedID(id)); interface.inspectorOpen = true
     case .startCamera(let id): model.startCamera(feedID(id))
     case .stopCamera(let id): model.stopCamera(feedID(id))

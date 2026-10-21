@@ -12,6 +12,8 @@ enum UIAction: Sendable, Equatable {
   case setAllCollapsed(Bool)
   case toggleSidebar
   case toggleInspector
+  case setInspectorOpen(Bool)
+  case setSidebarVisible(Bool)
   case showInspector(cameraID: String)
 
   // Cameras (capture and output)

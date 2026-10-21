@@ -70,6 +70,7 @@ xcrun swiftc -O -swift-version 5 -target arm64-apple-macos15.0 -module-cache-pat
   "$task_root/Sources/App/AutomaticFeedPolicy.swift" \
   "$task_root/Sources/App/CameraDemandMonitor.swift" \
   "$task_root/Sources/App/ExtensionInstaller.swift" \
+  "$task_root/Sources/App/UIPresentation.swift" "$task_root/Sources/App/UIAction.swift" \
   "$task_root/Sources/CameraExtension/CameraProvider.swift" \
   "$task_root"/Tests/*.swift "$task_root"/Tests/Recording/*.swift \
   "$test_root/UltracamBackend.o" "$test_root/DeckLinkAPIDispatch.o" -L "$auto_switcher_lib" -lauto_switcher \

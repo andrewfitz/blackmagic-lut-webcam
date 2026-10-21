@@ -313,18 +313,18 @@ struct UIExtensionBannerView: View {
     VStack(alignment: .leading, spacing: 6) {
       switch state {
       case .unavailable(let reason):
-        Label("Camera output needs a signed build", systemImage: "info.circle").font(.callout.weight(.semibold))
-        Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        Text("Preview and recording still work.").font(.caption).foregroundStyle(.secondary)
+        Label("Camera needs a signed build", systemImage: "info.circle").font(.callout.weight(.semibold)).lineLimit(2)
+        Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+        Text("Preview and recording still work.").font(.caption).foregroundStyle(.secondary).lineLimit(2)
       case .pending(let status):
         HStack(spacing: 6) {
           ProgressView().controlSize(.small)
-          Text(status).font(.callout).fixedSize(horizontal: false, vertical: true)
+          Text(status).font(.callout).lineLimit(3)
         }
       case .needsApproval(let status):
-        Label("Approve the Ultracam camera", systemImage: "exclamationmark.triangle.fill")
+        Label("Approve the Ultracam camera", systemImage: "exclamationmark.triangle.fill").lineLimit(2)
           .font(.callout.weight(.semibold)).foregroundStyle(.orange)
-        Text(status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(4)
         Button("Open System Settings") {
           if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
             NSWorkspace.shared.open(url)

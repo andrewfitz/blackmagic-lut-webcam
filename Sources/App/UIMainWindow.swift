@@ -14,17 +14,18 @@ struct UIMainWindowView: View {
       UISessionSidebarView(context: context)
         .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 300)
     } detail: {
+      // On macOS the inspector belongs to the detail column of a split view.
       detail
         .safeAreaInset(edge: .bottom, spacing: 0) {
           UIStatusBarView(context: context)
         }
+        .inspector(isPresented: inspectorBinding) {
+          UIInspectorView(context: context)
+            .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
+        }
     }
     .navigationTitle(context.presentation.title)
     .navigationSubtitle(context.presentation.subtitle)
-    .inspector(isPresented: inspectorBinding) {
-      UIInspectorView(context: context)
-        .inspectorColumnWidth(min: 280, ideal: 300, max: 360)
-    }
     .confirmationDialog(confirmationTitle, isPresented: confirmationBinding, titleVisibility: .visible) {
       Button(confirmationButton, role: .destructive) { context.confirm() }
       Button("Cancel", role: .cancel) { context.cancelConfirmation() }
@@ -49,22 +50,30 @@ struct UIMainWindowView: View {
           .disabled(!context.session.canEditTopology)
       }
     } else {
-      switch context.presentation.layout {
+      // With one camera every grid layout is the single layout.
+      let layout: UILayout = cameras.count == 1 && context.presentation.layout != .programView ? .single : context.presentation.layout
+      switch layout {
       case .programView:
         UIProgramView(context: context)
       case .single:
-        ScrollView {
-          if let camera = context.presentation.selected ?? cameras.first {
-            UICameraColumnView(camera: camera, context: context)
-              .frame(maxWidth: 1100)
-              .frame(maxWidth: .infinity)
+        if let camera = context.presentation.selected ?? cameras.first {
+          // Size the picture so the picture and its strip fit the window height.
+          GeometryReader { proxy in
+            let stripHeight: CGFloat = camera.collapsed ? 56 : 230
+            let fitted = (proxy.size.height - stripHeight - 24) * 16 / 9
+            let width = max(420, min(proxy.size.width - 24, fitted))
+            ScrollView {
+              UICameraColumnView(camera: camera, context: context)
+                .frame(width: width)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .contentMargins(12, for: .scrollContent)
           }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .contentMargins(12, for: .scrollContent)
       case .sideBySide, .fourUp:
         ScrollView {
-          if cameras.count <= 2 && context.presentation.layout == .sideBySide {
+          if cameras.count <= 2 && layout == .sideBySide {
             HStack(alignment: .top, spacing: 12) {
               ForEach(cameras) { camera in
                 UICameraColumnView(camera: camera, context: context)
@@ -98,21 +107,29 @@ struct UIMainWindowView: View {
     Binding(
       get: { sidebarShown ? .all : .detailOnly },
       set: { next in
-        let wantsVisible = next != .detailOnly
-        if wantsVisible != context.session.sidebarVisible { context.send(.toggleSidebar) }
+        // Only an explicit change on a wide window is a user choice; auto-hiding is not.
+        guard width >= 1100 else { return }
+        context.send(.setSidebarVisible(next != .detailOnly))
       })
   }
 
   private var inspectorBinding: Binding<Bool> {
     Binding(
       get: { context.session.inspectorOpen },
-      set: { if $0 != context.session.inspectorOpen { context.send(.toggleInspector) } })
+      // Set, never toggle: SwiftUI may echo the current value back through the binding.
+      set: { context.send(.setInspectorOpen($0)) })
   }
 
   private var confirmationBinding: Binding<Bool> {
     Binding(
       get: { context.confirmation != nil },
-      set: { if !$0, context.confirmation != nil { context.cancelConfirmation() } })
+      // Dismissal (Escape, clicking away) clears the pending action after the buttons
+      // have run, so the destructive button never loses its action to the dismissal.
+      set: { presented in
+        guard !presented else { return }
+        let cancel = context.cancelConfirmation
+        DispatchQueue.main.async { cancel() }
+      })
   }
 
   private var confirmationTitle: String {

@@ -259,6 +259,7 @@ suite.addTest(XCTestSuite(forTestCaseClass: AutoSwitcherBridgeChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: AutoSwitcherTimelineChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: InstallerChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: MulticamRuntimeChecks.self))
+suite.addTest(XCTestSuite(forTestCaseClass: UIPresentationChecks.self))
 #if CAPTURE_LIFECYCLE_TESTS
 suite.addTest(XCTestSuite(forTestCaseClass: CaptureLifecycleChecks.self))
 suite.addTest(XCTestSuite(forTestCaseClass: CaptureRecordingIsolationChecks.self))

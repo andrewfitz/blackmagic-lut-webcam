@@ -455,7 +455,7 @@ final class FeedCoordinator {
   func add(name: String? = nil) -> FeedID {
     var id = FeedID(uuid: UUID())
     while descriptors.contains(where: { $0.id == id }) { id = FeedID(uuid: UUID()) }
-    let descriptor = FeedDescriptor(id: id, name: name ?? "Feed \(descriptors.count + 1)")
+    let descriptor = FeedDescriptor(id: id, name: name ?? "Camera \(descriptors.count + 1)")
     descriptors.append(descriptor)
     programOutput.updateFeeds(descriptors.filter(\.enabled).map(\.id))
     syncSwitcherMirror()

@@ -112,6 +112,7 @@ struct UIToolbarRecordControl: View {
         context.send(all ? .recordAll : .toggleRecordingSelected)
       } label: {
         Label(control.title, systemImage: "record.circle")
+          .labelStyle(.titleAndIcon)
       }
       .disabled(!enabled)
       .help(all ? "Record every running camera (⌥⌘R)" : "Record (⌘R)")
